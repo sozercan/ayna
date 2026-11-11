@@ -86,16 +86,30 @@
                 #expect(toolNames.contains("list_directory"))
                 #expect(toolNames.contains("search_files"))
                 #expect(toolNames.contains("run_command"))
-                #expect(toolNames.contains("web_fetch"))
+                // web_fetch is served by WebFetchService, not duplicated here.
+                #expect(!toolNames.contains("web_fetch"))
             }
 
             @Test
-            func `Tool count is 7`() {
+            func `Tool count is 6`() {
                 let permissionService = PermissionService()
                 let sut = BuiltinToolService(permissionService: permissionService)
                 let definitions = sut.allToolDefinitions()
 
-                #expect(definitions.count == 7)
+                #expect(definitions.count == 6)
+            }
+
+            @Test
+            func `Denied tools are not offered to the model`() {
+                let sut = BuiltinToolService(permissionService: PermissionService())
+                sut.toolPermissions["run_command"] = .denied
+
+                let names = sut.allToolDefinitions().compactMap {
+                    ($0["function"] as? [String: Any])?["name"] as? String
+                }
+
+                #expect(!names.contains("run_command"))
+                #expect(names.count == 5)
             }
         }
 
@@ -228,7 +242,6 @@
                 #expect(BuiltinToolService.ToolName.listDirectory == "list_directory")
                 #expect(BuiltinToolService.ToolName.searchFiles == "search_files")
                 #expect(BuiltinToolService.ToolName.runCommand == "run_command")
-                #expect(BuiltinToolService.ToolName.webFetch == "web_fetch")
             }
         }
 
@@ -459,14 +472,12 @@
             while approvals < 3 {
                 await waitForPendingApproval(permissionService)
                 guard let pending = permissionService.pendingApprovals.first else { break }
-                if pending.toolName == BuiltinToolService.ToolName.readFile {
-                    try retarget(to: other)
-                } else if pending.toolName == BuiltinToolService.ToolName.editFile {
-                    try retarget(to: original)
-                }
+                // Both steps run as edit_file: first the read of the current content, then the edit.
+                let isReadStep = pending.description.hasPrefix("Read file before editing")
+                try retarget(to: isReadStep ? other : original)
                 permissionService.approve(pending.id, rememberForSession: false)
                 approvals += 1
-                if pending.toolName == BuiltinToolService.ToolName.editFile { break }
+                if !isReadStep { break }
             }
 
             // The path no longer points at the captured target after the read, so the edit
@@ -481,7 +492,9 @@
                 await waitForPendingApproval(permissionService)
                 guard let pending = permissionService.pendingApprovals.first else { break }
                 permissionService.approve(pending.id, rememberForSession: false)
-                if pending.toolName == BuiltinToolService.ToolName.editFile { break }
+                let isEditStep = pending.toolName == BuiltinToolService.ToolName.editFile
+                    && !pending.description.hasPrefix("Read file before editing")
+                if isEditStep { break }
             }
             try await task.value
         }

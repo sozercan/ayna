@@ -734,24 +734,20 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             throw MCPServiceError.invalidResponse("Failed to parse tool call result")
         }
 
-        // Handle different content types
+        let text: String
         if let content = result["content"] as? [[String: Any]] {
-            // Multiple content items
-            let texts = content.compactMap { item -> String? in
-                if item["type"] as? String == "text",
-                   let text = item["text"] as? String
-                {
-                    return text
-                }
-                return nil
-            }
-            return texts.joined(separator: "\n")
-        } else if let text = result["content"] as? String {
-            // Single text content
-            return text
+            text = content.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
+                .joined(separator: "\n")
+        } else if let single = result["content"] as? String {
+            text = single
         } else {
             throw MCPServiceError.invalidResponse("Unexpected content format in tool result")
         }
+        // A tool-level failure arrives as a normal result flagged `isError`.
+        if result["isError"] as? Bool == true {
+            throw MCPServiceError.toolExecutionFailed(text.isEmpty ? "The tool reported an error" : text)
+        }
+        return text
     }
 
     func listResources() async throws -> [MCPResource] {

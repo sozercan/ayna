@@ -33,6 +33,8 @@ struct CommandResult: Codable, Sendable {
     let stdout: String
     let stderr: String
     let duration: TimeInterval
+    /// The command hit the timeout and was terminated; output is partial.
+    var timedOut = false
 }
 
 // MARK: - Tool Execution Error
@@ -49,8 +51,8 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
     case fileNotFound(path: String)
     case fileNotReadable(path: String, underlying: String)
     case fileNotWritable(path: String, underlying: String)
-    case commandFailed(command: String, exitCode: Int32, stderr: String)
-    case commandTimeout(command: String, timeoutSeconds: Int)
+    case commandFailed(command: String, exitCode: Int32, stdout: String, stderr: String)
+    case commandTimeout(command: String, timeoutSeconds: Int, stdout: String, stderr: String)
 
     // Validation errors (bad input)
     case invalidPath(path: String, reason: String)
@@ -75,10 +77,10 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
             return "Cannot read file '\(path)': \(underlying)"
         case let .fileNotWritable(path, underlying):
             return "Cannot write file '\(path)': \(underlying)"
-        case let .commandFailed(command, exitCode, stderr):
+        case let .commandFailed(command, exitCode, _, stderr):
             let stderrPreview = stderr.isEmpty ? "" : " - \(String(stderr.prefix(200)))"
             return "Command '\(command)' failed with exit code \(exitCode)\(stderrPreview)"
-        case let .commandTimeout(command, timeoutSeconds):
+        case let .commandTimeout(command, timeoutSeconds, _, _):
             return "Command '\(command)' timed out after \(timeoutSeconds) seconds"
         case let .invalidPath(path, reason):
             return "Invalid path '\(path)': \(reason)"
@@ -111,10 +113,10 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
             "ERROR: Cannot read file '\(path)'. \(underlying)"
         case let .fileNotWritable(path, underlying):
             "ERROR: Cannot write to file '\(path)'. \(underlying)"
-        case let .commandFailed(command, exitCode, stderr):
-            "ERROR: Command '\(command)' failed with exit code \(exitCode). stderr: \(stderr)"
-        case let .commandTimeout(command, timeoutSeconds):
-            "ERROR: Command '\(command)' timed out after \(timeoutSeconds) seconds. Consider breaking it into smaller operations."
+        case let .commandFailed(command, exitCode, stdout, stderr):
+            "ERROR: Command '\(command)' failed with exit code \(exitCode).\(Self.outputSection(stdout: stdout, stderr: stderr))"
+        case let .commandTimeout(command, timeoutSeconds, stdout, stderr):
+            "ERROR: Command '\(command)' timed out after \(timeoutSeconds) seconds and was stopped. Consider breaking it into smaller operations.\(Self.outputSection(stdout: stdout, stderr: stderr))"
         case let .invalidPath(path, reason):
             "ERROR: Invalid path '\(path)'. \(reason)"
         case let .editAmbiguous(path, matchCount):
@@ -130,6 +132,19 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
         case .serviceDisabled:
             "ERROR: Agentic tools are currently disabled. Ask the user to enable them in Settings > Tools."
         }
+    }
+}
+
+extension ToolExecutionError {
+    fileprivate static func outputSection(stdout: String, stderr: String) -> String {
+        var section = ""
+        if !stdout.isEmpty {
+            section += "\nstdout:\n\(stdout)"
+        }
+        if !stderr.isEmpty {
+            section += "\nstderr:\n\(stderr)"
+        }
+        return section
     }
 }
 

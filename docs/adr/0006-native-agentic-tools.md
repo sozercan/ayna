@@ -603,7 +603,7 @@ struct AgentSettings: Codable {
 
 | Deliverable | Exit Criteria |
 |-------------|---------------|
-| `BuiltinToolService.swift` | All 7 tools implemented (read, write, edit, list, search, run, web_fetch) |
+| `BuiltinToolService.swift` | 6 tools implemented (read, write, edit, list, search, run); `web_fetch` is served by `WebFetchService` on every platform |
 | `PermissionService.swift` | Permission check and approval queue working |
 | `ShellSandbox.swift` | Blocks `sudo`, `rm -rf /`, allows `git`, `ls` (**moved from Phase 2**) |
 | `PathValidator.swift` | Path canonicalization with symlink resolution |

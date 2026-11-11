@@ -13,6 +13,8 @@ struct AgentsSettingsSection: View {
     @Bindable private var settingsStore = AgentSettingsStore.shared
 
     @State private var showResetConfirmation = false
+    @State private var allowedCommandsText = ""
+    @State private var blockedPatternsText = ""
 
     var body: some View {
         Form {
@@ -35,7 +37,22 @@ struct AgentsSettingsSection: View {
                 permissionPicker(for: "list_directory", label: "List Directories")
                 permissionPicker(for: "search_files", label: "Search Files")
                 permissionPicker(for: "run_command", label: "Run Commands")
-                permissionPicker(for: "web_fetch", label: "Web Fetch")
+                // web_fetch has no approval step, so it is either allowed or not.
+                permissionPicker(for: "web_fetch", label: "Web Fetch", levels: [.automatic, .denied])
+            }
+
+            Section {
+                TextField("Also allow", text: $allowedCommandsText, prompt: Text("make, cargo, swift"))
+                    .onSubmit { commitCommandLists() }
+                    .help("Commands that may run without the not-on-allowed-list approval")
+                TextField("Also block", text: $blockedPatternsText, prompt: Text("git push, npm publish"))
+                    .onSubmit { commitCommandLists() }
+                    .help("Command patterns that are always refused")
+            } header: {
+                Text("Commands")
+            } footer: {
+                Text("Comma-separated. Added to the built-in lists. Press Return to save.")
+                    .foregroundStyle(.secondary)
             }
 
             // Safety Settings
@@ -44,7 +61,7 @@ struct AgentsSettingsSection: View {
                     "Require approval outside project",
                     isOn: $settingsStore.settings.requireApprovalOutsideProject
                 )
-                .help("Always ask before modifying files outside the current project")
+                .help("Ask before writing or editing files outside the project root (when one is set)")
 
                 Stepper(
                     "Max tool chain depth: \(settingsStore.settings.maxToolChainDepth)",
@@ -81,7 +98,7 @@ struct AgentsSettingsSection: View {
             }
 
             // Project Settings
-            Section("Project") {
+            Section {
                 HStack {
                     Text("Project Root")
                     Spacer()
@@ -91,7 +108,7 @@ struct AgentsSettingsSection: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     } else {
-                        Text("Auto-detect")
+                        Text("Not set")
                             .foregroundStyle(.secondary)
                     }
                     Button("Choose...") {
@@ -105,9 +122,14 @@ struct AgentsSettingsSection: View {
                             settingsStore.settings.projectRootPath = nil
                         }
                         .accessibilityLabel("Clear project root")
-                        .accessibilityHint("Removes the custom project root and returns to auto-detection")
+                        .accessibilityHint("Removes the project root")
                     }
                 }
+            } header: {
+                Text("Project")
+            } footer: {
+                Text("Relative paths and commands start here, or in your home folder when no root is set.")
+                    .foregroundStyle(.secondary)
             }
 
             // Reset
@@ -131,19 +153,49 @@ struct AgentsSettingsSection: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Agentic Tools")
+        .onAppear(perform: loadCommandLists)
+        .onChange(of: settingsStore.settings.additionalAllowedCommands) { loadCommandLists() }
+        .onChange(of: settingsStore.settings.additionalBlockedPatterns) { loadCommandLists() }
+        .onDisappear(perform: commitCommandLists)
     }
 
     // MARK: - Helpers
 
+    private func loadCommandLists() {
+        allowedCommandsText = settingsStore.settings.additionalAllowedCommands.joined(separator: ", ")
+        blockedPatternsText = settingsStore.settings.additionalBlockedPatterns.joined(separator: ", ")
+    }
+
+    private func commitCommandLists() {
+        func entries(_ text: String) -> [String] {
+            text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        }
+        let allowed = entries(allowedCommandsText)
+        let blocked = entries(blockedPatternsText)
+        if allowed != settingsStore.settings.additionalAllowedCommands {
+            settingsStore.settings.additionalAllowedCommands = allowed
+        }
+        if blocked != settingsStore.settings.additionalBlockedPatterns {
+            settingsStore.settings.additionalBlockedPatterns = blocked
+        }
+    }
+
     @ViewBuilder
-    private func permissionPicker(for tool: String, label: String) -> some View {
+    private func permissionPicker(
+        for tool: String,
+        label: String,
+        levels: [PermissionLevel] = PermissionLevel.allCases
+    ) -> some View {
         let binding = Binding<PermissionLevel>(
-            get: { settingsStore.settings.permissionLevel(for: tool) },
+            get: {
+                let level = settingsStore.settings.permissionLevel(for: tool)
+                return levels.contains(level) ? level : levels[0]
+            },
             set: { settingsStore.settings.setPermissionLevel($0, for: tool) }
         )
 
         Picker(label, selection: binding) {
-            ForEach(PermissionLevel.allCases, id: \.self) { level in
+            ForEach(levels, id: \.self) { level in
                 Text(level.displayName)
                     .tag(level)
             }

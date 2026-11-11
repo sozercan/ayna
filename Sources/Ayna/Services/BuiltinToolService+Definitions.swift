@@ -21,9 +21,11 @@ import Foundation
                 editFileDefinition(),
                 listDirectoryDefinition(),
                 searchFilesDefinition(),
-                runCommandDefinition(),
-                webFetchDefinition()
-            ]
+                runCommandDefinition()
+            ].filter { definition in
+                let name = (definition["function"] as? [String: Any])?["name"] as? String
+                return name.map { toolPermissions[$0] != .denied } ?? true
+            }
         }
 
         /// Returns context to inject into the system prompt describing agentic capabilities.
@@ -43,20 +45,19 @@ import Foundation
             - **list_directory**: List files and subdirectories in a directory
             - **search_files**: Search for text patterns in files (like grep)
             - **run_command**: Execute shell commands
-            - **web_fetch**: Fetch content from a URL as plain text
 
             When to use these tools:
             - When the user asks what's in a file or directory, use list_directory or read_file
             - When the user asks to find something, use search_files
             - When the user asks to create or modify files, use write_file or edit_file
             - When the user asks to run commands or scripts, use run_command
-            - When the user asks to fetch a web page or API response, use web_fetch
 
             """
 
             if let root = projectRoot {
                 context += "\nProject root: \(root.path)"
             }
+            context += "\nRelative paths and commands start from: \(baseDirectory.path)"
 
             return context
         }
@@ -64,8 +65,7 @@ import Foundation
         /// Tool name constant for use in tool call routing
         static let toolNames: Set<String> = [
             "read_file", "write_file", "edit_file",
-            "list_directory", "search_files", "run_command",
-            "web_fetch"
+            "list_directory", "search_files", "run_command"
         ]
 
         /// Checks if a tool name is a builtin tool
@@ -208,26 +208,6 @@ import Foundation
                             ]
                         ] as [String: Any],
                         "required": ["command"]
-                    ] as [String: Any]
-                ] as [String: Any]
-            ]
-        }
-
-        func webFetchDefinition() -> [String: Any] {
-            [
-                "type": "function",
-                "function": [
-                    "name": ToolName.webFetch,
-                    "description": "Fetch content from a URL and return it as plain text. Use for reading web pages, documentation, or API responses. Only HTTP/HTTPS URLs are supported.",
-                    "parameters": [
-                        "type": "object",
-                        "properties": [
-                            "url": [
-                                "type": "string",
-                                "description": "The URL to fetch (must be http:// or https://)"
-                            ]
-                        ] as [String: Any],
-                        "required": ["url"]
                     ] as [String: Any]
                 ] as [String: Any]
             ]

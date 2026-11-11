@@ -157,7 +157,13 @@ class MCPServerManager: ObservableObject {
     // Optimization: Cache enabled tools and their OpenAI function format
     private var cachedEnabledTools: [MCPTool] = []
     private var cachedOpenAIFunctions: [[String: Any]] = []
-    private var toolLookup: [String: MCPTool] = [:] // O(1) tool lookup by name
+    private var toolLookup: [String: MCPTool] = [:] // O(1) lookup by model-facing name
+    private var exposedToolNames: [UUID: String] = [:]
+
+    /// Tool names Ayna serves itself; an MCP tool with one of these names gets a server prefix.
+    static var reservedToolNames: Set<String> {
+        BuiltinToolService.toolNames.union([WebSearchCoordinator.toolName, WebFetchService.toolName])
+    }
     private var isToolCacheValid = false
     private var isOpenAIFunctionCacheValid = false
 
@@ -970,6 +976,7 @@ class MCPServerManager: ObservableObject {
             cachedEnabledTools = []
             cachedOpenAIFunctions = []
             toolLookup = [:]
+            exposedToolNames = [:]
             isToolCacheValid = false
             isOpenAIFunctionCacheValid = false
         }
@@ -1011,6 +1018,7 @@ class MCPServerManager: ObservableObject {
     nonisolated func executeTool(name: String, arguments: [String: Any]) async throws -> String {
         struct ToolExecutionContext: @unchecked Sendable {
             let service: MCPServicing
+            let toolName: String
             let arguments: [String: AnyCodable]
         }
 
@@ -1019,8 +1027,11 @@ class MCPServerManager: ObservableObject {
         }
 
         let context = try await MainActor.run { () throws -> ToolExecutionContext in
-            // Optimization: Use O(1) lookup instead of linear search
-            guard let tool = toolLookup[name] ?? availableTools.first(where: { $0.name == name }) else {
+            // `name` is the model-facing name, which may carry a `server__` prefix.
+            if !isToolCacheValid {
+                refreshToolCache()
+            }
+            guard let tool = toolLookup[name] else {
                 throw MCPManagerError.toolNotFound(name)
             }
 
@@ -1028,13 +1039,13 @@ class MCPServerManager: ObservableObject {
                 throw MCPManagerError.toolNotFound(name)
             }
 
-                return ToolExecutionContext(service: managed.service, arguments: sendableArguments)
+                return ToolExecutionContext(service: managed.service, toolName: tool.name, arguments: sendableArguments)
         }
 
         do {
             return try await withTimeout(seconds: 30) {
                 let bridgedArguments = context.arguments.mapValues { $0.value }
-                return try await context.service.callTool(name: name, arguments: bridgedArguments)
+                return try await context.service.callTool(name: context.toolName, arguments: bridgedArguments)
             }
             } catch is CancellationError {
                 throw CancellationError()
@@ -1083,7 +1094,9 @@ class MCPServerManager: ObservableObject {
             refreshToolCache()
         }
         if !isOpenAIFunctionCacheValid {
-            cachedOpenAIFunctions = cachedEnabledTools.map { $0.toOpenAIFunction() }
+            cachedOpenAIFunctions = cachedEnabledTools.map { tool in
+                tool.toOpenAIFunction(exposedName: exposedToolNames[tool.id])
+            }
             isOpenAIFunctionCacheValid = true
         }
         return cachedOpenAIFunctions
@@ -1095,7 +1108,11 @@ class MCPServerManager: ObservableObject {
         cachedEnabledTools = availableTools.filter { tool in
             enabledServerNames.contains(tool.serverName)
         }
-        toolLookup = Dictionary(cachedEnabledTools.map { ($0.name, $0) }, uniquingKeysWith: { _, last in last })
+        exposedToolNames = MCPToolNaming.exposedNames(for: cachedEnabledTools, reserved: Self.reservedToolNames)
+        toolLookup = Dictionary(
+            cachedEnabledTools.map { (exposedToolNames[$0.id] ?? $0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         cachedOpenAIFunctions = [] // Invalidate OpenAI format cache
         isToolCacheValid = true
         isOpenAIFunctionCacheValid = false

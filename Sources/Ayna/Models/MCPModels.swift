@@ -57,16 +57,51 @@ struct MCPTool: Identifiable, Codable, Equatable, Sendable {
         self.serverName = serverName
     }
 
-    /// Convert to OpenAI function format
-    func toOpenAIFunction() -> [String: Any] {
+    /// Convert to OpenAI function format, optionally under a model-facing alias.
+    func toOpenAIFunction(exposedName: String? = nil) -> [String: Any] {
         [
             "type": "function",
             "function": [
-                "name": name,
+                "name": exposedName ?? name,
                 "description": description,
                 "parameters": inputSchema.toJSON()
             ]
         ]
+    }
+}
+
+/// Resolves the names MCP tools are offered to the model under.
+enum MCPToolNaming {
+    /// Model-facing name for each tool. A tool keeps its own name unless that name is reserved
+    /// (served by Ayna) or shared with another tool; then it becomes `server__tool`, cleaned to
+    /// the `^[A-Za-z0-9_-]{1,64}$` form function-calling APIs accept.
+    static func exposedNames(for tools: [MCPTool], reserved: Set<String>) -> [UUID: String] {
+        let countsByName = tools.reduce(into: [String: Int]()) { $0[$1.name, default: 0] += 1 }
+        var used = reserved
+        var result: [UUID: String] = [:]
+        // Unprefixed names first, so a clean name is never taken by another tool's alias.
+        for tool in tools where countsByName[tool.name] == 1 && !reserved.contains(tool.name) {
+            result[tool.id] = tool.name
+            used.insert(tool.name)
+        }
+        for tool in tools where result[tool.id] == nil {
+            let base = sanitized("\(tool.serverName)__\(tool.name)")
+            var candidate = base
+            var suffix = 2
+            while used.contains(candidate) {
+                let tail = "_\(suffix)"
+                candidate = String(base.prefix(64 - tail.count)) + tail
+                suffix += 1
+            }
+            result[tool.id] = candidate
+            used.insert(candidate)
+        }
+        return result
+    }
+
+    private static func sanitized(_ name: String) -> String {
+        let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+        return String(String(name.map { allowed.contains($0) ? $0 : "_" }).prefix(64))
     }
 }
 

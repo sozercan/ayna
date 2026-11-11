@@ -460,21 +460,13 @@ final class PermissionService {
         ])
     }
 
-    /// Approves all pending file operations.
-    ///
-    /// - Parameter rememberForSession: Whether to remember approvals for the session
-    func approveAllFileOperations(rememberForSession: Bool = true) {
-        let fileOps = pendingApprovals.filter {
-            $0.toolName == "write_file" ||
-                $0.toolName == "edit_file" ||
-                $0.toolName == "read_file"
+    /// Approves every pending request for a conversation (the "Allow All" action).
+    func approveAllPending(forConversation conversationId: UUID) {
+        let toApprove = pendingApprovals.filter { $0.conversationId == conversationId }
+        for approval in toApprove {
+            approve(approval.id)
         }
-
-        for approval in fileOps {
-            approve(approval.id, rememberForSession: rememberForSession)
-        }
-
-        log(.info, "Batch file operations approved", metadata: ["count": "\(fileOps.count)"])
+        log(.info, "All pending approvals granted", metadata: ["count": "\(toApprove.count)"])
     }
 
     /// Denies all pending approvals for a conversation.

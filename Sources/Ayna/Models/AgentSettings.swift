@@ -133,13 +133,14 @@ struct AgentSettings: Codable, Sendable {
                 return
             }
 
-            builtinService.isEnabled = settings.isEnabled
-            builtinService.commandTimeoutSeconds = settings.commandTimeoutSeconds
+            builtinService.apply(settings)
             permissionService.approvalTimeoutSeconds = settings.approvalTimeoutSeconds
             permissionService.persistApprovalsAcrossSessions = settings.persistApprovals
 
-            // Also control WebFetchService based on agent settings
+            // web_fetch is served by WebFetchService, which has no approval flow: it is either
+            // available (any level but Denied) or not.
             WebFetchService.shared.isEnabled = settings.isEnabled
+                && settings.permissionLevel(for: WebFetchService.toolName) != .denied
             WebFetchService.shared.timeoutSeconds = settings.commandTimeoutSeconds
         }
 

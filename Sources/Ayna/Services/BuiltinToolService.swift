@@ -20,7 +20,6 @@ import os.log
 // - `list_directory`: List files in directory
 // - `search_files`: Grep-like search
 // - `run_command`: Execute shell command
-// - `web_fetch`: Fetch content from URL
 //
 // Uses dependency injection via SwiftUI Environment.
 #if os(macOS)
@@ -74,6 +73,7 @@ import os.log
             var isCancelled = false
             var completionCommitted = false
             var terminationRequested = false
+            var timedOut = false
         }
 
         private let lock = NSLock()
@@ -117,7 +117,18 @@ import os.log
         }
 
         func timeout() {
+            lock.lock()
+            if !state.completionCommitted {
+                state.timedOut = true
+            }
+            lock.unlock()
             requestTermination(markCancelled: false)
+        }
+
+        var didTimeOut: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return state.timedOut
         }
 
         func commitCompletion() -> Bool {
@@ -185,19 +196,25 @@ import os.log
         // MARK: - Properties
 
         private let permissionService: PermissionService
-        private let shellSandbox: ShellSandbox
-        private let pathValidator: PathValidator
+        private var shellSandbox: ShellSandbox
+        private var pathValidator: PathValidator
         private let processStartGate: @Sendable () async -> Void
         private let processCompletionGate: @Sendable () async -> Void
         private let processEscalationGate: @Sendable () async -> Void
         private let subprocessSignal: CommandSubprocess.SignalProcess
-        let projectRoot: URL?
+        private(set) var projectRoot: URL?
 
         /// Whether the service is enabled
         var isEnabled: Bool = true
 
         /// Timeout for shell commands in seconds
         var commandTimeoutSeconds: Int = 30
+
+        /// Per-tool permission levels from Agent settings. Missing tools ask every time.
+        var toolPermissions: [String: PermissionLevel] = AgentSettings.default.defaultPermissions
+
+        /// Whether writes outside the project root need approval (only applies with a root set).
+        var requireApprovalOutsideProject = true
 
         /// Maximum file size to read (10 MB)
         let maxReadSize: Int = 10 * 1024 * 1024
@@ -225,7 +242,6 @@ import os.log
             static let listDirectory = "list_directory"
             static let searchFiles = "search_files"
             static let runCommand = "run_command"
-            static let webFetch = "web_fetch"
         }
 
         // MARK: - Initialization
@@ -251,6 +267,87 @@ import os.log
             self.subprocessSignal = subprocessSignal
         }
 
+        /// Applies Agent settings: enablement, timeouts, permission levels, project root, and
+        /// the extra allowed commands and blocked patterns.
+        func apply(_ settings: AgentSettings) {
+            isEnabled = settings.isEnabled
+            commandTimeoutSeconds = settings.commandTimeoutSeconds
+            toolPermissions = settings.defaultPermissions
+            requireApprovalOutsideProject = settings.requireApprovalOutsideProject
+            let root = settings.projectRootPath.flatMap { path in
+                path.isEmpty ? nil : URL(fileURLWithPath: PathValidator.expandPath(path), isDirectory: true)
+            }
+            projectRoot = root
+            pathValidator = PathValidator(projectRoot: root)
+            shellSandbox = ShellSandbox(
+                allowedCommands: ShellSandbox.defaultAllowed.union(
+                    settings.additionalAllowedCommands.map { $0.trimmingCharacters(in: .whitespaces) }
+                        .filter { !$0.isEmpty }
+                ),
+                blockedPatterns: ShellSandbox.defaultBlocked + settings.additionalBlockedPatterns
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty },
+                projectRoot: root
+            )
+        }
+
+        // MARK: - Permission Gate
+
+        /// Folder that relative tool paths and commands start from: the project root when set,
+        /// otherwise the home folder (the app's own working directory is `/`).
+        var baseDirectory: URL {
+            projectRoot ?? FileManager.default.homeDirectoryForCurrentUser
+        }
+
+        /// Anchors a relative path at `baseDirectory`. Paths starting with `/`, `~` or `$` are
+        /// left for `PathValidator.expandPath`, so expansion still happens exactly once.
+        func anchoredPath(_ path: String) -> String {
+            guard !path.hasPrefix("/"), !path.hasPrefix("~"), !path.hasPrefix("$") else { return path }
+            let base = baseDirectory.path
+            guard !path.isEmpty, path != "." else { return base }
+            return (base as NSString).appendingPathComponent(path)
+        }
+
+        /// Asks for approval according to the tool's permission level. `riskReason` is set when a
+        /// path or sandbox check needs approval whatever the level (except Denied, which refuses).
+        private func authorize(
+            tool: String,
+            description: String,
+            details: String,
+            riskReason: String?,
+            diffPreview: String? = nil,
+            remembersApproval: Bool = true,
+            conversationId: UUID
+        ) async throws {
+            let level = toolPermissions[tool] ?? .askAlways
+            guard level != .denied else {
+                throw ToolExecutionError.permissionDenied(tool: tool, reason: "Set to Denied in Agent settings")
+            }
+            // Ask Once remembers every approval for the session; Ask Always only remembers when
+            // the user picks "Allow & Remember". Automatic asks only for risky paths or commands.
+            let rememberedForSession = permissionService.checkPermission(
+                tool: tool,
+                details: details,
+                defaultLevel: .askAlways
+            ) == .automatic
+            guard !rememberedForSession, level != .automatic || riskReason != nil else { return }
+
+            let approved = await permissionService.requestApproval(
+                toolName: tool,
+                description: riskReason.map { "\(description): \($0)" } ?? description,
+                details: details,
+                diffPreview: diffPreview,
+                conversationId: conversationId
+            )
+            try Task.checkCancellation()
+            guard approved else {
+                throw ToolExecutionError.permissionDenied(tool: tool, reason: "User denied")
+            }
+            if level == .askOnce, remembersApproval {
+                permissionService.recordSessionApproval(tool: tool, details: details)
+            }
+        }
+
         // MARK: - File Operations
 
         /// Reads a file and returns its contents.
@@ -266,7 +363,7 @@ import os.log
 
             log(.info, "read_file requested", metadata: ["path": path])
 
-            guard let resolvedURL = pathValidator.canonicalize(path) else {
+            guard let resolvedURL = pathValidator.canonicalize(anchoredPath(path)) else {
                 throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path")
             }
             return try await readFile(at: resolvedURL, displayPath: path, conversationId: conversationId)
@@ -274,24 +371,33 @@ import os.log
 
         /// Validates, approves if needed, and reads an already-resolved file URL. The URL is
         /// never re-expanded, so literal `$` or `~` in a resolved path cannot redirect the read.
-        private func readFile(at resolvedURL: URL, displayPath path: String, conversationId: UUID) async throws -> String {
-            let validation = pathValidator.validate(url: resolvedURL, operation: .read)
-            switch validation {
+        private func readFile(
+            at resolvedURL: URL,
+            displayPath path: String,
+            tool: String = ToolName.readFile,
+            conversationId: UUID
+        ) async throws -> String {
+            let riskReason: String?
+            switch pathValidator.validate(url: resolvedURL, operation: .read) {
             case let .denied(reason):
                 throw ToolExecutionError.invalidPath(path: path, reason: reason)
             case let .requiresApproval(reason):
-                let approved = await permissionService.requestApproval(
-                    toolName: ToolName.readFile,
-                    description: "Read file: \(reason)",
+                riskReason = reason
+            case .allowed:
+                riskReason = nil
+            }
+            // edit_file reads through here too; its own permission level governs the write
+            // below, so only a sensitive path needs approval for that read.
+            if tool == ToolName.readFile || riskReason != nil {
+                try await authorize(
+                    tool: tool,
+                    description: tool == ToolName.readFile ? "Read file" : "Read file before editing",
                     details: resolvedURL.path,
+                    riskReason: riskReason,
+                    // Approving this read must not count as approving the edit itself.
+                    remembersApproval: tool == ToolName.readFile,
                     conversationId: conversationId
                 )
-                try Task.checkCancellation()
-                if !approved {
-                    throw ToolExecutionError.permissionDenied(tool: ToolName.readFile, reason: "User denied")
-                }
-            case .allowed:
-                break
             }
 
             guard FileManager.default.fileExists(atPath: resolvedURL.path) else {
@@ -347,9 +453,14 @@ import os.log
             }
 
             log(.info, "write_file requested", metadata: ["path": path])
+            let path = anchoredPath(path)
 
             // Validate path
-            let validation = pathValidator.validate(path, operation: .write)
+            let validation = pathValidator.validate(
+                path,
+                operation: .write,
+                requireApprovalOutsideProject: requireApprovalOutsideProject
+            )
             let requiresApprovalReason: String?
             switch validation {
             case let .denied(reason):
@@ -364,34 +475,25 @@ import os.log
             // retargeted while approval is pending cannot redirect the write.
             let approvedTarget = resolvedTargetURL(for: path)
 
-            // Write operations always require approval unless already approved.
             // Approvals (including remembered ones) are keyed by the resolved target,
             // so retargeting a symlink between calls requires fresh approval.
-            let permissionLevel = permissionService.checkPermission(
+            try await authorize(
                 tool: ToolName.writeFile,
+                description: requiresApprovalReason == nil ? "Create/overwrite file" : "Write file",
                 details: approvedTarget.path,
-                defaultLevel: .askOnce
+                riskReason: requiresApprovalReason,
+                conversationId: conversationId
             )
-
-            if permissionLevel != .automatic {
-                let description = requiresApprovalReason.map { "Write file: \($0)" } ?? "Create/overwrite file"
-                let approved = await permissionService.requestApproval(
-                    toolName: ToolName.writeFile,
-                    description: description,
-                    details: approvedTarget.path,
-                    conversationId: conversationId
-                )
-                try Task.checkCancellation()
-                if !approved {
-                    throw ToolExecutionError.permissionDenied(tool: ToolName.writeFile, reason: "User denied")
-                }
-            }
 
             // Re-resolve at operation time and refuse if the target moved (TOCTOU)
             let url = try requireUnchangedTarget(approvedTarget, for: path)
 
             // Re-validate the resolved path to catch symlink changes
-            let revalidation = pathValidator.validate(url: url, operation: .write)
+            let revalidation = pathValidator.validate(
+                url: url,
+                operation: .write,
+                requireApprovalOutsideProject: requireApprovalOutsideProject
+            )
             switch revalidation {
             case let .denied(reason):
                 throw ToolExecutionError.invalidPath(path: path, reason: "Path denied after re-resolution: \(reason)")
@@ -458,6 +560,7 @@ import os.log
             }
 
             log(.info, "edit_file requested", metadata: ["path": path])
+            let path = anchoredPath(path)
 
             // Validate inputs
             guard !oldText.isEmpty else {
@@ -479,6 +582,7 @@ import os.log
             let currentContent = try await readFile(
                 at: approvedTarget,
                 displayPath: path,
+                tool: ToolName.editFile,
                 conversationId: conversationId
             )
             _ = try requireUnchangedTarget(approvedTarget, for: path)
@@ -501,7 +605,11 @@ import os.log
             let diffPreview = generateDiffPreview(oldText: oldText, newText: newText)
 
             // Validate path for write
-            let validation = pathValidator.validate(path, operation: .write)
+            let validation = pathValidator.validate(
+                path,
+                operation: .write,
+                requireApprovalOutsideProject: requireApprovalOutsideProject
+            )
             let editApprovalReason: String?
             switch validation {
             case let .denied(reason):
@@ -514,32 +622,24 @@ import os.log
 
             // Keyed by the resolved target, like write_file, so remembered approvals
             // cannot follow a retargeted symlink to a different file.
-            let permissionLevel = permissionService.checkPermission(
+            try await authorize(
                 tool: ToolName.editFile,
+                description: "Edit file",
                 details: approvedTarget.path,
-                defaultLevel: .askOnce
+                riskReason: editApprovalReason,
+                diffPreview: diffPreview,
+                conversationId: conversationId
             )
-
-            if permissionLevel != .automatic {
-                let description = editApprovalReason.map { "Edit file: \($0)" } ?? "Edit file"
-                let approved = await permissionService.requestApproval(
-                    toolName: ToolName.editFile,
-                    description: description,
-                    details: approvedTarget.path,
-                    diffPreview: diffPreview,
-                    conversationId: conversationId
-                )
-                try Task.checkCancellation()
-                if !approved {
-                    throw ToolExecutionError.permissionDenied(tool: ToolName.editFile, reason: "User denied")
-                }
-            }
 
             // Re-resolve at operation time and refuse if the target moved (TOCTOU)
             let url = try requireUnchangedTarget(approvedTarget, for: path)
 
             // Re-validate the resolved path to catch symlink changes
-            let revalidation = pathValidator.validate(url: url, operation: .write)
+            let revalidation = pathValidator.validate(
+                url: url,
+                operation: .write,
+                requireApprovalOutsideProject: requireApprovalOutsideProject
+            )
             switch revalidation {
             case let .denied(reason):
                 throw ToolExecutionError.invalidPath(path: path, reason: "Path denied after re-resolution: \(reason)")
@@ -573,26 +673,25 @@ import os.log
             }
 
             log(.info, "list_directory requested", metadata: ["path": path])
+            let path = anchoredPath(path)
 
             // Validate path
-            let validation = pathValidator.validate(path, operation: .read)
-            switch validation {
+            let riskReason: String?
+            switch pathValidator.validate(path, operation: .read) {
             case let .denied(reason):
                 throw ToolExecutionError.invalidPath(path: path, reason: reason)
             case let .requiresApproval(reason):
-                let approved = await permissionService.requestApproval(
-                    toolName: ToolName.listDirectory,
-                    description: "List directory: \(reason)",
-                    details: path,
-                    conversationId: conversationId
-                )
-                try Task.checkCancellation()
-                if !approved {
-                    throw ToolExecutionError.permissionDenied(tool: ToolName.listDirectory, reason: "User denied")
-                }
+                riskReason = reason
             case .allowed:
-                break
+                riskReason = nil
             }
+            try await authorize(
+                tool: ToolName.listDirectory,
+                description: "List directory",
+                details: path,
+                riskReason: riskReason,
+                conversationId: conversationId
+            )
 
             // Resolve path
             guard let resolvedURL = pathValidator.canonicalize(path) else {
@@ -639,26 +738,26 @@ import os.log
             }
 
             log(.info, "search_files requested", metadata: ["pattern": pattern, "path": path])
+            let path = anchoredPath(path)
 
             // Validate path
             let validation = pathValidator.validate(path, operation: .read)
+            let riskReason: String?
             switch validation {
             case let .denied(reason):
                 throw ToolExecutionError.invalidPath(path: path, reason: reason)
             case let .requiresApproval(reason):
-                let approved = await permissionService.requestApproval(
-                    toolName: ToolName.searchFiles,
-                    description: "Search files: \(reason)",
-                    details: "Pattern: \(pattern) in \(path)",
-                    conversationId: conversationId
-                )
-                try Task.checkCancellation()
-                if !approved {
-                    throw ToolExecutionError.permissionDenied(tool: ToolName.searchFiles, reason: "User denied")
-                }
+                riskReason = reason
             case .allowed:
-                break
+                riskReason = nil
             }
+            try await authorize(
+                tool: ToolName.searchFiles,
+                description: "Search files",
+                details: "Pattern: \(pattern) in \(path)",
+                riskReason: riskReason,
+                conversationId: conversationId
+            )
 
             // Resolve path
             guard let resolvedURL = pathValidator.canonicalize(path) else {
@@ -753,6 +852,7 @@ import os.log
             }
 
             // Validate working directory if provided
+            let workingDirectory = workingDirectory.map(anchoredPath)
             if let workingDirectory {
                 if !shellSandbox.isWorkingDirectoryAllowed(workingDirectory) {
                     throw ToolExecutionError.invalidPath(
@@ -762,32 +862,20 @@ import os.log
                 }
             }
 
-            // Check permission
-            let permissionLevel = permissionService.checkPermission(
+            try await authorize(
                 tool: ToolName.runCommand,
+                description: "Execute shell command",
                 details: command,
-                defaultLevel: validation == .allowed ? .askOnce : .askAlways
+                riskReason: validation == .allowed ? nil : "Command is not on the allowed list",
+                conversationId: conversationId
             )
-
-            if permissionLevel != .automatic {
-                let approved = await permissionService.requestApproval(
-                    toolName: ToolName.runCommand,
-                    description: "Execute shell command",
-                    details: command,
-                    conversationId: conversationId
-                )
-                try Task.checkCancellation()
-                if !approved {
-                    throw ToolExecutionError.permissionDenied(tool: ToolName.runCommand, reason: "User denied")
-                }
-            }
 
             try Task.checkCancellation()
 
             // Execute command off the main thread to prevent UI freezes
             let startTime = Date()
             let timeoutSeconds = commandTimeoutSeconds
-            let workingDir = workingDirectory.map { URL(fileURLWithPath: $0) } ?? projectRoot
+            let workingDir = workingDirectory.map { URL(fileURLWithPath: PathValidator.expandPath($0)) } ?? baseDirectory
 
             let result = try await executeProcess(
                 command: command,
@@ -802,10 +890,19 @@ import os.log
                 "duration": String(format: "%.2fs", result.duration)
             ])
 
+            if result.timedOut {
+                throw ToolExecutionError.commandTimeout(
+                    command: command,
+                    timeoutSeconds: timeoutSeconds,
+                    stdout: result.stdout,
+                    stderr: result.stderr
+                )
+            }
             if result.exitCode != 0 {
                 throw ToolExecutionError.commandFailed(
                     command: command,
                     exitCode: result.exitCode,
+                    stdout: result.stdout,
                     stderr: result.stderr
                 )
             }
@@ -912,7 +1009,8 @@ import os.log
                                 exitCode: terminationStatus,
                                 stdout: stdout,
                                 stderr: stderr,
-                                duration: duration
+                                duration: duration,
+                                timedOut: processHolder.didTimeOut
                             )
 
                             continuation.resume(returning: commandResult)
@@ -921,6 +1019,7 @@ import os.log
                                 continuation.resume(throwing: ToolExecutionError.commandFailed(
                                     command: command,
                                     exitCode: -1,
+                                    stdout: "",
                                     stderr: error.localizedDescription
                                 ))
                             } else {
@@ -933,8 +1032,6 @@ import os.log
                 processHolder.cancel()
             }
         }
-
-        // MARK: - Web Fetch
 
         // MARK: - Tool Call Execution
 
@@ -1009,12 +1106,6 @@ import os.log
                         conversationId: conversationId
                     )
                     return formatCommandResult(result)
-
-                case ToolName.webFetch:
-                    guard let url = arguments["url"] as? String else {
-                        return "ERROR: Missing required parameter 'url'"
-                    }
-                    return try await webFetch(url: url, conversationId: conversationId)
 
                 default:
                     return "ERROR: Unknown tool '\(toolName)'"
