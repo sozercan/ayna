@@ -31,9 +31,6 @@ let package = Package(
                 "App/Assets.xcassets",
                 "Info.plist",
             ],
-            resources: [
-                .process("Resources"),
-            ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
             ],

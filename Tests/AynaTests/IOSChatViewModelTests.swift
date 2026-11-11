@@ -95,7 +95,7 @@
                 aiService: aiService
             )
             let pastedImage = PastedImage(
-                data: Data([0x89, 0x50, 0x4E, 0x47]),
+                data: TestHelpers.imageData(jpeg: false, width: 1),
                 mimeType: "image/png",
                 fileExtension: "png"
             )
@@ -143,7 +143,7 @@
             )
             viewModel.pastedImages = (0 ... ChatDraftContent.maximumImageCount).map { index in
                 PastedImage(
-                    data: Data([0x89, 0x50, 0x4E, 0x47, UInt8(index), 0, 0, 0, 0, 0, 0, 0]),
+                    data: TestHelpers.imageData(jpeg: false, width: index + 1),
                     mimeType: "image/png",
                     fileExtension: "png"
                 )
@@ -281,12 +281,12 @@
                 attachmentStorage: storage
             )
             let capturedPaste = PastedImage(
-                data: Data([0x89, 0x50, 0x4E, 0x47]),
+                data: TestHelpers.imageData(jpeg: false, width: 3),
                 mimeType: "image/png",
                 fileExtension: "png"
             )
             let laterPaste = PastedImage(
-                data: Data([0xFF, 0xD8, 0xFF, 0xE0]),
+                data: TestHelpers.imageData(jpeg: true, width: 4),
                 mimeType: "image/jpeg",
                 fileExtension: "jpg"
             )
@@ -423,7 +423,7 @@
             )
             viewModel.pastedImages = [
                 PastedImage(
-                    data: Data([0x89, 0x50, 0x4E, 0x47]),
+                    data: TestHelpers.imageData(jpeg: false, width: 5),
                     mimeType: "image/png",
                     fileExtension: "png"
                 )
@@ -492,7 +492,7 @@
                 attachmentStorage: storage
             )
             let pastedImage = PastedImage(
-                data: Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A]),
+                data: TestHelpers.imageData(jpeg: false, width: 6),
                 mimeType: "image/png",
                 fileExtension: "png"
             )
@@ -561,12 +561,12 @@
                 attachmentStorage: storage
             )
             let failedPaste = PastedImage(
-                data: Data([0x89, 0x50, 0x4E, 0x47, 0x01]),
+                data: TestHelpers.imageData(jpeg: false, width: 7),
                 mimeType: "image/png",
                 fileExtension: "png"
             )
             let laterPaste = PastedImage(
-                data: Data([0xFF, 0xD8, 0xFF, 0xE0, 0x02]),
+                data: TestHelpers.imageData(jpeg: true, width: 8),
                 mimeType: "image/jpeg",
                 fileExtension: "jpg"
             )
@@ -636,7 +636,7 @@
                 attachmentStorage: storage
             )
             let pastedImage = PastedImage(
-                data: Data([0x89, 0x50, 0x4E, 0x47, 0x03]),
+                data: TestHelpers.imageData(jpeg: false, width: 9),
                 mimeType: "image/png",
                 fileExtension: "png"
             )
@@ -955,7 +955,7 @@
             viewModel.selectedModels = [model]
             viewModel.messageText = "Retry this new chat"
             viewModel.pastedImages = [PastedImage(
-                data: Data([0x89, 0x50, 0x4E, 0x47, 0x04]),
+                data: TestHelpers.imageData(jpeg: false, width: 10),
                 mimeType: "image/png",
                 fileExtension: "png"
             )]
@@ -998,7 +998,7 @@
             viewModel.selectedModels = Set(models)
             viewModel.messageText = "Compare this new chat"
             viewModel.pastedImages = [PastedImage(
-                data: Data([0x89, 0x50, 0x4E, 0x47, 0x05]),
+                data: TestHelpers.imageData(jpeg: false, width: 11),
                 mimeType: "image/png",
                 fileExtension: "png"
             )]

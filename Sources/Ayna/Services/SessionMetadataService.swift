@@ -79,7 +79,9 @@ final class SessionMetadataService {
     }
 
     private var currentAppVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
+            // The SwiftPM binary embeds Info.plist without expanding build settings.
+            .flatMap { $0.hasPrefix("$(") ? nil : $0 } ?? "1.0"
     }
 
     private var isDarkModeEnabled: Bool {

@@ -19,6 +19,9 @@ permissions:
   contents: write
   pull-requests: write
 
+env:
+  XCODE_APP: /Applications/Xcode_26.2.app
+
 jobs:
   release:
     runs-on: macos-26
@@ -29,6 +32,29 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0  # Full history for changelog generation
+
+    # A manual run publishes a release and an appcast update, so it must build an existing
+    # release tag, from that tag.
+    - name: Guard manual releases
+      if: github.event_name == 'workflow_dispatch'
+      env:
+        TAG: ${{ inputs.tag }}
+      run: |
+        if [ -z "$TAG" ]; then
+          echo "Error: manual release runs need the tag to release (for example v1.2.3)"
+          exit 1
+        fi
+        if ! TAG_COMMIT=$(git rev-parse -q --verify "refs/tags/${TAG}^{commit}"); then
+          echo "Error: tag $TAG does not exist"
+          exit 1
+        fi
+        if [ "$TAG_COMMIT" != "$(git rev-parse HEAD)" ]; then
+          echo "Error: run this workflow from the $TAG tag, not ${GITHUB_REF_NAME}"
+          exit 1
+        fi
+
+    - name: Select Xcode version
+      run: sudo xcode-select -s "$XCODE_APP/Contents/Developer"
 
     - name: Configure git user
       run: |
@@ -78,11 +104,13 @@ jobs:
 
     - name: Determine version from tag
       id: version
+      env:
+        INPUT_TAG: ${{ inputs.tag }}
       run: |
-        if [ -n "${{ inputs.tag }}" ]; then
-          TAG="${{ inputs.tag }}"
-        elif [ -n "${{ github.ref_name }}" ]; then
-          TAG="${{ github.ref_name }}"
+        if [ -n "$INPUT_TAG" ]; then
+          TAG="$INPUT_TAG"
+        elif [ -n "$GITHUB_REF_NAME" ]; then
+          TAG="$GITHUB_REF_NAME"
         else
           TAG="0.0.0"
         fi
@@ -161,11 +189,13 @@ jobs:
 
     - name: Determine artifact name
       id: artifact
+      env:
+        INPUT_TAG: ${{ inputs.tag }}
       run: |
-        if [ -n "${{ inputs.tag }}" ]; then
-          TAG="${{ inputs.tag }}"
-        elif [ -n "${{ github.ref_name }}" ]; then
-          TAG="${{ github.ref_name }}"
+        if [ -n "$INPUT_TAG" ]; then
+          TAG="$INPUT_TAG"
+        elif [ -n "$GITHUB_REF_NAME" ]; then
+          TAG="$GITHUB_REF_NAME"
         else
           TAG="v${{ steps.version.outputs.version }}"
         fi

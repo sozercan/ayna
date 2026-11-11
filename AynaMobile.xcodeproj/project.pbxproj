@@ -18,6 +18,13 @@
 		E7000109 /* WatchMarkdownRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7000209 /* WatchMarkdownRendererTests.swift */; };
 		E700010A /* WatchSyncChatViewModelNativeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E700020A /* WatchSyncChatViewModelNativeTests.swift */; };
 		E700010B /* WatchSyncConversationStoreNativeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E700020B /* WatchSyncConversationStoreNativeTests.swift */; };
+		F8000101 /* TestHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7000202 /* TestHelpers.swift */; };
+		F8000102 /* TestTags.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7000203 /* TestTags.swift */; };
+		F8000103 /* ScriptedConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8000204 /* ScriptedConversationStore.swift */; };
+		F8000104 /* ConversationExporterIOSTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8000205 /* ConversationExporterIOSTests.swift */; };
+		F8000105 /* IOSChatViewModelAttachmentHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8000206 /* IOSChatViewModelAttachmentHistoryTests.swift */; };
+		F8000106 /* IOSChatViewModelStreamingCoalescingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8000207 /* IOSChatViewModelStreamingCoalescingTests.swift */; };
+		F8000107 /* IOSChatViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8000208 /* IOSChatViewModelTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -27,6 +34,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = C5000500;
 			remoteInfo = "Ayna-watchOS";
+		};
+		F8000800 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D6000800 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B4000500;
+			remoteInfo = "Ayna-iOS";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -45,6 +59,12 @@
 		E700020A /* WatchSyncChatViewModelNativeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSyncChatViewModelNativeTests.swift; sourceTree = "<group>"; };
 		E700020B /* WatchSyncConversationStoreNativeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSyncConversationStoreNativeTests.swift; sourceTree = "<group>"; };
 		E700020C /* Ayna-watchOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Ayna-watchOSTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		F8000204 /* ScriptedConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptedConversationStore.swift; sourceTree = "<group>"; };
+		F8000205 /* ConversationExporterIOSTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationExporterIOSTests.swift; sourceTree = "<group>"; };
+		F8000206 /* IOSChatViewModelAttachmentHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSChatViewModelAttachmentHistoryTests.swift; sourceTree = "<group>"; };
+		F8000207 /* IOSChatViewModelStreamingCoalescingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSChatViewModelStreamingCoalescingTests.swift; sourceTree = "<group>"; };
+		F8000208 /* IOSChatViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSChatViewModelTests.swift; sourceTree = "<group>"; };
+		F800020C /* Ayna-iOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Ayna-iOSTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -90,6 +110,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F8000300 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -98,6 +125,7 @@
 			children = (
 				D6000001 /* Sources/Ayna */,
 				E7000401 /* Ayna-watchOSTests */,
+				F8000401 /* Ayna-iOSTests */,
 				D6000402 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -108,6 +136,7 @@
 				B4000200 /* Ayna.app */,
 				C5000200 /* Ayna Watch App.app */,
 				E700020C /* Ayna-watchOSTests.xctest */,
+				F800020C /* Ayna-iOSTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -128,6 +157,19 @@
 				E700020B /* WatchSyncConversationStoreNativeTests.swift */,
 			);
 			name = "Ayna-watchOSTests";
+			path = Tests/AynaTests;
+			sourceTree = SOURCE_ROOT;
+		};
+		F8000401 /* Ayna-iOSTests */ = {
+			isa = PBXGroup;
+			children = (
+				F8000204 /* ScriptedConversationStore.swift */,
+				F8000205 /* ConversationExporterIOSTests.swift */,
+				F8000206 /* IOSChatViewModelAttachmentHistoryTests.swift */,
+				F8000207 /* IOSChatViewModelStreamingCoalescingTests.swift */,
+				F8000208 /* IOSChatViewModelTests.swift */,
+			);
+			name = "Ayna-iOSTests";
 			path = Tests/AynaTests;
 			sourceTree = SOURCE_ROOT;
 		};
@@ -192,6 +234,24 @@
 			productReference = E700020C /* Ayna-watchOSTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		F8000500 /* Ayna-iOSTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F8000700 /* Build configuration list for PBXNativeTarget "Ayna-iOSTests" */;
+			buildPhases = (
+				F8000600 /* Sources */,
+				F8000300 /* Frameworks */,
+				F8000601 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F8000801 /* PBXTargetDependency */,
+			);
+			name = "Ayna-iOSTests";
+			productName = "Ayna-iOSTests";
+			productReference = F800020C /* Ayna-iOSTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -205,6 +265,10 @@
 					E7000500 = {
 						CreatedOnToolsVersion = 16.2;
 						TestTargetID = C5000500;
+					};
+					F8000500 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = B4000500;
 					};
 				};
 			};
@@ -225,6 +289,7 @@
 				B4000500 /* Ayna-iOS */,
 				C5000500 /* Ayna-watchOS */,
 				E7000500 /* Ayna-watchOSTests */,
+				F8000500 /* Ayna-iOSTests */,
 			);
 		};
 /* End PBXProject section */
@@ -245,6 +310,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		E7000601 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F8000601 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -286,6 +358,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F8000600 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F8000101 /* TestHelpers.swift in Sources */,
+				F8000102 /* TestTags.swift in Sources */,
+				F8000103 /* ScriptedConversationStore.swift in Sources */,
+				F8000104 /* ConversationExporterIOSTests.swift in Sources */,
+				F8000105 /* IOSChatViewModelAttachmentHistoryTests.swift in Sources */,
+				F8000106 /* IOSChatViewModelStreamingCoalescingTests.swift in Sources */,
+				F8000107 /* IOSChatViewModelTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -293,6 +379,11 @@
 			isa = PBXTargetDependency;
 			target = C5000500 /* Ayna-watchOS */;
 			targetProxy = E7000800 /* PBXContainerItemProxy */;
+		};
+		F8000801 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B4000500 /* Ayna-iOS */;
+			targetProxy = F8000800 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -555,6 +646,49 @@
 			};
 			name = Release;
 		};
+		F8000B01 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 57QNR9B89Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.sertacozercan.ayna.iOSTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Ayna.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Ayna";
+			};
+			name = Debug;
+		};
+		F8000B02 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 57QNR9B89Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.sertacozercan.ayna.iOSTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Ayna.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Ayna";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -590,6 +724,15 @@
 			buildConfigurations = (
 				E7000B01 /* Debug */,
 				E7000B02 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F8000700 /* Build configuration list for PBXNativeTarget "Ayna-iOSTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F8000B01 /* Debug */,
+				F8000B02 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

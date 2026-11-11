@@ -27,6 +27,10 @@ on:
       - '.github/workflows/tests.yml'
   workflow_dispatch:
 
+# One Xcode for every job, so failures never come from mixed toolchains.
+env:
+  XCODE_APP: /Applications/Xcode_26.2.app
+
 jobs:
   macos_unit_tests:
     name: macOS Unit Tests
@@ -39,7 +43,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Select Xcode version
-      run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+      run: sudo xcode-select -s "$XCODE_APP/Contents/Developer"
 
     - name: Show Swift version
       run: swift --version
@@ -52,45 +56,81 @@ jobs:
     - name: Run unit tests serially
       run: swift test --no-parallel
 
-  ios_build_check:
-    name: iOS Build Check
+  # iOS and watchOS compile checks happen in the UI and unit test jobs below, which build the
+  # same sources for those platforms with xcodebuild.
+
+  ios_unit_tests:
+    name: iOS Unit Tests
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
     - name: Checkout code
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Select Xcode version
-      run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+      run: sudo xcode-select -s "$XCODE_APP/Contents/Developer"
 
-    - name: Show Swift version
-      run: swift --version
+    - name: Resolve iOS Simulator
+      id: ios_destination
+      shell: bash
+      run: |
+        set -euo pipefail
+        destination_id="$(xcrun simctl list devices available | grep "iPhone 17" | tail -1 | grep -oE '[A-F0-9-]{36}' || true)"
+        test -n "$destination_id"
+        echo "id=$destination_id" >> "$GITHUB_OUTPUT"
 
-    - name: Clear SPM artifacts cache
-      run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
+    - name: Boot iOS Simulator
+      env:
+        DEVICE_UDID: ${{ steps.ios_destination.outputs.id }}
+      run: |
+        xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
+        xcrun simctl bootstatus "$DEVICE_UDID" -b
 
-    - name: Compile for iOS
-      run: swift build --triple arm64-apple-ios26.0 --sdk "$(xcrun --sdk iphoneos --show-sdk-path)"
+    # Runs the iOS-only suites (IOSChatViewModel*, ConversationExporterIOSTests), which
+    # `swift test` on macOS compiles out.
+    - name: Run iOS unit tests (with retry)
+      env:
+        DEVICE_UDID: ${{ steps.ios_destination.outputs.id }}
+      run: |
+        set -o pipefail
+        for attempt in 1 2; do
+          echo "Attempt $attempt of 2"
+          if xcodebuild \
+            -project AynaMobile.xcodeproj \
+            -scheme Ayna-iOS \
+            -destination "id=$DEVICE_UDID" \
+            -destination-timeout 120 \
+            -derivedDataPath ./build/ios-unit \
+            -configuration Debug \
+            -resultBundlePath ./TestResults-iOS-Unit.xcresult \
+            -parallel-testing-enabled NO \
+            -only-testing:Ayna-iOSTests \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            test; then
+            echo "Tests passed on attempt $attempt"
+            break
+          fi
+          if [ $attempt -lt 2 ]; then
+            echo "Tests failed; rebooting the simulator and retrying..."
+            rm -rf ./TestResults-iOS-Unit.xcresult
+            xcrun simctl shutdown "$DEVICE_UDID" || true
+            xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
+            xcrun simctl bootstatus "$DEVICE_UDID" -b
+          else
+            echo "Tests failed after 2 attempts"
+            exit 1
+          fi
+        done
 
-  watchos_build_check:
-    name: watchOS Build Check
-    runs-on: macos-26
-    timeout-minutes: 20
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-    - name: Select Xcode version
-      run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
-
-    - name: Show Swift version
-      run: swift --version
-
-    - name: Clear SPM artifacts cache
-      run: rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
-
-    - name: Compile for watchOS
-      run: swift build --triple arm64-apple-watchos26.0 --sdk "$(xcrun --sdk watchos --show-sdk-path)"
+    - name: Upload test results on failure
+      if: failure()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: iOS-Unit-TestResults
+        path: TestResults-iOS-Unit.xcresult
+        retention-days: 7
 
   watchos_unit_tests:
     name: watchOS Unit Tests
@@ -101,7 +141,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Select Xcode version
-      run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+      run: sudo xcode-select -s "$XCODE_APP/Contents/Developer"
 
     - name: Resolve watchOS Simulator
       id: watch_destination
@@ -122,22 +162,48 @@ jobs:
         test -n "$destination_id"
         echo "id=$destination_id" >> "$GITHUB_OUTPUT"
 
-    - name: Run native watchOS unit tests
+    # A cold watchOS simulator often misses xcodebuild's destination timeout; boot it first.
+    - name: Boot watchOS Simulator
+      env:
+        DEVICE_UDID: ${{ steps.watch_destination.outputs.id }}
+      run: |
+        xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
+        xcrun simctl bootstatus "$DEVICE_UDID" -b
+
+    - name: Run native watchOS unit tests (with retry)
+      env:
+        DEVICE_UDID: ${{ steps.watch_destination.outputs.id }}
       run: |
         set -o pipefail
-        xcodebuild \
-          -project AynaMobile.xcodeproj \
-          -scheme Ayna-watchOS \
-          -destination "id=${{ steps.watch_destination.outputs.id }}" \
-          -destination-timeout 120 \
-          -derivedDataPath ./build/watchos-unit \
-          -configuration Debug \
-          -resultBundlePath ./TestResults-watchOS-Unit.xcresult \
-          -parallel-testing-enabled NO \
-          CODE_SIGN_IDENTITY="" \
-          CODE_SIGNING_REQUIRED=NO \
-          CODE_SIGNING_ALLOWED=NO \
-          test
+        for attempt in 1 2; do
+          echo "Attempt $attempt of 2"
+          if xcodebuild \
+            -project AynaMobile.xcodeproj \
+            -scheme Ayna-watchOS \
+            -destination "id=$DEVICE_UDID" \
+            -destination-timeout 120 \
+            -derivedDataPath ./build/watchos-unit \
+            -configuration Debug \
+            -resultBundlePath ./TestResults-watchOS-Unit.xcresult \
+            -parallel-testing-enabled NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            test; then
+            echo "Tests passed on attempt $attempt"
+            break
+          fi
+          if [ $attempt -lt 2 ]; then
+            echo "Tests failed; rebooting the simulator and retrying..."
+            rm -rf ./TestResults-watchOS-Unit.xcresult
+            xcrun simctl shutdown "$DEVICE_UDID" || true
+            xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
+            xcrun simctl bootstatus "$DEVICE_UDID" -b
+          else
+            echo "Tests failed after 2 attempts"
+            exit 1
+          fi
+        done
 
     - name: Upload test results on failure
       if: failure()
@@ -156,7 +222,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Select Xcode version
-      run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+      run: sudo xcode-select -s "$XCODE_APP/Contents/Developer"
 
     - name: Show Swift version
       run: swift --version
@@ -218,7 +284,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Select Xcode version
-      run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+      run: sudo xcode-select -s "$XCODE_APP/Contents/Developer"
 
     - name: Show Swift version
       run: swift --version
@@ -309,7 +375,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Select Xcode version
-      run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+      run: sudo xcode-select -s "$XCODE_APP/Contents/Developer"
 
     - name: Show Swift version
       run: swift --version

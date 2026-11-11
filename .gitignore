@@ -15,7 +15,6 @@ DerivedData/
 *.dSYM
 timeline.xctimeline
 playground.xcworkspace
-Package.resolved
 .netrc
 xcuserdata/
 .claude/

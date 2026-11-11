@@ -1,5 +1,7 @@
 @testable import Ayna
+import CoreGraphics
 import Foundation
+import ImageIO
 import Security
 import Testing
 
@@ -65,6 +67,32 @@ final class InMemoryKeychainStorage: KeychainStoring, @unchecked Sendable {
 }
 
 enum TestHelpers {
+    /// A real, decodable image (PNG or JPEG) for code that validates image data.
+    /// Different widths give different bytes when a test needs distinct images.
+    static func imageData(jpeg: Bool = false, width: Int = 1) -> Data {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return Data()
+        }
+        context.setFillColor(red: 0.2, green: 0.4, blue: 0.6, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: 1))
+        guard let image = context.makeImage() else { return Data() }
+        let output = NSMutableData()
+        let type = (jpeg ? "public.jpeg" : "public.png") as CFString
+        guard let destination = CGImageDestinationCreateWithData(output, type, 1, nil) else { return Data() }
+        CGImageDestinationAddImage(destination, image, nil)
+        CGImageDestinationFinalize(destination)
+        return output as Data
+    }
+
     static func makeTemporaryDirectory(name: String = UUID().uuidString) throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(name, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

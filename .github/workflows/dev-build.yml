@@ -16,6 +16,9 @@ on:
       - '.github/workflows/dev-build.yml'
   workflow_dispatch:
 
+env:
+  XCODE_APP: /Applications/Xcode_26.2.app
+
 jobs:
   build:
     runs-on: macos-26
@@ -26,7 +29,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Select Xcode version
-      run: sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer
+      run: sudo xcode-select -s "$XCODE_APP/Contents/Developer"
 
     - name: Show Swift version
       run: swift --version
@@ -36,7 +39,7 @@ jobs:
 
     - name: Get short SHA
       id: slug
-      run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      run: echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
     - name: Build app
       env:

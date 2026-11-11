@@ -54,6 +54,19 @@ In Xcode Test Plan, add tag names to "Include Tags" or "Exclude Tags" fields.
 swift test
 ```
 
+### iOS and watchOS Unit Tests
+
+Suites guarded by `#if os(iOS)` or `#if os(watchOS)` only run on a simulator:
+
+```bash
+xcodebuild -project AynaMobile.xcodeproj -scheme Ayna-iOS -only-testing:Ayna-iOSTests \
+  -destination 'platform=iOS Simulator,name=iPhone 17' CODE_SIGNING_ALLOWED=NO test
+xcodebuild -project AynaMobile.xcodeproj -scheme Ayna-watchOS \
+  -destination 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)' CODE_SIGNING_ALLOWED=NO test
+```
+
+New iOS-only test files must be added to the `Ayna-iOSTests` target in `AynaMobile.xcodeproj`.
+
 ### UI Tests (Views/Interactions)
 
 ```bash
