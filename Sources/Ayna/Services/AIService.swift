@@ -1028,7 +1028,11 @@ class AIService: ObservableObject {
         in messages: [Message],
         loadAttachmentData: @Sendable (String) async -> Data?
     ) async -> String? {
-        let attachments = messages.reduce(into: [Message.FileAttachment]()) { result, message in
+        // Image generation sends only the latest user turn, so older images cannot affect it.
+        let validatedMessages = usesOnlyImageGenerationModels(models)
+            ? Array(messages.last(where: { $0.role == .user }).map { [$0] } ?? [])
+            : messages
+        let attachments = validatedMessages.reduce(into: [Message.FileAttachment]()) { result, message in
             guard message.role == .user else { return }
             result.append(contentsOf: message.attachments ?? [])
         }
@@ -1037,6 +1041,14 @@ class AIService: ObservableObject {
             loading: attachments,
             loadAttachmentData: loadAttachmentData
         )
+    }
+
+    private func usesOnlyImageGenerationModels(_ models: [String]) -> Bool {
+        let normalizedModels = models
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return !normalizedModels.isEmpty
+            && normalizedModels.allSatisfy { getModelCapability($0) == .imageGeneration }
     }
 
     private func usesAnthropicModel(_ models: [String]) -> Bool {

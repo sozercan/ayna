@@ -255,7 +255,7 @@ struct MacNewChatView: View {
                 }
             }
         }
-        .chatAttachmentDropTarget(attachedFiles: $attachedFiles, pastedImageCount: pastedImages.count)
+        .chatAttachmentDropTarget(attachedFiles: $attachedFiles, pastedImages: $pastedImages)
         .onAppear {
             syncSelectedModelState()
         }
@@ -692,6 +692,18 @@ struct MacNewChatView: View {
                 uncommittedUserMessage = userMessage
             }
             guard sendPreparationID == preparationID, !Task.isCancelled else { return }
+            if preparation.prebuiltUserMessage == nil,
+               let failure = ConversationSendPreflight.unreadableAttachmentFailure(
+                   models: selectedModelsToSend.isEmpty ? [activeModel] : Array(selectedModelsToSend),
+                   selectedAttachmentCount: filesToSend.count + pastedImagesToSend.count,
+                   builtAttachmentCount: userMessage.attachments?.count ?? 0,
+                   aiService: aiService
+               )
+            {
+                errorMessage = failure.message
+                errorRecoverySuggestion = failure.recoverySuggestion
+                return
+            }
             guard ChatDraftContent.isSendable(
                 text: userMessage.content,
                 attachments: userMessage.attachments ?? []

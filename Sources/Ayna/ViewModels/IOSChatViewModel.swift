@@ -729,6 +729,22 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             return
         }
 
+        if let failure = ConversationSendPreflight.unreadableAttachmentFailure(
+            models: requestModels(for: payload),
+            selectedAttachmentCount: preparation.attachedFiles.count
+                + preparation.attachedImages.count
+                + preparation.pastedImages.count,
+            builtAttachmentCount: payload.attachments.count,
+            aiService: aiService
+        ) {
+            errorMessage = messageBuild.errors.isEmpty
+                ? failure.message
+                : ([failure.message] + messageBuild.errors).joined(separator: "\n")
+            errorRecoverySuggestion = failure.recoverySuggestion
+            restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
+            return
+        }
+
         prepareOrSendPayload(
             payload,
             consuming: preparation,

@@ -58,17 +58,22 @@ enum ChatAttachmentDrop {
 /// Makes a whole chat screen a drop target for file attachments.
 private struct ChatAttachmentDropModifier: ViewModifier {
     @Binding var attachedFiles: [URL]
-    let pastedImageCount: Int
+    @Binding var pastedImages: [PastedImage]
     @State private var isTargeted = false
 
     func body(content: Content) -> some View {
         content
             .onDrop(of: [.fileURL], isTargeted: $isTargeted) { providers in
                 let attachedFiles = $attachedFiles
-                let pastedImageCount = pastedImageCount
+                let pastedImages = $pastedImages
                 Task { @MainActor in
                     let fileURLs = await ChatAttachmentDrop.fileURLs(from: providers)
-                    ChatAttachmentDrop.attach(fileURLs, to: attachedFiles, pastedImageCount: pastedImageCount)
+                    // Read the count after loading: a paste may have finished in the meantime.
+                    ChatAttachmentDrop.attach(
+                        fileURLs,
+                        to: attachedFiles,
+                        pastedImageCount: pastedImages.wrappedValue.count
+                    )
                 }
                 return true
             }
@@ -95,8 +100,8 @@ private struct ChatAttachmentDropModifier: ViewModifier {
 
 extension View {
     /// Attaches files dropped anywhere on this view to the composer.
-    func chatAttachmentDropTarget(attachedFiles: Binding<[URL]>, pastedImageCount: Int) -> some View {
-        modifier(ChatAttachmentDropModifier(attachedFiles: attachedFiles, pastedImageCount: pastedImageCount))
+    func chatAttachmentDropTarget(attachedFiles: Binding<[URL]>, pastedImages: Binding<[PastedImage]>) -> some View {
+        modifier(ChatAttachmentDropModifier(attachedFiles: attachedFiles, pastedImages: pastedImages))
     }
 }
 #endif

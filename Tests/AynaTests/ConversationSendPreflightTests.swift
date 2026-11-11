@@ -88,6 +88,72 @@ struct ConversationSendPreflightTests {
         ) == nil)
     }
 
+    @Test
+    func `image sends stop when a selected attachment could not be read`() {
+        let service = AIService(urlSession: URLSession(configuration: .ephemeral))
+        let imageModel = "image-test"
+        let chatModel = "chat-test"
+        service.modelEndpointTypes[imageModel] = .imageGeneration
+        service.modelProviders[chatModel] = .openai
+
+        let failure = ConversationSendPreflight.unreadableAttachmentFailure(
+            models: [imageModel],
+            selectedAttachmentCount: 2,
+            builtAttachmentCount: 1,
+            aiService: service
+        )
+        #expect(failure?.message == "Unable to read an attached file, so the image request was not sent.")
+
+        #expect(ConversationSendPreflight.unreadableAttachmentFailure(
+            models: [imageModel],
+            selectedAttachmentCount: 2,
+            builtAttachmentCount: 2,
+            aiService: service
+        ) == nil)
+        #expect(ConversationSendPreflight.unreadableAttachmentFailure(
+            models: [chatModel],
+            selectedAttachmentCount: 2,
+            builtAttachmentCount: 1,
+            aiService: service
+        ) == nil)
+    }
+
+    @Test
+    func `image-only requests ignore corrupted images in earlier turns`() async {
+        let service = AIService(urlSession: URLSession(configuration: .ephemeral))
+        let imageModel = "image-test"
+        let chatModel = "chat-test"
+        service.modelEndpointTypes[imageModel] = .imageGeneration
+        service.modelProviders[chatModel] = .openai
+        let corruptedHistory = Message(
+            role: .user,
+            content: "Earlier",
+            attachments: [Message.FileAttachment(
+                fileName: "broken.png",
+                mimeType: "image/png",
+                localPath: "broken.png"
+            )]
+        )
+        let messages = [corruptedHistory, Message(role: .user, content: "Draw a cat")]
+        let corruptedData: @Sendable (String) async -> Data? = { _ in Data([0x89, 0x50, 0x4E, 0x47]) }
+
+        let imageFailure = await ConversationSendPreflight.attachmentDataFailure(
+            models: [imageModel],
+            messages: messages,
+            aiService: service,
+            loadAttachmentData: corruptedData
+        )
+        let chatFailure = await ConversationSendPreflight.attachmentDataFailure(
+            models: [chatModel],
+            messages: messages,
+            aiService: service,
+            loadAttachmentData: corruptedData
+        )
+
+        #expect(imageFailure == nil)
+        #expect(chatFailure?.message.contains("invalid or corrupted") == true)
+    }
+
     @Test(.timeLimit(.minutes(1)))
     // swiftlint:disable:next identifier_name
     func `Send preflight waits for full history before request preparation`() async throws {

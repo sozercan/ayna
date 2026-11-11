@@ -387,7 +387,7 @@ struct MacChatView: View {
                 )
             }
         }
-        .chatAttachmentDropTarget(attachedFiles: $attachedFiles, pastedImageCount: pastedImages.count)
+        .chatAttachmentDropTarget(attachedFiles: $attachedFiles, pastedImages: $pastedImages)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Spacer()
@@ -1084,6 +1084,24 @@ struct MacChatView: View {
                     in: userMessage,
                     ifOwnedByPreparation: ownsStoredAttachments
                 )
+                return
+            }
+
+            if preparation.prebuiltUserMessage == nil,
+               let failure = ConversationSendPreflight.unreadableAttachmentFailure(
+                   models: selectedModelsToSend.isEmpty ? [activeModel] : Array(selectedModelsToSend),
+                   selectedAttachmentCount: filesToSend.count + pastedImagesToSend.count,
+                   builtAttachmentCount: userMessage.attachments?.count ?? 0,
+                   aiService: aiService
+               )
+            {
+                discardStoredAttachments(
+                    in: userMessage,
+                    ifOwnedByPreparation: ownsStoredAttachments
+                )
+                errorMessage = failure.message
+                errorRecoverySuggestion = failure.recoverySuggestion
+                restorePendingAutoSendClaimIfNeeded(clearVisibleDraft: false)
                 return
             }
 
