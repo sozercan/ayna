@@ -544,6 +544,9 @@ struct ShellSandboxTests {
             ("env python3 -c 'print(1)'", .requiresApproval),
             ("find . -name '*.tmp' -delete", .requiresApproval),
             ("git -c core.pager=sh log", .requiresApproval),
+            ("git -ccore.fsmonitor=/tmp/hook status", .requiresApproval),
+            ("find . '-exec' printf ran {} +", .requiresApproval),
+            ("echo replaced > ~/.zshrc", .requiresApproval),
             ("git push origin main", .requiresApproval),
             ("python3 script.py", .requiresApproval),
             ("rm -r build", .requiresApproval),
@@ -577,7 +580,7 @@ struct ShellSandboxTests {
         let elapsed = Date().timeIntervalSince(start)
 
         #expect(allowed == iterations * 5)
-        #expect(requiresApproval == iterations * 8)
+        #expect(requiresApproval == iterations * 11)
         #expect(blocked == iterations * 4)
         print("BENCH ShellSandbox bulk validations: \(iterations * cases.count) in \(String(format: "%.4f", elapsed))s")
     }

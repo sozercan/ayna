@@ -473,7 +473,13 @@ struct ShellSandbox {
     /// Whether an allowlisted command would run some other program or project code, which the
     /// allowlist must not wave through (for example `env python3 -c ...` or `find -exec`).
     private func runsOtherCode(_ component: String, command: String) -> Bool {
-        let tokens = component.split(whereSeparator: \.isWhitespace).map(String.init)
+        // A redirection can write any file, outside the approval checks of the file tools.
+        if Self.hasOutputRedirection(component) {
+            return true
+        }
+        guard let tokens = Self.shellWords(component) else {
+            return true // Quoting the classifier cannot interpret
+        }
         guard let commandIndex = tokens.firstIndex(where: { $0 == command || $0.hasSuffix("/\(command)") }) else {
             return true
         }
@@ -491,8 +497,8 @@ struct ShellSandbox {
         case "fd":
             return arguments.contains { ["-x", "--exec", "-X", "--exec-batch"].contains($0) }
         case "git":
-            // Global options that change configuration can point git at any program.
-            if arguments.contains(where: { $0 == "-c" || $0.hasPrefix("--config-env") || $0.hasPrefix("--exec-path") }) {
+            // Configuration overrides (`-c x=y`, `-cx=y`) can point git at any program.
+            if arguments.contains(where: { $0.hasPrefix("-c") || $0.hasPrefix("--config-env") || $0.hasPrefix("--exec-path") }) {
                 return true
             }
             let subcommand = arguments.first { !$0.hasPrefix("-") }
@@ -506,6 +512,80 @@ struct ShellSandbox {
         default:
             return false
         }
+    }
+
+    /// Splits a command into words the way the shell does for quotes and backslashes, or nil when
+    /// the quoting is unbalanced.
+    static func shellWords(_ command: String) -> [String]? {
+        var words: [String] = []
+        var current = ""
+        var inWord = false
+        var quote: Character?
+        var escaped = false
+        for character in command {
+            if escaped {
+                current.append(character)
+                escaped = false
+                inWord = true
+                continue
+            }
+            if character == "\\", quote != "'" {
+                escaped = true
+                continue
+            }
+            if let open = quote {
+                if character == open {
+                    quote = nil
+                } else {
+                    current.append(character)
+                }
+                continue
+            }
+            if character == "'" || character == "\"" {
+                quote = character
+                inWord = true
+            } else if character.isWhitespace {
+                if inWord {
+                    words.append(current)
+                    current = ""
+                    inWord = false
+                }
+            } else {
+                current.append(character)
+                inWord = true
+            }
+        }
+        guard quote == nil, !escaped else { return nil }
+        if inWord {
+            words.append(current)
+        }
+        return words
+    }
+
+    /// Whether a `>` outside quotes redirects output to a file (including `>>`, `&>`, `2>`).
+    static func hasOutputRedirection(_ command: String) -> Bool {
+        var quote: Character?
+        var escaped = false
+        for character in command {
+            if escaped {
+                escaped = false
+                continue
+            }
+            if character == "\\", quote != "'" {
+                escaped = true
+                continue
+            }
+            if let open = quote {
+                if character == open { quote = nil }
+                continue
+            }
+            if character == "'" || character == "\"" {
+                quote = character
+            } else if character == ">" {
+                return true
+            }
+        }
+        return false
     }
 
     private func hasDangerousFlags(_ fullCommand: String, command: String) -> Bool {
