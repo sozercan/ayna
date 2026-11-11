@@ -38,26 +38,22 @@ enum ChatAttachmentDrop {
         }
     }
 
-    /// Attaches asynchronously loaded drop URLs within the composer's import session: Send stays
-    /// disabled while they load, and a result arriving after the session rotated is discarded.
+    /// Attaches asynchronously loaded drop URLs within the composer's import session. Each drop
+    /// counts as pending until it loads, so Send stays disabled while any drop is outstanding,
+    /// and a result arriving after the session rotated is discarded.
     @discardableResult
     static func receiveDrop(
         loadFileURLs: @escaping @MainActor () async -> [URL],
         attachedFiles: Binding<[URL]>,
         pastedImages: Binding<[PastedImage]>,
         importSessionID: Binding<UUID>,
-        isImporting: Binding<Bool>
+        pendingDropCount: Binding<Int>
     ) -> Task<Void, Never> {
         let sessionID = importSessionID.wrappedValue
-        let marksImporting = !isImporting.wrappedValue
-        if marksImporting {
-            isImporting.wrappedValue = true
-        }
+        pendingDropCount.wrappedValue += 1
         return Task { @MainActor in
             let fileURLs = await loadFileURLs()
-            if marksImporting, isImporting.wrappedValue {
-                isImporting.wrappedValue = false
-            }
+            pendingDropCount.wrappedValue = max(0, pendingDropCount.wrappedValue - 1)
             guard importSessionID.wrappedValue == sessionID else { return }
             // Read the count after loading: a paste may have finished in the meantime.
             attach(fileURLs, to: attachedFiles, pastedImageCount: pastedImages.wrappedValue.count)
@@ -84,12 +80,12 @@ enum ChatAttachmentDrop {
 /// Makes a whole chat screen a drop target for file attachments.
 ///
 /// Dropped URLs load asynchronously, so a drop joins the composer's import session like a
-/// paste: Send stays disabled while it loads, and a result arriving after Send is discarded.
+/// paste: Send stays disabled while any drop loads, and a result arriving after Send is discarded.
 private struct ChatAttachmentDropModifier: ViewModifier {
     @Binding var attachedFiles: [URL]
     @Binding var pastedImages: [PastedImage]
     @Binding var importSessionID: UUID
-    @Binding var isImporting: Bool
+    @Binding var pendingDropCount: Int
     @State private var isTargeted = false
 
     func body(content: Content) -> some View {
@@ -100,7 +96,7 @@ private struct ChatAttachmentDropModifier: ViewModifier {
                     attachedFiles: $attachedFiles,
                     pastedImages: $pastedImages,
                     importSessionID: $importSessionID,
-                    isImporting: $isImporting
+                    pendingDropCount: $pendingDropCount
                 )
                 return true
             }
@@ -131,13 +127,13 @@ extension View {
         attachedFiles: Binding<[URL]>,
         pastedImages: Binding<[PastedImage]>,
         importSessionID: Binding<UUID>,
-        isImporting: Binding<Bool>
+        pendingDropCount: Binding<Int>
     ) -> some View {
         modifier(ChatAttachmentDropModifier(
             attachedFiles: attachedFiles,
             pastedImages: pastedImages,
             importSessionID: importSessionID,
-            isImporting: isImporting
+            pendingDropCount: pendingDropCount
         ))
     }
 }

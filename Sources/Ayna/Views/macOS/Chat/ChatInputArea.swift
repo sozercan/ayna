@@ -35,6 +35,8 @@ struct ChatInputArea: View {
     let onClearMultiSelection: () -> Void
     let onRemoveFile: (URL) -> Void
     var onRemoveAppContent: (() -> Void)?
+    /// True while files dropped on the screen are still loading.
+    var hasPendingFileDrops = false
 
     @ObservedObject private var aiService = AIService.shared
 
@@ -320,7 +322,7 @@ struct ChatInputArea: View {
     }
 
     private var canSend: Bool {
-        hasSendableContent && !isImportingPastedImages
+        hasSendableContent && !isImportingPastedImages && !hasPendingFileDrops
     }
 
     private var remainingImageCapacity: Int {

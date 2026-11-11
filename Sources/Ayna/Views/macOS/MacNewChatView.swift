@@ -59,6 +59,7 @@ struct MacNewChatView: View {
     @State private var pastedImages: [PastedImage] = []
     @State private var pasteImportSessionID = UUID()
     @State private var isImportingPastedImages = false
+    @State private var pendingFileDropCount = 0
     @State var isGenerating = false
     @State var currentConversationId: UUID?
     @State private var selectedModel = AIService.shared.selectedModel
@@ -259,7 +260,7 @@ struct MacNewChatView: View {
             attachedFiles: $attachedFiles,
             pastedImages: $pastedImages,
             importSessionID: $pasteImportSessionID,
-            isImporting: $isImportingPastedImages
+            pendingDropCount: $pendingFileDropCount
         )
         .onAppear {
             syncSelectedModelState()
@@ -316,7 +317,8 @@ struct MacNewChatView: View {
                 selectedModel = aiService.selectedModel
             },
             onRemoveFile: removeFile,
-            onRemoveAppContent: { attachedAppContent = nil }
+            onRemoveAppContent: { attachedAppContent = nil },
+            hasPendingFileDrops: pendingFileDropCount > 0
         )
     }
 
@@ -469,7 +471,7 @@ struct MacNewChatView: View {
             isComposerFocused = true
             return
         }
-        guard !isImportingPastedImages, ChatDraftContent.isSendable(text: messageText, fileURLs: attachedFiles, inMemoryImageCount: pastedImages.count) else {
+        guard !isImportingPastedImages, pendingFileDropCount == 0, ChatDraftContent.isSendable(text: messageText, fileURLs: attachedFiles, inMemoryImageCount: pastedImages.count) else {
             isComposerFocused = true
             return
         }

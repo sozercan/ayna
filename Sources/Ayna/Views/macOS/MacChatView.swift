@@ -183,6 +183,7 @@ struct MacChatView: View {
     @State private var pastedImages: [PastedImage] = []
     @State private var pasteImportSessionID = UUID()
     @State private var isImportingPastedImages = false
+    @State private var pendingFileDropCount = 0
     @State private var failedSendPayload: FailedSendPayload?
     @State var toolCallDepth = 0
     @State private var currentToolName: String?
@@ -383,7 +384,8 @@ struct MacChatView: View {
                         selectedModel = aiService.selectedModel
                     },
                     onRemoveFile: removeFile,
-                    onRemoveAppContent: { attachedAppContent = nil }
+                    onRemoveAppContent: { attachedAppContent = nil },
+                    hasPendingFileDrops: pendingFileDropCount > 0
                 )
             }
         }
@@ -391,7 +393,7 @@ struct MacChatView: View {
             attachedFiles: $attachedFiles,
             pastedImages: $pastedImages,
             importSessionID: $pasteImportSessionID,
-            isImporting: $isImportingPastedImages
+            pendingDropCount: $pendingFileDropCount
         )
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -884,6 +886,7 @@ struct MacChatView: View {
         }
 
         guard !isImportingPastedImages,
+              pendingFileDropCount == 0,
               ChatDraftContent.isSendable(
                   text: messageText,
                   fileURLs: attachedFiles,

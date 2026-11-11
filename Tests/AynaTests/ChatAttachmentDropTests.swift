@@ -19,15 +19,49 @@
                 attachedFiles: state.attachedFilesBinding,
                 pastedImages: state.pastedImagesBinding,
                 importSessionID: state.sessionBinding,
-                isImporting: state.importingBinding
+                pendingDropCount: state.pendingBinding
             )
 
-            #expect(state.isImporting)
+            #expect(state.pendingDropCount == 1)
             gate.open()
             await task.value
 
-            #expect(!state.isImporting)
+            #expect(state.pendingDropCount == 0)
             #expect(state.attachedFiles == [fileURL])
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `overlapping drops keep sending disabled until every drop finishes`() async {
+            let state = DropState()
+            let firstGate = DropLoadGate()
+            let secondGate = DropLoadGate()
+            let firstURL = URL(fileURLWithPath: "/tmp/first.png")
+            let secondURL = URL(fileURLWithPath: "/tmp/second.png")
+
+            let first = ChatAttachmentDrop.receiveDrop(
+                loadFileURLs: { await firstGate.wait(returning: [firstURL]) },
+                attachedFiles: state.attachedFilesBinding,
+                pastedImages: state.pastedImagesBinding,
+                importSessionID: state.sessionBinding,
+                pendingDropCount: state.pendingBinding
+            )
+            let second = ChatAttachmentDrop.receiveDrop(
+                loadFileURLs: { await secondGate.wait(returning: [secondURL]) },
+                attachedFiles: state.attachedFilesBinding,
+                pastedImages: state.pastedImagesBinding,
+                importSessionID: state.sessionBinding,
+                pendingDropCount: state.pendingBinding
+            )
+            #expect(state.pendingDropCount == 2)
+
+            firstGate.open()
+            await first.value
+            #expect(state.pendingDropCount == 1)
+
+            secondGate.open()
+            await second.value
+            #expect(state.pendingDropCount == 0)
+            #expect(state.attachedFiles == [firstURL, secondURL])
         }
 
         @Test(.timeLimit(.minutes(1)))
@@ -40,13 +74,13 @@
                 attachedFiles: state.attachedFilesBinding,
                 pastedImages: state.pastedImagesBinding,
                 importSessionID: state.sessionBinding,
-                isImporting: state.importingBinding
+                pendingDropCount: state.pendingBinding
             )
             state.sessionID = UUID()
             gate.open()
             await task.value
 
-            #expect(!state.isImporting)
+            #expect(state.pendingDropCount == 0)
             #expect(state.attachedFiles.isEmpty)
         }
     }
@@ -56,7 +90,7 @@
         var attachedFiles: [URL] = []
         var pastedImages: [PastedImage] = []
         var sessionID = UUID()
-        var isImporting = false
+        var pendingDropCount = 0
 
         var attachedFilesBinding: Binding<[URL]> {
             Binding(get: { self.attachedFiles }, set: { self.attachedFiles = $0 })
@@ -70,8 +104,8 @@
             Binding(get: { self.sessionID }, set: { self.sessionID = $0 })
         }
 
-        var importingBinding: Binding<Bool> {
-            Binding(get: { self.isImporting }, set: { self.isImporting = $0 })
+        var pendingBinding: Binding<Int> {
+            Binding(get: { self.pendingDropCount }, set: { self.pendingDropCount = $0 })
         }
     }
 
