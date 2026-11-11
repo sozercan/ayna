@@ -1155,6 +1155,74 @@ struct ConversationManagerTests {
 
     @Test
     @MainActor
+    func `a retried refresh still keeps a reply that is streaming in`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: "test-retry-streaming-key", keychain: InMemoryKeychainStorage())
+        var conversation = Conversation(title: "Streaming")
+        conversation.addMessage(Message(role: .user, content: "Question"))
+        let reply = Message(role: .assistant, content: "")
+        conversation.addMessage(reply)
+        try await store.save(conversation)
+        let loads = FlakyMetadataLoads(store: store, failingCall: 2)
+        let manager = ConversationManager(
+            store: store,
+            saveDebounceDuration: .seconds(10),
+            conversationMetadataLoader: { try await loads.load() },
+            loadRetryBaseDelay: .milliseconds(1)
+        )
+        _ = await manager.loadingTask?.value
+        _ = try #require(await manager.ensureConversationLoaded(conversation.id))
+        await manager.flushPendingSaves()
+        #expect(manager.appendToMessage(conversationId: conversation.id, messageId: reply.id, chunk: "Partial answer"))
+
+        await manager.reloadConversations() // fails, then retries
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(5))
+        while await loads.calls < 3, clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(await loads.calls >= 3)
+        #expect(manager.conversation(byId: conversation.id)?.messages.last?.content == "Partial answer")
+    }
+
+    @Test
+    @MainActor
+    func `a save that lands after the reload read its metadata still counts as saved`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = TestHelpers.makeTestStore(directory: directory)
+        let stored = TestHelpers.sampleConversation(title: "Original")
+        try await store.save(stored)
+        let metadataGate = ConversationReloadMetadataGate(store: store)
+        let manager = ConversationManager(
+            store: store,
+            saveDebounceDuration: .seconds(10),
+            conversationMetadataLoader: { try await metadataGate.load() }
+        )
+        _ = await manager.loadingTask?.value
+        let loaded = try #require(await manager.ensureConversationLoaded(stored.id))
+        await manager.flushPendingSaves()
+
+        // The reload reads metadata, then a local rename is saved before it reconciles.
+        let reloadTask = Task { @MainActor in await manager.reloadConversations() }
+        await metadataGate.waitUntilReloadStarted()
+        manager.renameConversation(loaded, newTitle: "Renamed here")
+        await manager.flushPendingSaves()
+        await metadataGate.releaseReload()
+        await reloadTask.value
+
+        var external = try #require(try await store.loadConversation(id: stored.id))
+        external.title = "Renamed elsewhere"
+        external.updatedAt = external.updatedAt.addingTimeInterval(60)
+        try await store.save(external)
+        await manager.reloadConversations()
+
+        #expect(manager.conversation(byId: stored.id)?.title == "Renamed elsewhere")
+    }
+
+    @Test
+    @MainActor
     func `reload keeps the new-chat selection`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: "test-new-chat-reload-key", keychain: InMemoryKeychainStorage())
@@ -1326,6 +1394,26 @@ private actor ConversationMetadataLoadGate {
         released = true
         releaseContinuation?.resume()
         releaseContinuation = nil
+    }
+}
+
+/// Metadata loads that fail on one call and succeed otherwise.
+private actor FlakyMetadataLoads {
+    private let store: EncryptedConversationStore
+    private let failingCall: Int
+    private(set) var calls = 0
+
+    init(store: EncryptedConversationStore, failingCall: Int) {
+        self.store = store
+        self.failingCall = failingCall
+    }
+
+    func load() async throws -> [ConversationMetadata] {
+        calls += 1
+        if calls == failingCall {
+            throw CocoaError(.fileReadUnknown)
+        }
+        return try await store.loadConversationMetadata()
     }
 }
 
