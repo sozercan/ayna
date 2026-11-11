@@ -159,6 +159,7 @@ class MCPServerManager: ObservableObject {
     private var cachedOpenAIFunctions: [[String: Any]] = []
     private var toolLookup: [String: MCPTool] = [:] // O(1) lookup by model-facing name
     private var exposedToolNames: [UUID: String] = [:]
+    private var toolNaming = MCPToolNaming()
 
     /// Tool names Ayna serves itself; an MCP tool with one of these names gets a server prefix.
     static var reservedToolNames: Set<String> {
@@ -1031,6 +1032,8 @@ class MCPServerManager: ObservableObject {
             if !isToolCacheValid {
                 refreshToolCache()
             }
+            // Aliases are bound to one server and tool for the session (MCPToolNaming), so a
+            // stale alias finds its own tool or nothing, never a different server's tool.
             guard let tool = toolLookup[name] else {
                 throw MCPManagerError.toolNotFound(name)
             }
@@ -1108,7 +1111,7 @@ class MCPServerManager: ObservableObject {
         cachedEnabledTools = availableTools.filter { tool in
             enabledServerNames.contains(tool.serverName)
         }
-        exposedToolNames = MCPToolNaming.exposedNames(for: cachedEnabledTools, reserved: Self.reservedToolNames)
+        exposedToolNames = toolNaming.assign(cachedEnabledTools, reserved: Self.reservedToolNames)
         toolLookup = Dictionary(
             cachedEnabledTools.map { (exposedToolNames[$0.id] ?? $0.name, $0) },
             uniquingKeysWith: { first, _ in first }
