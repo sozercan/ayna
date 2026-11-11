@@ -1,2 +1,17 @@
+--swiftversion 6.2
+--minversion 0.64.6
+# Code inside #if is indented; files written the other way opt out with
+# `// swiftformat:options --ifdef no-indent` on their first line.
+--ifdef indent
 --disable trailingCommas
 --disable redundantSelf
+# docs/testing.md uses @Test("Readable name"); don't rewrite names into raw identifiers.
+--disable swiftTestingTestCaseNames
+# The code base keeps short bodies on one line (`if x { return }`) and separate guards.
+--disable wrapIfStatementBodies
+--disable repeatedGuard
+--disable nestedIf
+# Moving @MainActor from members onto the extension changes isolation, not just layout.
+--disable extensionAttributes
+# Keep digit grouping as written (65_536, 6000).
+--disable numberFormatting
