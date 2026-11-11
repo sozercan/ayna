@@ -550,6 +550,14 @@ struct ConversationManagerTests {
         await reloadTask.value
 
         #expect(manager.conversation(byId: conversationId)?.title == "Saved During Reload")
+
+        // Once saved, a later refresh takes a newer copy written elsewhere.
+        var external = try #require(try await store.loadConversation(id: conversationId))
+        external.title = "Renamed elsewhere"
+        external.updatedAt = external.updatedAt.addingTimeInterval(60)
+        try await store.save(external)
+        await manager.reloadConversations()
+        #expect(manager.conversation(byId: conversationId)?.title == "Renamed elsewhere")
     }
 
     @Test
@@ -1122,6 +1130,27 @@ struct ConversationManagerTests {
         await manager.reloadConversations()
 
         #expect(manager.conversations.first { $0.id == conversation.id }?.title == "Renamed elsewhere")
+    }
+
+    @Test
+    @MainActor
+    func `reload takes a newer stored copy of a conversation committed from the Watch`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: "test-watch-commit-reload-key", keychain: InMemoryKeychainStorage())
+        let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
+        _ = await manager.loadingTask?.value
+        // The Watch path saves first, then commits the saved conversation to the manager.
+        let created = TestHelpers.sampleConversation(title: "From Watch")
+        try await store.save(created)
+        manager.commitPersistedConversation(created)
+
+        var external = created
+        external.title = "Renamed elsewhere"
+        external.updatedAt = created.updatedAt.addingTimeInterval(60)
+        try await store.save(external)
+        await manager.reloadConversations()
+
+        #expect(manager.conversation(byId: created.id)?.title == "Renamed elsewhere")
     }
 
     @Test
