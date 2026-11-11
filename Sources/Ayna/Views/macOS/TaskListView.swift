@@ -21,31 +21,14 @@ struct TaskListView: View {
 
         if !tasks.isEmpty {
             DisclosureGroup(isExpanded: $isExpanded) {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(tasks.filter { $0.parentId == nil }) { task in
-                        TaskRowView(
-                            task: task,
-                            taskManager: taskManager,
-                            conversationId: conversationId
-                        )
-
-                        // Show subtasks
-                        let subtasks = taskManager.subtasks(of: task.id)
-                        if !subtasks.isEmpty {
-                            VStack(alignment: .leading, spacing: 4) {
-                                ForEach(subtasks) { subtask in
-                                    TaskRowView(
-                                        task: subtask,
-                                        taskManager: taskManager,
-                                        conversationId: conversationId,
-                                        isSubtask: true
-                                    )
-                                }
-                            }
-                            .padding(.leading, 24)
-                        }
+                // Short lists show in full; longer ones scroll so the composer stays on screen.
+                ViewThatFits(in: .vertical) {
+                    rows(tasks)
+                    ScrollView {
+                        rows(tasks)
                     }
                 }
+                .frame(maxHeight: Self.maximumRowsHeight)
             } label: {
                 TaskListHeader(statistics: taskManager.statistics(forConversation: conversationId))
             }
@@ -55,6 +38,38 @@ struct TaskListView: View {
                     .fill(Color(nsColor: .controlBackgroundColor))
             )
         }
+    }
+
+    /// Tallest the expanded rows get before they scroll.
+    private static let maximumRowsHeight: CGFloat = 200
+
+    private func rows(_ tasks: [ConversationTask]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(tasks.filter { $0.parentId == nil }) { task in
+                TaskRowView(
+                    task: task,
+                    taskManager: taskManager,
+                    conversationId: conversationId
+                )
+
+                // Show subtasks
+                let subtasks = taskManager.subtasks(of: task.id)
+                if !subtasks.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(subtasks) { subtask in
+                            TaskRowView(
+                                task: subtask,
+                                taskManager: taskManager,
+                                conversationId: conversationId,
+                                isSubtask: true
+                            )
+                        }
+                    }
+                    .padding(.leading, 24)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
