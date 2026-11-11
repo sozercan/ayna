@@ -122,7 +122,10 @@
             /// again so the Watch receives their bodies. Returns true while that load is pending.
             private func hydrateRecentBodiesBeforeSync() -> Bool {
                 guard bodyHydrationTask == nil else { return true }
-                guard let conversationManager, conversationManager.isConversationStateAuthoritative else {
+                // Only load histories when a publication can actually reach a Watch.
+                guard let session, session.isPaired, session.isWatchAppInstalled,
+                      let conversationManager, conversationManager.isConversationStateAuthoritative
+                else {
                     return false
                 }
                 let snapshot = conversationManager.durableSyncSnapshot()
@@ -534,7 +537,9 @@
                 guard conversationManager.pendingDestructivePersistenceOperations == 0 else {
                     return .retry(for: mutation)
                 }
-                guard await hydrateBeforeWatchEdit(mutation.conversationID, in: conversationManager) else {
+                // A delete removes the conversation by ID and needs no history.
+                let isDelete = mutation.fields.contains(.delete)
+                if !isDelete, !(await hydrateBeforeWatchEdit(mutation.conversationID, in: conversationManager)) {
                     return .retry(for: mutation)
                 }
 
@@ -565,9 +570,13 @@
                     }
 
                 case .deleted:
-                    let deletion = if let existing = conversationManager.conversations.first(where: {
-                        $0.id == mutation.conversationID
-                    }) {
+                    // A metadata-only placeholder has no messages; it must never become the
+                    // rollback snapshot a failed delete writes back.
+                    let deletion = if !conversationManager.isMetadataOnlyConversation(mutation.conversationID),
+                                      let existing = conversationManager.conversations.first(where: {
+                                          $0.id == mutation.conversationID
+                                      })
+                    {
                         conversationManager.persistProposedDeletion(existing)
                     } else {
                         conversationManager.persistProposedDeletion(conversationID: mutation.conversationID)
