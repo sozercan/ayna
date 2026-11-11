@@ -538,6 +538,45 @@
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func `Search skips sensitive files under an allowed root`() async throws {
+            // /tmp is not a protected path, so the root itself needs no approval.
+            let root = URL(fileURLWithPath: "/tmp").appendingPathComponent("AynaSearchSensitive-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            try "needle in notes".write(to: root.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
+            try "needle secret".write(to: root.appendingPathComponent("credentials.json"), atomically: true, encoding: .utf8)
+            try "needle key".write(to: root.appendingPathComponent("id_rsa"), atomically: true, encoding: .utf8)
+            let permissionService = PermissionService()
+            let service = BuiltinToolService(permissionService: permissionService)
+
+            let results = try await service.searchFiles(pattern: "needle", path: root.path, conversationId: UUID())
+
+            #expect(permissionService.pendingApprovals.isEmpty)
+            #expect(Set(results.map { URL(fileURLWithPath: $0.path).lastPathComponent }) == ["notes.txt"])
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `Search includes sensitive files once the user approves a protected root`() async throws {
+            // The temporary directory is under protected /var, so searching it asks first.
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("AynaSearchApprovedRoot-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            try "needle in notes".write(to: root.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
+            try "needle secret".write(to: root.appendingPathComponent("credentials.json"), atomically: true, encoding: .utf8)
+            let permissionService = PermissionService()
+            let service = BuiltinToolService(permissionService: permissionService)
+
+            let task = Task {
+                try await service.searchFiles(pattern: "needle", path: root.path, conversationId: UUID())
+            }
+            try await approveNextPending(permissionService)
+            let results = try await task.value
+
+            #expect(Set(results.map { URL(fileURLWithPath: $0.path).lastPathComponent }) == ["notes.txt", "credentials.json"])
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func `Edit rejects a symlink retargeted while approval is pending`() async throws {
             let directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent("BuiltinToolRetargetEdit-\(UUID().uuidString)")

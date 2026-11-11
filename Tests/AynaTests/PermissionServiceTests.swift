@@ -443,6 +443,47 @@ struct PermissionServiceTests {
         #expect(sut.approvalTimeoutSeconds == 300)
     }
 
+    @Test("No timeout keeps an approval pending until cancelled", .timeLimit(.minutes(1)))
+    func noTimeoutKeepsApprovalPending() async {
+        sut.approvalTimeoutSeconds = 0
+        let task = Task {
+            await sut.requestApproval(
+                toolName: "write_file",
+                description: "Write file",
+                details: "/tmp/no-timeout.txt",
+                conversationId: UUID()
+            )
+        }
+
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while sut.pendingApprovals.isEmpty, clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(sut.pendingApprovals.count == 1)
+
+        // A zero timeout used to deny immediately; the request must still be pending.
+        try? await Task.sleep(for: .milliseconds(300))
+        #expect(sut.pendingApprovals.count == 1)
+
+        task.cancel()
+        #expect(await task.value == false)
+        #expect(sut.pendingApprovals.isEmpty)
+    }
+
+    @Test("A positive timeout still denies a pending approval", .timeLimit(.minutes(1)))
+    func positiveTimeoutDeniesPendingApproval() async {
+        sut.approvalTimeoutSeconds = 1
+        let approved = await sut.requestApproval(
+            toolName: "write_file",
+            description: "Write file",
+            details: "/tmp/timeout.txt",
+            conversationId: UUID()
+        )
+        #expect(approved == false)
+        #expect(sut.pendingApprovals.isEmpty)
+    }
+
     @Test("Timeout is configurable")
     func timeoutIsConfigurable() {
         sut.approvalTimeoutSeconds = 60
