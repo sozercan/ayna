@@ -14,7 +14,6 @@ This document details platform-specific capabilities, limitations, and implement
 | **Web Search (Tavily)** | ✅ | ✅ | ✅ (via iPhone) |
 | **Image Generation** | ✅ | ✅ | ❌ |
 | **Attachments** | ✅ | ✅ | ❌ |
-| **CloudKit Sync** | ✅ | ✅ | ❌ |
 | **Export (Markdown/PDF)** | ✅ | ✅ | ❌ |
 | **Deep Links** | ✅ | ✅ | ❌ |
 
@@ -49,7 +48,7 @@ This document details platform-specific capabilities, limitations, and implement
   - No local providers (Apple Intelligence)
   - No MCP tools
   - No attachments or image generation
-  - No CloudKit direct access (syncs via iPhone)
+  - Conversations and settings sync via iPhone (WatchConnectivity)
   - Simpler markdown rendering (`WatchMarkdownRenderer`)
 - **Scheme**: `Ayna-watchOS`
 
@@ -63,7 +62,7 @@ swift build
 swift build --triple arm64-apple-ios26.0
 
 # watchOS
-swift build --triple arm64-apple-watchos10.0
+swift build --triple arm64-apple-watchos26.0
 ```
 
 ## Cross-Platform Code Guidelines

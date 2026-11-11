@@ -5,7 +5,7 @@ Thank you for helping improve **ayna**! This document captures the practical ste
 ## Prerequisites
 
 - macOS 26.0 (Tahoe) or newer
-- Xcode 16.0 or newer (Swift 6.0+ toolchain)
+- Xcode 26 or newer (Swift 6.2+ toolchain)
 - iOS Simulator or device for iOS development
 - watchOS Simulator for watchOS development
 - Clone the repo. Open `Package.swift` for macOS, or `AynaMobile.xcodeproj` for iOS/watchOS.
@@ -36,7 +36,7 @@ open AynaMobile.xcodeproj   # iOS / watchOS
   swift build --triple arm64-apple-ios26.0
 
   # watchOS (cross-compile)
-  swift build --triple arm64-apple-watchos12.0
+  swift build --triple arm64-apple-watchos26.0
   ```
 
 ## Local Development

@@ -280,10 +280,10 @@ swiftlint --strict
 swiftformat . --lint
 
 # 3. Build on macOS (catches compile errors)
-xcodebuild -scheme Ayna -destination 'platform=macOS' build
+swift build
 
 # 4. Run unit tests (catches regressions)
-xcodebuild -scheme Ayna -destination 'platform=macOS' test -only-testing:aynaTests
+swift test
 ```
 
-**Key insight**: CI runs on multiple Xcode versions (16.2, 16.4, 26.0). Code that compiles locally on Xcode 26 may fail on older versions due to stricter sendability checking. When in doubt, add explicit `@Sendable` annotations to closures and completion handlers.
+**Key insight**: When in doubt, add explicit `@Sendable` annotations to closures and completion handlers; Swift 6 strict concurrency checking rejects many implicit captures.

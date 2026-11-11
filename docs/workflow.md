@@ -31,7 +31,7 @@ Every task should be broken into phases. Each phase must have:
 | Plan public API surface | No breaking changes to existing callers (or changes identified) |
 | Identify platform constraints | `#if os()` guards planned where needed |
 
-**Exit gate**: `xcodebuild build` succeeds with stub implementations.
+**Exit gate**: `swift build` succeeds with stub implementations.
 
 #### Phase 3: Core Implementation
 
@@ -41,15 +41,15 @@ Every task should be broken into phases. Each phase must have:
 | Handle error cases | Error paths have test coverage |
 | Add logging | `DiagnosticsLogger` calls in place |
 
-**Exit gate**: `xcodebuild test -only-testing:aynaTests` passes.
+**Exit gate**: `swift test` passes.
 
 #### Phase 4: Platform Integration
 
 | Deliverable | Exit Criteria |
 |-------------|---------------|
-| macOS build succeeds | `xcodebuild -scheme Ayna -destination 'platform=macOS' build` |
+| macOS build succeeds | `swift build` |
 | iOS build succeeds | `xcodebuild -project AynaMobile.xcodeproj -scheme Ayna-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build` |
-| watchOS build succeeds (if applicable) | `xcodebuild -scheme Ayna-watchOS ...` |
+| watchOS build succeeds (if applicable) | `swift build --triple arm64-apple-watchos26.0` |
 
 **Exit gate**: All platform builds pass.
 
@@ -59,11 +59,11 @@ Every task should be broken into phases. Each phase must have:
 |-------------|---------------|
 | Linting passes | `swiftlint --strict` reports 0 errors |
 | Formatting applied | `swiftformat .` makes no changes |
-| Full test suite passes | `xcodebuild test` succeeds |
+| Full test suite passes | `swift test` succeeds |
 
 **Exit gate**: CI-equivalent checks pass locally.
 
-> **CI runs multiple Xcode versions** (16.2, 16.4, 26.0). Code that compiles on newer Xcode may fail on older versions due to stricter Swift concurrency checking. See [patterns.md](patterns.md#delegate-protocol-conformance-from-mainactor-classes) for common pitfalls.
+> See [patterns.md](patterns.md#delegate-protocol-conformance-from-mainactor-classes) for common Swift concurrency pitfalls.
 
 ### Example: Adding a New Service
 
@@ -73,12 +73,12 @@ Phase 1: Research
 
 Phase 2: Interface
 ├── Create NewService.swift with protocol + stub
-├── Exit: `xcodebuild build` passes on macOS
+├── Exit: `swift build` passes on macOS
 
 Phase 3: Implementation
 ├── Implement methods, add error handling
 ├── Create NewServiceTests.swift
-├── Exit: `xcodebuild test -only-testing:aynaTests/NewServiceTests` passes
+├── Exit: `swift test --filter NewServiceTests` passes
 
 Phase 4: Integration
 ├── Wire into ConversationManager or relevant ViewModel
