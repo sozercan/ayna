@@ -177,6 +177,53 @@
             #expect(state.pastedImages.isEmpty)
         }
 
+        @Test(.timeLimit(.minutes(1)))
+        func `dropping files on the editor attaches them instead of inserting their paths`() throws {
+            let pasteboard = NSPasteboard(name: .init("ayna.test.drop.\(UUID().uuidString)"))
+            defer { pasteboard.releaseGlobally() }
+            let fileURLs = [
+                URL(fileURLWithPath: "/tmp/first.png"),
+                URL(fileURLWithPath: "/tmp/second.jpg"),
+            ]
+            pasteboard.clearContents()
+            #expect(pasteboard.writeObjects(fileURLs.map { $0 as NSURL }))
+
+            let state = EditorState()
+            let hostedEditor = try Self.hostEditor(state: state)
+            let textView = hostedEditor.textView
+            let drag = FakeDraggingInfo(pasteboard: pasteboard, window: hostedEditor.window)
+
+            #expect(textView.acceptableDragTypes.contains(.fileURL))
+            #expect(textView.draggingEntered(drag) == .copy)
+            #expect(textView.prepareForDragOperation(drag))
+            #expect(textView.performDragOperation(drag))
+
+            #expect(state.droppedFiles == fileURLs)
+            #expect(state.text.isEmpty)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `dropping image data on the editor imports it like a paste`() async throws {
+            let pasteboard = NSPasteboard(name: .init("ayna.test.drop.\(UUID().uuidString)"))
+            defer { pasteboard.releaseGlobally() }
+            let imageData = try #require(Self.imageData)
+            let item = NSPasteboardItem()
+            item.setData(imageData, forType: .init("public.png"))
+            pasteboard.clearContents()
+            #expect(pasteboard.writeObjects([item]))
+
+            let state = EditorState()
+            let hostedEditor = try Self.hostEditor(state: state)
+            let drag = FakeDraggingInfo(pasteboard: pasteboard, window: hostedEditor.window)
+
+            #expect(hostedEditor.textView.performDragOperation(drag))
+
+            #expect(await Self.waitUntil {
+                !state.isImportingPastedImages && state.pastedImages.count == 1
+            })
+            #expect(state.droppedFiles.isEmpty)
+        }
+
         private static var imageData: Data? {
             Data(base64Encoded:
                 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
@@ -205,6 +252,7 @@
                 },
                 onSubmit: {},
                 onPasteImages: { state.pastedImages.append(contentsOf: $0) },
+                onDropFiles: { state.droppedFiles.append(contentsOf: $0) },
                 accessibilityIdentifier: "test.dynamicTextEditor"
             )
         }
@@ -275,6 +323,41 @@
         var pasteImportSessionID = UUID()
         var isImportingPastedImages = false
         var pastedImages: [PastedImage] = []
+        var droppedFiles: [URL] = []
+    }
+
+    /// Minimal drag session for exercising the editor's drop handling without a mouse.
+    @MainActor
+    private final class FakeDraggingInfo: NSObject, NSDraggingInfo {
+        let draggingPasteboard: NSPasteboard
+        let draggingDestinationWindow: NSWindow?
+        let draggingSourceOperationMask: NSDragOperation = .copy
+        let draggingLocation: NSPoint = .init(x: 10, y: 10)
+        let draggedImageLocation: NSPoint = .zero
+        let draggedImage: NSImage? = nil
+        let draggingSource: Any? = nil
+        let draggingSequenceNumber = 1
+        var draggingFormation: NSDraggingFormation = .default
+        var animatesToDestination = false
+        var numberOfValidItemsForDrop = 1
+        let springLoadingHighlight: NSSpringLoadingHighlight = .none
+
+        init(pasteboard: NSPasteboard, window: NSWindow) {
+            draggingPasteboard = pasteboard
+            draggingDestinationWindow = window
+        }
+
+        func slideDraggedImage(to _: NSPoint) {}
+
+        func enumerateDraggingItems(
+            options _: NSDraggingItemEnumerationOptions = [],
+            for _: NSView?,
+            classes _: [AnyClass],
+            searchOptions _: [NSPasteboard.ReadingOptionKey: Any] = [:],
+            using _: (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void
+        ) {}
+
+        func resetSpringLoading() {}
     }
 
     private final class PasteboardImageDataProvider: NSObject, NSPasteboardItemDataProvider {

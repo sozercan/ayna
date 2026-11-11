@@ -387,6 +387,7 @@ struct MacChatView: View {
                 )
             }
         }
+        .chatAttachmentDropTarget(attachedFiles: $attachedFiles, pastedImageCount: pastedImages.count)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Spacer()

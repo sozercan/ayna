@@ -172,6 +172,13 @@ struct ChatInputArea: View {
                 onPasteImages: { images in
                     pastedImages.append(contentsOf: images)
                 },
+                onDropFiles: { fileURLs in
+                    ChatAttachmentDrop.attach(
+                        fileURLs,
+                        to: $attachedFiles,
+                        pastedImageCount: pastedImages.count
+                    )
+                },
                 accessibilityIdentifier: textEditorIdentifier
             )
             .frame(height: textHeight)

@@ -255,6 +255,7 @@ struct MacNewChatView: View {
                 }
             }
         }
+        .chatAttachmentDropTarget(attachedFiles: $attachedFiles, pastedImageCount: pastedImages.count)
         .onAppear {
             syncSelectedModelState()
         }

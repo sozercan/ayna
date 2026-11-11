@@ -19,6 +19,8 @@ struct DynamicTextEditor: NSViewRepresentable {
     let remainingImageCapacity: () -> Int
     let onSubmit: () -> Void
     let onPasteImages: ([PastedImage]) -> Void
+    /// Receives file URLs dropped on the editor, which would otherwise insert their paths as text.
+    var onDropFiles: ([URL]) -> Void = { _ in }
     let accessibilityIdentifier: String?
 
     typealias Coordinator = DynamicTextEditorCoordinator
@@ -113,6 +115,7 @@ struct DynamicTextEditor: NSViewRepresentable {
         textView.onPasteImportStateChange = { isImporting in
             isImportingPastedImages = isImporting
         }
+        textView.onDropFiles = onDropFiles
     }
 
     private func syncFirstResponderState(for textView: NSTextView, retryCount: Int = 8) {
@@ -203,6 +206,7 @@ private final class PasteAwareTextView: NSTextView {
 
     var onPasteImages: (([PastedImage]) -> Void)?
     var onPasteImportStateChange: ((Bool) -> Void)?
+    var onDropFiles: (([URL]) -> Void)?
     var remainingImageCapacity: (() -> Int)?
     private var pasteImportTail: Task<Void, Never>?
     private var pasteImportTasks: [UUID: Task<Void, Never>] = [:]
@@ -218,15 +222,7 @@ private final class PasteAwareTextView: NSTextView {
 
     override func paste(_ sender: Any?) {
         let pasteboard = NSPasteboard.general
-        let capacity = max(
-            0,
-            (remainingImageCapacity?() ?? ChatDraftContent.maximumImageCount)
-                - reservedImageCount
-        )
-        let selection = Self.imageCandidateSelection(
-            from: pasteboard,
-            limit: capacity
-        )
+        let selection = imageCandidateSelection(from: pasteboard)
         guard selection.hasImageCandidates else {
             super.paste(sender)
             return
@@ -236,6 +232,68 @@ private final class PasteAwareTextView: NSTextView {
             super.paste(sender)
         }
 
+        importImages(selection)
+    }
+
+    // MARK: - Drag and Drop
+
+    override var acceptableDragTypes: [NSPasteboard.PasteboardType] {
+        super.acceptableDragTypes + [.fileURL] + Self.supportedImageTypes.map(\.pasteboardType)
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        hasAttachmentDrop(sender.draggingPasteboard) ? .copy : super.draggingEntered(sender)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        hasAttachmentDrop(sender.draggingPasteboard) ? .copy : super.draggingUpdated(sender)
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        hasAttachmentDrop(sender.draggingPasteboard) || super.prepareForDragOperation(sender)
+    }
+
+    /// Dropped files attach like the attach button; dropped image data imports like a paste.
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let pasteboard = sender.draggingPasteboard
+        let fileURLs = Self.fileURLs(in: pasteboard)
+        if !fileURLs.isEmpty {
+            onDropFiles?(fileURLs)
+            return true
+        }
+
+        let selection = imageCandidateSelection(from: pasteboard)
+        if selection.hasImageCandidates {
+            importImages(selection)
+            return true
+        }
+        return super.performDragOperation(sender)
+    }
+
+    private func hasAttachmentDrop(_ pasteboard: NSPasteboard) -> Bool {
+        !Self.fileURLs(in: pasteboard).isEmpty || Self.hasImageCandidates(in: pasteboard)
+    }
+
+    private static func fileURLs(in pasteboard: NSPasteboard) -> [URL] {
+        let objects = pasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        )
+        return (objects as? [URL]) ?? []
+    }
+
+    // MARK: - Image Import
+
+    private func imageCandidateSelection(from pasteboard: NSPasteboard) -> CandidateSelection {
+        let capacity = max(
+            0,
+            (remainingImageCapacity?() ?? ChatDraftContent.maximumImageCount)
+                - reservedImageCount
+        )
+        return Self.imageCandidateSelection(from: pasteboard, limit: capacity)
+    }
+
+    private func importImages(_ selection: CandidateSelection) {
         guard !selection.sources.isEmpty else {
             reportImageLimit(skippedImageCount: selection.skippedImageCount)
             return
