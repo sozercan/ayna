@@ -203,7 +203,7 @@
 
         /// Registers the hotkey saved in settings (⌘⇧Space unless the user recorded another).
         func registerSaved() throws {
-            try register(HotkeyCombination(string: AppPreferences.attachFromAppHotkey) ?? .default)
+            try register(HotkeyCombination(storage: AppPreferences.attachFromAppHotkey) ?? .default)
         }
 
         func register(_ combination: HotkeyCombination) throws {
