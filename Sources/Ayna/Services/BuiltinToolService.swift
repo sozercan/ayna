@@ -874,20 +874,30 @@ import os.log
                 }
             }
 
+            // Capture the directory now: the approval names it, and a project-root change while the
+            // card waits must not move the command elsewhere.
+            let workingDir = Self.canonicalDirectory(
+                workingDirectory.map { URL(fileURLWithPath: PathValidator.expandPath($0)) } ?? baseDirectory
+            )
+
             try await authorize(
                 tool: ToolName.runCommand,
                 description: "Execute shell command",
-                details: command,
+                details: Self.commandApprovalDetails(command, in: workingDir),
                 riskReason: validation == .allowed ? nil : "Command is not on the allowed list",
                 conversationId: conversationId
             )
 
             try Task.checkCancellation()
 
+            // Patterns added while the card waited still apply.
+            if case let .blocked(reason) = shellSandbox.validate(command) {
+                throw ToolExecutionError.sandboxBlocked(command: command, reason: reason)
+            }
+
             // Execute command off the main thread to prevent UI freezes
             let startTime = Date()
             let timeoutSeconds = commandTimeoutSeconds
-            let workingDir = workingDirectory.map { URL(fileURLWithPath: PathValidator.expandPath($0)) } ?? baseDirectory
 
             let result = try await executeProcess(
                 command: command,
@@ -920,6 +930,16 @@ import os.log
             }
 
             return result
+        }
+
+        /// Approval identity for a command: the command and where it runs, so a remembered approval
+        /// never carries over to another directory.
+        static func commandApprovalDetails(_ command: String, in directory: URL) -> String {
+            "\(command)\n(in \(canonicalDirectory(directory).path))"
+        }
+
+        private static func canonicalDirectory(_ url: URL) -> URL {
+            url.resolvingSymlinksInPath().standardized
         }
 
         /// Executes a shell command in a subprocess with timeout and cancellation support.

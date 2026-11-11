@@ -522,7 +522,9 @@ class AIService: ObservableObject {
         } else {
             let config = URLSessionConfiguration.default
             config.timeoutIntervalForRequest = 120 // 2 minutes
-            config.timeoutIntervalForResource = 300 // 5 minutes
+            // A whole reply, which can take many minutes for a long Claude answer. Stalls are
+            // still caught by the per-request timeout.
+            config.timeoutIntervalForResource = 1800
             self.urlSession = URLSession(configuration: config)
             #if !os(watchOS)
                 imageService = Self.makeImageService(urlSession: self.urlSession, retryDelay: retryDelay)

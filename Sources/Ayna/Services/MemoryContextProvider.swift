@@ -144,7 +144,10 @@ final class MemoryContextProvider {
         else {
             return
         }
-        let recent = await conversationSource.recentConversationsWithHistory(limit: Self.backfillLimit)
+        let loaded = await conversationSource.recentConversationsWithHistory(limit: Self.backfillLimit)
+        // Conversations deleted (or cleared) while their history loaded must not regain summaries.
+        let currentIds = Set(conversationSource.conversations.map(\.id))
+        let recent = loaded.filter { currentIds.contains($0.id) }
         guard isMemoryEnabled, !recent.isEmpty else { return }
         summaryService.backfillSummaries(from: recent, limit: Self.backfillLimit)
     }
@@ -245,14 +248,24 @@ final class MemoryContextProvider {
         }
     }
 
-    /// Removes summary when a conversation is deleted.
+    /// Removes summary when a conversation is deleted, and drops any pending fact extraction
+    /// for it so deleted messages are never sent or stored.
     func removeConversationSummary(for conversationId: UUID) {
+        factExtractor.cancel(conversationId: conversationId)
         guard isMemoryEnabled else { return }
         summaryService.removeSummary(for: conversationId)
     }
 
+    /// Clears stored facts and summaries, after stopping any extraction that could refill them.
+    func clearAllMemory() async throws {
+        factExtractor.cancelAll()
+        await memoryService.clearAllFacts()
+        try await summaryService.clearAllSummaries()
+    }
+
     func invalidateConversationSummariesForClear() -> ConversationSummaryClearSnapshot {
-        summaryService.invalidateForConversationClear()
+        factExtractor.cancelAll()
+        return summaryService.invalidateForConversationClear()
     }
 
     func restoreConversationSummariesAfterFailedClear(_ snapshot: ConversationSummaryClearSnapshot) async throws {

@@ -258,7 +258,7 @@
             let permissionService = PermissionService()
             permissionService.recordSessionApproval(
                 tool: BuiltinToolService.ToolName.runCommand,
-                details: command
+                details: BuiltinToolService.commandApprovalDetails(command, in: directory)
             )
             let service = BuiltinToolService(
                 permissionService: permissionService,
@@ -303,7 +303,7 @@
             let permissionService = PermissionService()
             permissionService.recordSessionApproval(
                 tool: BuiltinToolService.ToolName.runCommand,
-                details: command
+                details: BuiltinToolService.commandApprovalDetails(command, in: directory)
             )
             let service = BuiltinToolService(
                 permissionService: permissionService,
@@ -698,7 +698,7 @@
             let permissionService = PermissionService()
             permissionService.recordSessionApproval(
                 tool: BuiltinToolService.ToolName.runCommand,
-                details: command
+                details: BuiltinToolService.commandApprovalDetails(command, in: directory)
             )
             let service = BuiltinToolService(
                 permissionService: permissionService,
@@ -768,7 +768,7 @@
             let permissionService = PermissionService()
             permissionService.recordSessionApproval(
                 tool: BuiltinToolService.ToolName.runCommand,
-                details: command
+                details: BuiltinToolService.commandApprovalDetails(command, in: directory)
             )
             let service = BuiltinToolService(
                 permissionService: permissionService,
@@ -837,7 +837,7 @@
             let permissionService = PermissionService()
             permissionService.recordSessionApproval(
                 tool: BuiltinToolService.ToolName.runCommand,
-                details: command
+                details: BuiltinToolService.commandApprovalDetails(command, in: directory)
             )
             let service = BuiltinToolService(
                 permissionService: permissionService,

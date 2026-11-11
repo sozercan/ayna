@@ -244,6 +244,49 @@ import Testing
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func `A command blocked while its approval waits does not run`() async throws {
+            let root = try makeRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let (service, permissionService) = makeService(root: root)
+
+            let run = Task {
+                await service.executeToolCall(toolName: "run_command", arguments: ["command": "touch marker"], conversationId: UUID())
+            }
+            let pending = try #require(await waitForPending(permissionService))
+            var settings = AgentSettings.default
+            settings.projectRootPath = root.path
+            settings.additionalBlockedPatterns = ["touch"]
+            service.apply(settings)
+            permissionService.approve(pending.id)
+
+            #expect(await run.value.contains("blocked by security policy"))
+            #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("marker").path))
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `A command runs where its approval said, even if the project root changes`() async throws {
+            let first = try makeRoot()
+            let second = try makeRoot()
+            defer {
+                try? FileManager.default.removeItem(at: first)
+                try? FileManager.default.removeItem(at: second)
+            }
+            let (service, permissionService) = makeService(root: first)
+
+            let run = Task {
+                await service.executeToolCall(toolName: "run_command", arguments: ["command": "pwd"], conversationId: UUID())
+            }
+            let pending = try #require(await waitForPending(permissionService))
+            #expect(pending.details.contains(first.resolvingSymlinksInPath().path))
+            var settings = AgentSettings.default
+            settings.projectRootPath = second.path
+            service.apply(settings)
+            permissionService.approve(pending.id)
+
+            #expect(await run.value.contains(first.resolvingSymlinksInPath().path))
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func `Allow All approves every pending request in the conversation only`() async throws {
             let permissionService = PermissionService()
             let conversation = UUID()
@@ -303,6 +346,18 @@ struct MCPToolNamingTests {
         let rediscovered = tool("read_file", server: "a_b")
         let afterDisconnect = naming.assign([rediscovered], reserved: ["read_file"])
         #expect(afterDisconnect[rediscovered.id] == "a_b__read_file_2")
+    }
+
+    @Test
+    func `Names function-calling APIs would reject are aliased`() {
+        var naming = MCPToolNaming()
+        let dotted = tool("docs.search", server: "kb")
+        let long = tool(String(repeating: "x", count: 70), server: "kb")
+
+        let names = naming.assign([dotted, long], reserved: [])
+
+        #expect(names[dotted.id] == "kb__docs_search")
+        #expect(names[long.id].map { MCPToolNaming.isValidFunctionName($0) } == true)
     }
 
     @Test

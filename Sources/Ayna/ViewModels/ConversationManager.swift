@@ -425,7 +425,7 @@ final class ConversationManager: ObservableObject {
         }
         // Summaries follow what is on disk, so every durable save refreshes one.
         persistenceCoordinator.observeDurableSaves { [weak self] conversation in
-            self?.conversationSummaryUpdateOperation(conversation)
+            self?.conversationDidPersist(conversation)
         }
         if startsLoadingImmediately {
             loadingTask = Task {
@@ -892,6 +892,13 @@ final class ConversationManager: ObservableObject {
                 AttachmentStorage.shared.delete(path: path)
             }
         }
+    }
+
+    /// A save that lands after its conversation was deleted or cleared must not restore the
+    /// conversation's summary.
+    private func conversationDidPersist(_ conversation: Conversation) {
+        guard getConversationIndex(for: conversation.id) != nil else { return }
+        conversationSummaryUpdateOperation(conversation)
     }
 
     /// Files a conversation owns: from its messages, or from metadata when they aren't loaded.

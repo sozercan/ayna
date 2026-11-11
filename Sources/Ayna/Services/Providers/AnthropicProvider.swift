@@ -30,6 +30,9 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     private var currentRequestBuildTask: Task<Void, Never>?
     private var currentStreamTask: Task<Void, Never>?
     private var currentDataTask: URLSessionDataTask?
+    /// Advances when a request starts or is cancelled, so a retry waiting out its backoff can
+    /// tell that it no longer belongs to the current request.
+    private var requestGeneration: UInt64 = 0
 
     private struct StreamProcessingResult: Sendable {
         let hasReceivedData: Bool
@@ -61,6 +64,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         tools: [[String: Any]]?,
         callbacks: AIProviderStreamCallbacks
     ) {
+        requestGeneration &+= 1
         // Resolve endpoint URL
         let url: URL
         do {
@@ -167,6 +171,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     }
 
     func cancelRequest() {
+        requestGeneration &+= 1
         currentRequestBuildTask?.cancel()
         currentRequestBuildTask = nil
         currentStreamTask?.cancel()
@@ -462,7 +467,9 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             callbacks.onError(error)
             return
         }
+        let generation = requestGeneration
         await delay(for: attempt, retryAfter: AIRetryPolicy.retryAfterDate(for: error))
+        guard requestGeneration == generation, !Task.isCancelled else { return }
         nonStreamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey, attempt: attempt + 1)
     }
 
@@ -623,10 +630,10 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         circuitKey: String
     ) async {
         if shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData) {
+            let generation = requestGeneration
             await delay(for: attempt, retryAfter: AIRetryPolicy.retryAfterDate(for: error))
-            await MainActor.run {
-                streamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey, attempt: attempt + 1)
-            }
+            guard requestGeneration == generation, !Task.isCancelled else { return }
+            streamResponse(request: request, callbacks: callbacks, circuitKey: circuitKey, attempt: attempt + 1)
         } else {
             await MainActor.run {
                 self.currentStreamTask = nil
