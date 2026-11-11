@@ -1327,7 +1327,8 @@ final class ConversationManager: ObservableObject {
                 conversationIndexCache.removeAll()
             }
             isLoaded = true
-            scheduleLoadRetry()
+            // A retried refresh still keeps a reply that is streaming in.
+            scheduleLoadRetry(preservingUnsavedChanges: preservingUnsavedChanges)
         }
     }
 
@@ -1410,7 +1411,7 @@ final class ConversationManager: ObservableObject {
         #endif
     }
 
-    private func scheduleLoadRetry() {
+    private func scheduleLoadRetry(preservingUnsavedChanges: Bool = false) {
         guard !isConversationStateAuthoritative, loadRetryTask == nil else { return }
         let scale = 1 << min(loadRetryAttempt, 5)
         let delay = loadRetryBaseDelay * scale
@@ -1423,7 +1424,7 @@ final class ConversationManager: ObservableObject {
             }
             guard let self else { return }
             self.loadRetryTask = nil
-            await self.loadConversations()
+            await self.loadConversations(preservingUnsavedChanges: preservingUnsavedChanges)
         }
     }
 
@@ -1492,7 +1493,7 @@ final class ConversationManager: ObservableObject {
     }
 
     /// Resets the record of what is on disk from freshly loaded metadata. A full snapshot is
-    /// kept while its stored copy is unchanged; a row kept in memory but missing from the
+    /// kept unless the stored copy is newer; a row kept in memory but missing from the
     /// metadata was saved while it loaded, so the baseline its save recorded is kept too
     /// (only a completed save creates one).
     private func rebuildDurableDiskBaseline(
@@ -1501,8 +1502,9 @@ final class ConversationManager: ObservableObject {
     ) {
         let previousBaseline = durableDiskBaseline
         durableDiskBaseline = metadataFromDisk.reduce(into: [:]) { baseline, metadata in
+            // A save that finished after the metadata was read leaves the snapshot newer.
             if let previous = previousBaseline[metadata.id], !previous.isMetadataOnly,
-               previous.conversation.updatedAt == metadata.updatedAt
+               previous.conversation.updatedAt >= metadata.updatedAt
             {
                 baseline[metadata.id] = previous
             } else {
