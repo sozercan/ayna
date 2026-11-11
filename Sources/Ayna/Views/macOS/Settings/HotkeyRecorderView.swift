@@ -10,7 +10,7 @@ import AppKit
 import SwiftUI
 
 struct HotkeyRecorderView: View {
-    @State private var current = HotkeyCombination(string: AppPreferences.attachFromAppHotkey) ?? .default
+    @State private var current = HotkeyCombination(storage: AppPreferences.attachFromAppHotkey) ?? .default
     @State private var isRecording = false
     @State private var warning: String?
     @State private var monitor: Any?
@@ -86,7 +86,7 @@ struct HotkeyRecorderView: View {
             }
         }
         current = combination
-        AppPreferences.attachFromAppHotkey = combination.displayString
+        AppPreferences.attachFromAppHotkey = combination.storageString
         warning = combination.systemConflict.map {
             "\(combination.displayString) is also used by \($0); macOS may handle it first."
         }

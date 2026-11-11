@@ -57,6 +57,7 @@ import Foundation
             )
             let git = GitContextService()
             await git.loadContext(from: directory)
+            try Task.checkCancellation()
             guard var output = git.systemPromptContext() else {
                 return "Not a git repository: \(directory.path)"
             }
@@ -106,17 +107,11 @@ import Foundation
         }
 
         private func readContextFile(_ file: URL, conversationId: UUID) async throws -> String? {
-            let resolved = file.resolvingSymlinksInPath().standardized
-            var isDirectory: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDirectory),
-                  !isDirectory.boolValue,
-                  let size = try? FileManager.default.attributesOfItem(atPath: resolved.path)[.size] as? Int,
-                  size <= 100 * 1024
-            else {
+            guard let (handle, path) = ProjectContextService.openContextFile(file) else {
                 return nil
             }
             let riskReason: String?
-            switch pathValidator.validate(url: resolved, operation: .read) {
+            switch pathValidator.validate(url: path, operation: .read) {
             case .denied:
                 return nil
             case let .requiresApproval(reason):
@@ -128,12 +123,12 @@ import Foundation
                 try await authorize(
                     tool: ToolName.projectContext,
                     description: "Read project context file",
-                    details: resolved.path,
+                    details: path.path,
                     riskReason: riskReason,
                     conversationId: conversationId
                 )
             }
-            return try? String(contentsOf: resolved, encoding: .utf8)
+            return ProjectContextService.readContextFile(handle)
         }
 
         /// Replaces the conversation's task list. Tasks keep their identity when their text is unchanged.
