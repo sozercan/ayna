@@ -328,12 +328,6 @@ struct MacNewChatView: View {
         }
     }
 
-    private func updateCurrentConversationModelIfNeeded(using model: String) {
-        let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        ensureConversationModelMatchesSelection(trimmed)
-    }
-
     private func syncSelectedModelState() {
         if let conversationModel = currentConversation?.model.trimmingCharacters(
             in: .whitespacesAndNewlines

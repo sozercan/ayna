@@ -276,10 +276,6 @@ struct MacChatView: View {
         return displayName
     }
 
-    private func isModelCurrentlySelected(_ model: String) -> Bool {
-        normalizedSelectedModel == model.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     var body: some View {
         ZStack(alignment: .topTrailing) {
             // Chat background with subtle gradient
@@ -1330,6 +1326,40 @@ struct MacChatView: View {
         )
     }
 
+    /// Appends the streamed chunks collected since the last flush to the assistant message.
+    private func flushPendingChunks(
+        operationID: ToolChainCoordinator.OperationID,
+        conversationId: UUID,
+        assistantMessageID: UUID
+    ) {
+        batchUpdateTask = nil
+        let chunksToProcess = pendingChunks
+        pendingChunks.removeAll()
+        guard !chunksToProcess.isEmpty,
+              toolChainCoordinator.owns(operationID, conversationID: conversationId),
+              activeAssistantMessageID == assistantMessageID
+        else {
+            return
+        }
+
+        guard conversationManager.appendToMessage(
+            conversationId: conversationId,
+            messageId: assistantMessageID,
+            chunk: chunksToProcess.joined()
+        ) else {
+            logChat(
+                "⚠️ Assistant message no longer exists, ignoring chunk",
+                level: .info,
+                metadata: ["messageId": assistantMessageID.uuidString]
+            )
+            return
+        }
+        if let conversation = conversationManager.conversation(byId: conversationId) {
+            conversationManager.save(conversation)
+        }
+        currentToolName = nil
+    }
+
     // Helper function to send messages with automatic tool call handling
     // swiftlint:disable:next function_body_length
     func sendMessageWithToolSupport(
@@ -1387,39 +1417,20 @@ struct MacChatView: View {
                     coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
                         guard activeAssistantMessageID == assistantMessageID else { return }
                     pendingChunks.append(chunk)
-                    batchUpdateTask?.cancel()
+                    // Throttle, don't debounce: a flush already scheduled will pick up this
+                    // chunk. Restarting the timer per chunk would starve the UI while tokens
+                    // keep arriving faster than the flush interval.
+                    if let pending = batchUpdateTask, !pending.isCancelled { return }
 
-                        let batchTask = Task { @MainActor in
+                    let batchTask = Task { @MainActor in
                         try? await Task.sleep(for: .milliseconds(100))
-                            guard !Task.isCancelled,
-                                  coordinator.owns(operationID, conversationID: conversationId),
-                                  activeAssistantMessageID == assistantMessageID
-                            else {
-                                return
-                            }
-
-                        let chunksToProcess = pendingChunks
-                        pendingChunks.removeAll()
-                        guard !chunksToProcess.isEmpty else { return }
-
-                        let combinedChunk = chunksToProcess.joined()
-                            guard conversationManager.appendToMessage(
-                                conversationId: conversationId,
-                                messageId: assistantMessageID,
-                                chunk: combinedChunk
-                            ) else {
-                            logChat(
-                                    "⚠️ Assistant message no longer exists, ignoring chunk",
-                                    level: .info,
-                                    metadata: ["messageId": assistantMessageID.uuidString]
-                            )
-                            return
-                        }
-                            if let conversation = conversationManager.conversation(byId: conversationId) {
-                                conversationManager.save(conversation)
-                        }
-                                currentToolName = nil
-                            }
+                        guard !Task.isCancelled else { return }
+                        flushPendingChunks(
+                            operationID: operationID,
+                            conversationId: conversationId,
+                            assistantMessageID: assistantMessageID
+                        )
+                    }
                         batchUpdateTask = batchTask
                         coordinator.track(batchTask, for: operationID)
                 }

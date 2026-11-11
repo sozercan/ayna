@@ -11,7 +11,6 @@
 
     struct MacSidebarView: View {
         @EnvironmentObject var conversationManager: ConversationManager
-        @ObservedObject private var aiService = AIService.shared
         @Binding var selectedConversationId: UUID?
         @State private var selectedConversations = Set<UUID>()
         @State private var searchText = ""
@@ -209,12 +208,6 @@
                 else { return }
                 selectedConversations.insert(id)
             }
-        }
-
-        private func startNewConversation() {
-            selectedConversationId = nil
-            selectedConversations.removeAll()
-            NotificationCenter.default.post(name: .newConversationRequested, object: nil)
         }
 
         private func deleteConversations(with ids: Set<UUID>) {

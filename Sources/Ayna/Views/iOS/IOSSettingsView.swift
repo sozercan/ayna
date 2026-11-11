@@ -19,7 +19,6 @@ struct IOSSettingsView: View {
     @State private var multiModelSelectionEnabled = AppPreferences.multiModelSelectionEnabled
 
     @State private var showingAddSheet = false
-    @State private var selectedModelForEditing: String?
 
     private var toolsSummary: String {
         var enabledCount = 0

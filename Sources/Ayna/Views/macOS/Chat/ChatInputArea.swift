@@ -36,8 +36,6 @@ struct ChatInputArea: View {
     let onRemoveFile: (URL) -> Void
     var onRemoveAppContent: (() -> Void)?
 
-    @ObservedObject private var aiService = AIService.shared
-
     var body: some View {
         let textHeight = calculateTextHeight()
 
