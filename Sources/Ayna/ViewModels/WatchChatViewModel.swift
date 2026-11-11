@@ -502,14 +502,14 @@ enum WatchLiveModelPolicy {
                             result[pair.key] = AnyCodable(pair.value)
                         }
                         guard let registeredToolCallID = registeredToolCalls.register(
-                            providerID: toolCallID,
-                            toolName: toolName,
-                            arguments: anyCodableArguments
-                        ),
-                            let toolToken = roundCoordinator.registerTool(
-                                for: operationID,
-                                requestRoundID: requestRoundID
-                            )
+                                  providerID: toolCallID,
+                                  toolName: toolName,
+                                  arguments: anyCodableArguments
+                              ),
+                              let toolToken = roundCoordinator.registerTool(
+                                  for: operationID,
+                                  requestRoundID: requestRoundID
+                              )
                         else {
                             return
                         }

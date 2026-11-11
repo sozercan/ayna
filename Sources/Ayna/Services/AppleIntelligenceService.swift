@@ -207,20 +207,20 @@ enum AppleIntelligenceError: LocalizedError {
         func availabilityDescription() -> String {
             switch availability {
             case .available:
-                return "Available"
+                "Available"
             case let .unavailable(reason):
                 switch reason {
                 case .deviceNotEligible:
-                    return "Device not eligible for Apple Intelligence"
+                    "Device not eligible for Apple Intelligence"
                 case .appleIntelligenceNotEnabled:
-                    return "Apple Intelligence not enabled in System Settings"
+                    "Apple Intelligence not enabled in System Settings"
                 case .modelNotReady:
-                    return "Model assets not downloaded yet"
+                    "Model assets not downloaded yet"
                 @unknown default:
-                    return "Unknown availability issue"
+                    "Unknown availability issue"
                 }
             @unknown default:
-                return "Unknown availability status"
+                "Unknown availability status"
             }
         }
 
@@ -466,20 +466,20 @@ enum AppleIntelligenceError: LocalizedError {
         private func getAvailabilityError() -> Error {
             switch availability {
             case .available:
-                return AppleIntelligenceError.unavailable("Unknown")
+                AppleIntelligenceError.unavailable("Unknown")
             case let .unavailable(reason):
                 switch reason {
                 case .deviceNotEligible:
-                    return AppleIntelligenceError.deviceNotEligible
+                    AppleIntelligenceError.deviceNotEligible
                 case .appleIntelligenceNotEnabled:
-                    return AppleIntelligenceError.appleIntelligenceNotEnabled
+                    AppleIntelligenceError.appleIntelligenceNotEnabled
                 case .modelNotReady:
-                    return AppleIntelligenceError.modelNotReady
+                    AppleIntelligenceError.modelNotReady
                 @unknown default:
-                    return AppleIntelligenceError.unavailable("Unknown reason")
+                    AppleIntelligenceError.unavailable("Unknown reason")
                 }
             @unknown default:
-                return AppleIntelligenceError.unavailable("Unknown status")
+                AppleIntelligenceError.unavailable("Unknown status")
             }
         }
     }

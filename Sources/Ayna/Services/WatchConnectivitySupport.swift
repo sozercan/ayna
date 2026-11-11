@@ -2605,9 +2605,9 @@ enum WatchMutationFileTransport {
     ) throws -> Metadata {
         guard metadata[WatchMessageKeys.type] as? String == WatchMessageKeys.typeMutationFile,
               let operationID = (metadata[WatchMessageKeys.operationId] as? String)
-              .flatMap(UUID.init(uuidString:)),
+                  .flatMap(UUID.init(uuidString:)),
               let conversationID = (metadata[WatchMessageKeys.conversationId] as? String)
-              .flatMap(UUID.init(uuidString:)),
+                  .flatMap(UUID.init(uuidString:)),
               let schemaVersion = WatchSyncCapability.advertisedMaximumSchemaVersion(
                   metadata[WatchMessageKeys.schemaVersion]
               )

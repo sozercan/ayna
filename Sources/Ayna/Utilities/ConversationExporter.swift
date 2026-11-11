@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 //
 //  ConversationExporter.swift
 //  ayna
@@ -6,21 +7,21 @@
 //
 
 #if os(macOS)
-    import AppKit
+import AppKit
 
-    typealias PlatformFont = NSFont
-    typealias PlatformColor = NSColor
+typealias PlatformFont = NSFont
+typealias PlatformColor = NSColor
 #elseif os(iOS)
-    import UIKit
+import UIKit
 
-    typealias PlatformFont = UIFont
-    typealias PlatformColor = UIColor
+typealias PlatformFont = UIFont
+typealias PlatformColor = UIColor
 #endif
 import Foundation
+import SwiftUI
 #if os(macOS) || os(iOS)
 import PDFKit
 #endif
-import SwiftUI
 
 enum ConversationExporter {
     static func generateMarkdown(for conversation: Conversation) -> String {
@@ -89,9 +90,9 @@ enum ConversationExporter {
         let titleAttributes: [NSAttributedString.Key: Any] = [.font: titleFont]
         let secondaryColor: PlatformColor = {
             #if os(macOS)
-                return PlatformColor.secondaryLabelColor
+            PlatformColor.secondaryLabelColor
             #else
-                return PlatformColor.secondaryLabel
+            PlatformColor.secondaryLabel
             #endif
         }()
 

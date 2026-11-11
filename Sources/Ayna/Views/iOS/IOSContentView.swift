@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 #if os(iOS)
 //
 //  IOSContentView.swift
@@ -253,13 +254,13 @@ struct IOSNewChatView: View {
                             scrollToBottom(proxy: proxy, conversation: conversation)
                         }
                     }
-                        .onChange(of: conversation.updatedAt) {
-                            // Message content, tool metadata, citations, and response status can change
-                            // without changing the message count. Refresh copied display items for all.
-                            updateDisplayableItems()
-                        }
+                    .onChange(of: conversation.updatedAt) {
+                        // Message content, tool metadata, citations, and response status can change
+                        // without changing the message count. Refresh copied display items for all.
+                        updateDisplayableItems()
+                    }
                     .onChange(of: conversation.messages.last?.content) {
-                            updateDisplayableItems()
+                        updateDisplayableItems()
                         if viewModel.isGenerating, followsLatest, let lastId = conversation.messages.last?.id {
                             proxy.scrollTo(lastId, anchor: .bottom)
                         }
@@ -391,7 +392,7 @@ struct IOSNewChatView: View {
             )
         }
         .onDisappear {
-                viewModel.cancelOwnedOperations()
+            viewModel.cancelOwnedOperations()
         }
     }
 

@@ -6,144 +6,144 @@
 //
 
 #if os(macOS)
-import Combine
-import Foundation
-import os
+    import Combine
+    import Foundation
+    import os
 
-@MainActor
-private final class MCPServiceGenerationDelegate: MCPServiceDelegate {
-    weak var manager: MCPServerManager?
-    let serverName: String
-    let generation: UInt64
+    @MainActor
+    private final class MCPServiceGenerationDelegate: MCPServiceDelegate {
+        weak var manager: MCPServerManager?
+        let serverName: String
+        let generation: UInt64
 
-    init(manager: MCPServerManager, serverName: String, generation: UInt64) {
-        self.manager = manager
-        self.serverName = serverName
-        self.generation = generation
-    }
+        init(manager: MCPServerManager, serverName: String, generation: UInt64) {
+            self.manager = manager
+            self.serverName = serverName
+            self.generation = generation
+        }
 
-    func mcpService(_ service: MCPServicing, didTerminateWithError error: String?) {
-        manager?.handleServiceTermination(
-            service,
-            serverName: serverName,
-            generation: generation,
-            error: error
-        )
-    }
-}
-
-@MainActor
-private struct ManagedMCPService {
-    let configID: UUID
-    let generation: UInt64
-    let service: MCPServicing
-    let delegate: MCPServiceGenerationDelegate
-}
-
-private struct ManagedMCPTask: Sendable {
-    let operationID: UUID
-    let generation: UInt64
-    let task: Task<Void, Never>
-    let completion: ManagedMCPTaskCompletion
-
-    init(
-        operationID: UUID = UUID(),
-        generation: UInt64,
-        operation: @escaping @MainActor @Sendable () async -> Void
-    ) {
-        let completion = ManagedMCPTaskCompletion()
-        self.operationID = operationID
-        self.generation = generation
-        self.completion = completion
-        task = Task { @MainActor in
-            defer { completion.finish() }
-            await operation()
+        func mcpService(_ service: MCPServicing, didTerminateWithError error: String?) {
+            manager?.handleServiceTermination(
+                service,
+                serverName: serverName,
+                generation: generation,
+                error: error
+            )
         }
     }
-}
 
-final class ManagedMCPTaskCompletion: Sendable {
-    private struct State {
-        var isFinished = false
-        var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
-        var cancelledWaiterIDs: Set<UUID> = []
+    @MainActor
+    private struct ManagedMCPService {
+        let configID: UUID
+        let generation: UInt64
+        let service: MCPServicing
+        let delegate: MCPServiceGenerationDelegate
     }
 
-    private let state = OSAllocatedUnfairLock(initialState: State())
+    private struct ManagedMCPTask: Sendable {
+        let operationID: UUID
+        let generation: UInt64
+        let task: Task<Void, Never>
+        let completion: ManagedMCPTaskCompletion
 
-    var pendingWaiterCount: Int {
-        state.withLock { $0.waiters.count }
-    }
-
-    func wait() async {
-        let waiterID = UUID()
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                register(waiterID: waiterID, continuation: continuation)
+        init(
+            operationID: UUID = UUID(),
+            generation: UInt64,
+            operation: @escaping @MainActor @Sendable () async -> Void
+        ) {
+            let completion = ManagedMCPTaskCompletion()
+            self.operationID = operationID
+            self.generation = generation
+            self.completion = completion
+            task = Task { @MainActor in
+                defer { completion.finish() }
+                await operation()
             }
-        } onCancel: {
-            cancel(waiterID: waiterID)
         }
     }
 
-    func finish() {
-        let continuations = state.withLock { state -> [CheckedContinuation<Void, Never>] in
-            guard !state.isFinished else { return [] }
-            state.isFinished = true
-            state.cancelledWaiterIDs.removeAll()
-            let continuations = Array(state.waiters.values)
-            state.waiters.removeAll()
-            return continuations
+    final class ManagedMCPTaskCompletion: Sendable {
+        private struct State {
+            var isFinished = false
+            var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+            var cancelledWaiterIDs: Set<UUID> = []
         }
-        continuations.forEach { $0.resume() }
-    }
 
-    private func register(
-        waiterID: UUID,
-        continuation: CheckedContinuation<Void, Never>
-    ) {
-        let shouldResume = state.withLock { state in
-            if state.isFinished || state.cancelledWaiterIDs.remove(waiterID) != nil {
-                return true
+        private let state = OSAllocatedUnfairLock(initialState: State())
+
+        var pendingWaiterCount: Int {
+            state.withLock { $0.waiters.count }
+        }
+
+        func wait() async {
+            let waiterID = UUID()
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    register(waiterID: waiterID, continuation: continuation)
+                }
+            } onCancel: {
+                cancel(waiterID: waiterID)
             }
-            state.waiters[waiterID] = continuation
-            return false
         }
-        if shouldResume {
-            continuation.resume()
+
+        func finish() {
+            let continuations = state.withLock { state -> [CheckedContinuation<Void, Never>] in
+                guard !state.isFinished else { return [] }
+                state.isFinished = true
+                state.cancelledWaiterIDs.removeAll()
+                let continuations = Array(state.waiters.values)
+                state.waiters.removeAll()
+                return continuations
+            }
+            continuations.forEach { $0.resume() }
+        }
+
+        private func register(
+            waiterID: UUID,
+            continuation: CheckedContinuation<Void, Never>
+        ) {
+            let shouldResume = state.withLock { state in
+                if state.isFinished || state.cancelledWaiterIDs.remove(waiterID) != nil {
+                    return true
+                }
+                state.waiters[waiterID] = continuation
+                return false
+            }
+            if shouldResume {
+                continuation.resume()
+            }
+        }
+
+        private func cancel(waiterID: UUID) {
+            let continuation = state.withLock { state -> CheckedContinuation<Void, Never>? in
+                if let continuation = state.waiters.removeValue(forKey: waiterID) {
+                    return continuation
+                }
+                if !state.isFinished {
+                    state.cancelledWaiterIDs.insert(waiterID)
+                }
+                return nil
+            }
+            continuation?.resume()
         }
     }
 
-    private func cancel(waiterID: UUID) {
-        let continuation = state.withLock { state -> CheckedContinuation<Void, Never>? in
-            if let continuation = state.waiters.removeValue(forKey: waiterID) {
-                return continuation
-            }
-            if !state.isFinished {
-                state.cancelledWaiterIDs.insert(waiterID)
-            }
-            return nil
-        }
-        continuation?.resume()
-    }
-}
+    // swiftlint:disable type_body_length
+    /// Manages multiple MCP server connections and tool discovery
+    @MainActor
+    class MCPServerManager: ObservableObject {
+        static let shared = MCPServerManager()
 
-// swiftlint:disable type_body_length
-/// Manages multiple MCP server connections and tool discovery
-@MainActor
-class MCPServerManager: ObservableObject {
-    static let shared = MCPServerManager()
+        private let serviceFactory: (MCPServerConfig) -> MCPServicing
+        private let retryDelayProvider: (Int) -> TimeInterval
+        private let reconnectDelayProvider: () -> TimeInterval
+        private let reconnectSleeper: @MainActor @Sendable (TimeInterval) async throws -> Void
 
-    private let serviceFactory: (MCPServerConfig) -> MCPServicing
-    private let retryDelayProvider: (Int) -> TimeInterval
-    private let reconnectDelayProvider: () -> TimeInterval
-    private let reconnectSleeper: @MainActor @Sendable (TimeInterval) async throws -> Void
-
-    @Published var serverConfigs: [MCPServerConfig] = []
-    @Published var availableTools: [MCPTool] = []
-    @Published var availableResources: [MCPResource] = []
-    @Published var isDiscovering = false
-    @Published private(set) var serverStatuses: [String: MCPServerStatus] = [:]
+        @Published var serverConfigs: [MCPServerConfig] = []
+        @Published var availableTools: [MCPTool] = []
+        @Published var availableResources: [MCPResource] = []
+        @Published var isDiscovering = false
+        @Published private(set) var serverStatuses: [String: MCPServerStatus] = [:]
 
         private var services: [String: ManagedMCPService] = [:]
         private var serverGenerations: [String: UInt64] = [:]
@@ -154,174 +154,175 @@ class MCPServerManager: ObservableObject {
         private var discoveryBatchTask: ManagedMCPTask?
         private var discoveryBatchGeneration: UInt64 = 0
 
-    // Optimization: Cache enabled tools and their OpenAI function format
-    private var cachedEnabledTools: [MCPTool] = []
-    private var cachedOpenAIFunctions: [[String: Any]] = []
-    private var toolLookup: [String: MCPTool] = [:] // O(1) lookup by model-facing name
-    private var exposedToolNames: [UUID: String] = [:]
-    private var toolNaming = MCPToolNaming()
+        // Optimization: Cache enabled tools and their OpenAI function format
+        private var cachedEnabledTools: [MCPTool] = []
+        private var cachedOpenAIFunctions: [[String: Any]] = []
+        private var toolLookup: [String: MCPTool] = [:] // O(1) lookup by model-facing name
+        private var exposedToolNames: [UUID: String] = [:]
+        private var toolNaming = MCPToolNaming()
 
-    /// Tool names Ayna serves itself; an MCP tool with one of these names gets a server prefix.
-    static var reservedToolNames: Set<String> {
-        BuiltinToolService.toolNames.union([WebSearchCoordinator.toolName, WebFetchService.toolName])
-    }
-    private var isToolCacheValid = false
-    private var isOpenAIFunctionCacheValid = false
-
-    init(
-        serviceFactory: @escaping (MCPServerConfig) -> MCPServicing = { MCPService(serverConfig: $0) },
-        retryDelayProvider: @escaping (Int) -> TimeInterval = { pow(2.0, Double($0 - 1)) },
-        reconnectDelayProvider: @escaping () -> TimeInterval = { 2 },
-        reconnectSleeper: @escaping @MainActor @Sendable (TimeInterval) async throws -> Void = { delay in
-            try await Task.sleep(for: .seconds(delay))
+        /// Tool names Ayna serves itself; an MCP tool with one of these names gets a server prefix.
+        static var reservedToolNames: Set<String> {
+            BuiltinToolService.toolNames.union([WebSearchCoordinator.toolName, WebFetchService.toolName])
         }
-    ) {
-        self.serviceFactory = serviceFactory
-        self.retryDelayProvider = retryDelayProvider
-        self.reconnectDelayProvider = reconnectDelayProvider
-        self.reconnectSleeper = reconnectSleeper
-        loadServerConfigs()
-        initializeStatusEntries()
-        MCPProcessTracker.shared.cleanupOrphanedProcesses()
-    }
 
-    // MARK: - Server Configuration Management
+        private var isToolCacheValid = false
+        private var isOpenAIFunctionCacheValid = false
 
-    func addServerConfig(_ config: MCPServerConfig) {
-        serverConfigs.append(config)
-        saveServerConfigs()
-        setStatus(for: config, state: config.enabled ? .idle : .disabled, clearExistingError: true)
-
-        if config.enabled {
-                launchConnection(to: config)
-        }
-    }
-
-    func updateServerConfig(_ config: MCPServerConfig) {
-        guard let index = serverConfigs.firstIndex(where: { $0.id == config.id }) else { return }
-
-        let previousConfig = serverConfigs[index]
-        let wasEnabled = previousConfig.enabled
-        serverConfigs[index] = config
-        saveServerConfigs()
-
-        if previousConfig.name != config.name {
-            let existingStatus = serverStatuses.removeValue(forKey: previousConfig.name)
-            if let existingStatus {
-                setStatus(for: config, state: existingStatus.state, error: existingStatus.lastError)
-            } else {
-                setStatus(for: config, state: config.enabled ? .idle : .disabled)
+        init(
+            serviceFactory: @escaping (MCPServerConfig) -> MCPServicing = { MCPService(serverConfig: $0) },
+            retryDelayProvider: @escaping (Int) -> TimeInterval = { pow(2.0, Double($0 - 1)) },
+            reconnectDelayProvider: @escaping () -> TimeInterval = { 2 },
+            reconnectSleeper: @escaping @MainActor @Sendable (TimeInterval) async throws -> Void = { delay in
+                try await Task.sleep(for: .seconds(delay))
             }
-        } else {
-            setStatus(for: config, state: nil)
+        ) {
+            self.serviceFactory = serviceFactory
+            self.retryDelayProvider = retryDelayProvider
+            self.reconnectDelayProvider = reconnectDelayProvider
+            self.reconnectSleeper = reconnectSleeper
+            loadServerConfigs()
+            initializeStatusEntries()
+            MCPProcessTracker.shared.cleanupOrphanedProcesses()
         }
 
-        // Invalidate cache when server configs change
-        invalidateToolCache()
+        // MARK: - Server Configuration Management
 
-        let requiresRestart = shouldRestartServer(previousConfig: previousConfig, updatedConfig: config)
+        func addServerConfig(_ config: MCPServerConfig) {
+            serverConfigs.append(config)
+            saveServerConfigs()
+            setStatus(for: config, state: config.enabled ? .idle : .disabled, clearExistingError: true)
 
-        // Handle connection state changes
-        if wasEnabled, !config.enabled {
+            if config.enabled {
+                launchConnection(to: config)
+            }
+        }
+
+        func updateServerConfig(_ config: MCPServerConfig) {
+            guard let index = serverConfigs.firstIndex(where: { $0.id == config.id }) else { return }
+
+            let previousConfig = serverConfigs[index]
+            let wasEnabled = previousConfig.enabled
+            serverConfigs[index] = config
+            saveServerConfigs()
+
+            if previousConfig.name != config.name {
+                let existingStatus = serverStatuses.removeValue(forKey: previousConfig.name)
+                if let existingStatus {
+                    setStatus(for: config, state: existingStatus.state, error: existingStatus.lastError)
+                } else {
+                    setStatus(for: config, state: config.enabled ? .idle : .disabled)
+                }
+            } else {
+                setStatus(for: config, state: nil)
+            }
+
+            // Invalidate cache when server configs change
+            invalidateToolCache()
+
+            let requiresRestart = shouldRestartServer(previousConfig: previousConfig, updatedConfig: config)
+
+            // Handle connection state changes
+            if wasEnabled, !config.enabled {
                 disconnectServer(previousConfig.name)
-            setStatus(for: config, state: .disabled)
-        } else if !wasEnabled, config.enabled {
+                setStatus(for: config, state: .disabled)
+            } else if !wasEnabled, config.enabled {
                 if previousConfig.name != config.name {
                     disconnectServer(previousConfig.name)
-            }
+                }
                 setStatus(for: config, state: .idle, clearExistingError: true)
                 launchConnection(to: config)
-        } else if requiresRestart {
+            } else if requiresRestart {
                 restartServer(previousName: previousConfig.name, with: config)
-        }
-    }
-
-    @MainActor
-    func removeServerConfig(_ config: MCPServerConfig) {
-        disconnectServer(config.name)
-        serverConfigs.removeAll { $0.id == config.id }
-        saveServerConfigs()
-        serverStatuses.removeValue(forKey: config.name)
-    }
-
-    private func saveServerConfigs() {
-        if let encoded = try? JSONEncoder().encode(serverConfigs) {
-            AppPreferences.storage.set(encoded, forKey: "mcp_server_configs")
-        }
-    }
-
-    private func loadServerConfigs() {
-        guard let data = AppPreferences.storage.data(forKey: "mcp_server_configs") else {
-            // First launch: use default configs
-            DiagnosticsLogger.log(
-                .mcpServerManager,
-                level: .info,
-                message: "No saved MCP server configs; using defaults"
-            )
-            serverConfigs = defaultServerConfigs()
-            saveServerConfigs()
-            return
-        }
-
-        do {
-            let decoded = try JSONDecoder().decode([MCPServerConfig].self, from: data)
-            // Validate that all configs have proper string dictionaries for env
-            let validatedConfigs = decoded.map { config -> MCPServerConfig in
-                // Ensure env is a proper [String: String] dictionary
-                // Filter out any non-string values that might have been corrupted
-                var validEnv: [String: String] = [:]
-                for (key, value) in config.env where !key.isEmpty {
-                    validEnv[key] = value
-                }
-
-                return MCPServerConfig(
-                    id: config.id,
-                    name: config.name,
-                    command: config.command,
-                    args: config.args,
-                    env: validEnv,
-                    enabled: config.enabled
-                )
             }
-            serverConfigs = validatedConfigs
-            DiagnosticsLogger.log(
-                .mcpServerManager,
-                level: .info,
-                message: "Loaded MCP server configs",
-                metadata: ["count": "\(serverConfigs.count)"]
-            )
-        } catch {
-            DiagnosticsLogger.log(
-                .mcpServerManager,
-                level: .error,
-                message: "Failed to load MCP server configs",
-                metadata: ["error": error.localizedDescription]
-            )
-            DiagnosticsLogger.log(
-                .mcpServerManager,
-                level: .error,
-                message: "Clearing corrupted MCP config data and resetting to defaults"
-            )
-            // Clear corrupted data and use defaults
-            AppPreferences.storage.removeObject(forKey: "mcp_server_configs")
-            serverConfigs = defaultServerConfigs()
-            saveServerConfigs()
         }
-    }
 
-    private func defaultServerConfigs() -> [MCPServerConfig] {
-        // No default servers - users add their own
-        []
-    }
+        @MainActor
+        func removeServerConfig(_ config: MCPServerConfig) {
+            disconnectServer(config.name)
+            serverConfigs.removeAll { $0.id == config.id }
+            saveServerConfigs()
+            serverStatuses.removeValue(forKey: config.name)
+        }
 
-    // MARK: - Connection Management
+        private func saveServerConfigs() {
+            if let encoded = try? JSONEncoder().encode(serverConfigs) {
+                AppPreferences.storage.set(encoded, forKey: "mcp_server_configs")
+            }
+        }
+
+        private func loadServerConfigs() {
+            guard let data = AppPreferences.storage.data(forKey: "mcp_server_configs") else {
+                // First launch: use default configs
+                DiagnosticsLogger.log(
+                    .mcpServerManager,
+                    level: .info,
+                    message: "No saved MCP server configs; using defaults"
+                )
+                serverConfigs = defaultServerConfigs()
+                saveServerConfigs()
+                return
+            }
+
+            do {
+                let decoded = try JSONDecoder().decode([MCPServerConfig].self, from: data)
+                // Validate that all configs have proper string dictionaries for env
+                let validatedConfigs = decoded.map { config -> MCPServerConfig in
+                    // Ensure env is a proper [String: String] dictionary
+                    // Filter out any non-string values that might have been corrupted
+                    var validEnv: [String: String] = [:]
+                    for (key, value) in config.env where !key.isEmpty {
+                        validEnv[key] = value
+                    }
+
+                    return MCPServerConfig(
+                        id: config.id,
+                        name: config.name,
+                        command: config.command,
+                        args: config.args,
+                        env: validEnv,
+                        enabled: config.enabled
+                    )
+                }
+                serverConfigs = validatedConfigs
+                DiagnosticsLogger.log(
+                    .mcpServerManager,
+                    level: .info,
+                    message: "Loaded MCP server configs",
+                    metadata: ["count": "\(serverConfigs.count)"]
+                )
+            } catch {
+                DiagnosticsLogger.log(
+                    .mcpServerManager,
+                    level: .error,
+                    message: "Failed to load MCP server configs",
+                    metadata: ["error": error.localizedDescription]
+                )
+                DiagnosticsLogger.log(
+                    .mcpServerManager,
+                    level: .error,
+                    message: "Clearing corrupted MCP config data and resetting to defaults"
+                )
+                // Clear corrupted data and use defaults
+                AppPreferences.storage.removeObject(forKey: "mcp_server_configs")
+                serverConfigs = defaultServerConfigs()
+                saveServerConfigs()
+            }
+        }
+
+        private func defaultServerConfigs() -> [MCPServerConfig] {
+            // No default servers - users add their own
+            []
+        }
+
+        // MARK: - Connection Management
 
         func connectToServer(_ requestedConfig: MCPServerConfig, autoDisableOnFailure: Bool = true) async {
             guard let config = currentConfig(matching: requestedConfig) else { return }
-        guard config.enabled else {
-            setStatus(for: config, state: .disabled)
-            return
-        }
+            guard config.enabled else {
+                setStatus(for: config, state: .disabled)
+                return
+            }
 
             if let managed = services[config.name], managed.service.isConnected {
                 if !availableTools.contains(where: { $0.serverName == config.name }),
@@ -329,15 +330,15 @@ class MCPServerManager: ObservableObject {
                        serverName: config.name,
                        generation: managed.generation,
                        service: managed.service
-                )
+                   )
                 {
                     await awaitOperation(operation)
                 }
                 if isCurrentService(managed.service, serverName: config.name, generation: managed.generation) {
                     setStatus(for: config, state: .connected, clearExistingError: true)
+                }
+                return
             }
-            return
-        }
 
             guard let operation = startConnectionOperation(
                 config: config,
@@ -357,10 +358,10 @@ class MCPServerManager: ObservableObject {
                         serverName: config.name,
                         generation: managed.generation,
                         service: managed.service
-            )
+                    )
                 }
-            return
-        }
+                return
+            }
             _ = startConnectionOperation(config: config, autoDisableOnFailure: autoDisableOnFailure)
         }
 
@@ -418,15 +419,15 @@ class MCPServerManager: ObservableObject {
             generation: UInt64,
             autoDisableOnFailure: Bool
         ) async {
-        DiagnosticsLogger.log(
-            .mcpServerManager,
-            level: .info,
-            message: "Attempting to connect to MCP server",
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .info,
+                message: "Attempting to connect to MCP server",
                 metadata: ["server": config.name, "generation": "\(generation)"]
-        )
+            )
 
-        let maxAttempts = 3
-        for attempt in 1 ... maxAttempts {
+            let maxAttempts = 3
+            for attempt in 1 ... maxAttempts {
                 guard isCurrentService(service, serverName: config.name, generation: generation),
                       !Task.isCancelled
                 else {
@@ -434,24 +435,24 @@ class MCPServerManager: ObservableObject {
                     return
                 }
 
-            do {
-                try await service.connect()
+                do {
+                    try await service.connect()
                     try Task.checkCancellation()
                     guard isCurrentService(service, serverName: config.name, generation: generation) else {
                         service.disconnect()
                         return
                     }
 
-                DiagnosticsLogger.log(
-                    .mcpServerManager,
-                    level: .info,
-                    message: "Connected to MCP server",
-                    metadata: [
-                        "server": config.name,
+                    DiagnosticsLogger.log(
+                        .mcpServerManager,
+                        level: .info,
+                        message: "Connected to MCP server",
+                        metadata: [
+                            "server": config.name,
                             "attempt": "#\(attempt)",
                             "generation": "\(generation)"
-                    ]
-                )
+                        ]
+                    )
 
                     guard let discovery = startDiscoveryOperation(
                         serverName: config.name,
@@ -482,32 +483,32 @@ class MCPServerManager: ObservableObject {
                         return
                     }
 
-                setStatus(for: config, state: .connected, clearExistingError: true)
-                return
+                    setStatus(for: config, state: .connected, clearExistingError: true)
+                    return
                 } catch is CancellationError {
                     cancelConnectionGeneration(service: service, config: config, generation: generation)
                     return
-            } catch {
+                } catch {
                     guard isCurrentService(service, serverName: config.name, generation: generation) else {
                         service.disconnect()
                         return
                     }
 
-                DiagnosticsLogger.log(
-                    .mcpServerManager,
-                    level: .error,
-                    message: "Failed to connect to MCP server",
-                    metadata: [
-                        "server": config.name,
-                        "attempt": "#\(attempt)",
+                    DiagnosticsLogger.log(
+                        .mcpServerManager,
+                        level: .error,
+                        message: "Failed to connect to MCP server",
+                        metadata: [
+                            "server": config.name,
+                            "attempt": "#\(attempt)",
                             "error": error.localizedDescription,
                             "generation": "\(generation)"
-                    ]
-                )
-                service.disconnect()
+                        ]
+                    )
+                    service.disconnect()
 
-                if attempt < maxAttempts {
-                    let delay = max(TimeInterval.zero, retryDelayProvider(attempt))
+                    if attempt < maxAttempts {
+                        let delay = max(TimeInterval.zero, retryDelayProvider(attempt))
                         if delay > 0 {
                             do {
                                 try await Task.sleep(for: .seconds(delay))
@@ -546,13 +547,13 @@ class MCPServerManager: ObservableObject {
             if let latest = currentConfig(matching: config) {
                 setStatus(for: latest, state: latest.enabled ? .idle : .disabled)
             }
-                    DiagnosticsLogger.log(
-                        .mcpServerManager,
-                        level: .info,
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .info,
                 message: "MCP server connection cancelled",
                 metadata: ["server": config.name, "generation": "\(generation)"]
-                    )
-                }
+            )
+        }
 
         private func finishFailedConnection(
             service: MCPServicing,
@@ -563,12 +564,12 @@ class MCPServerManager: ObservableObject {
         ) {
             guard isCurrentService(service, serverName: config.name, generation: generation) else { return }
 
-                service.lastError = error.localizedDescription
+            service.lastError = error.localizedDescription
             service.delegate = nil
-                services.removeValue(forKey: config.name)
+            services.removeValue(forKey: config.name)
             cancelDiscoveryTask(for: config.name, generation: generation)
             removeArtifacts(for: config.name)
-                setStatus(for: config, state: .error(error.localizedDescription))
+            setStatus(for: config, state: .error(error.localizedDescription))
 
             guard autoDisableOnFailure,
                   let index = serverConfigs.firstIndex(where: { $0.id == config.id })
@@ -576,62 +577,62 @@ class MCPServerManager: ObservableObject {
                 return
             }
 
-                    var updatedConfig = serverConfigs[index]
-                    updatedConfig.enabled = false
-                    serverConfigs[index] = updatedConfig
-                    saveServerConfigs()
+            var updatedConfig = serverConfigs[index]
+            updatedConfig.enabled = false
+            serverConfigs[index] = updatedConfig
+            saveServerConfigs()
             setStatus(for: updatedConfig, state: .disabled)
-                    DiagnosticsLogger.log(
-                        .mcpServerManager,
-                        level: .error,
-                        message: "Auto-disabled server due to repeated connection failures",
-                        metadata: ["server": config.name]
-                    )
-    }
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .error,
+                message: "Auto-disabled server due to repeated connection failures",
+                metadata: ["server": config.name]
+            )
+        }
 
-    private func shouldRestartServer(previousConfig: MCPServerConfig, updatedConfig: MCPServerConfig) -> Bool {
-        guard previousConfig.enabled, updatedConfig.enabled else { return false }
+        private func shouldRestartServer(previousConfig: MCPServerConfig, updatedConfig: MCPServerConfig) -> Bool {
+            guard previousConfig.enabled, updatedConfig.enabled else { return false }
             return previousConfig.name != updatedConfig.name
                 || previousConfig.command != updatedConfig.command
                 || previousConfig.args != updatedConfig.args
                 || previousConfig.env != updatedConfig.env
-    }
+        }
 
         private func restartServer(previousName: String, with config: MCPServerConfig) {
-        DiagnosticsLogger.log(
-            .mcpServerManager,
-            level: .info,
-            message: "Restarting MCP server to apply config changes",
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .info,
+                message: "Restarting MCP server to apply config changes",
                 metadata: ["server": config.name, "previous": previousName]
-        )
+            )
             disconnectServer(previousName)
-        setStatus(for: config, state: .connecting, clearExistingError: true)
+            setStatus(for: config, state: .connecting, clearExistingError: true)
             launchConnection(to: config, autoDisableOnFailure: false)
-    }
+        }
 
         private func scheduleReconnect(for config: MCPServerConfig, generation: UInt64) {
             guard serverGenerations[config.name] == generation,
                   reconnectTasks[config.name] == nil
             else {
-            return
-        }
-
-        setStatus(for: config, state: .reconnecting)
-        let delaySeconds = max(TimeInterval.zero, reconnectDelayProvider())
-            reconnectTasks[config.name] = ManagedMCPTask(generation: generation) { [weak self] in
-            guard let self else { return }
-                do {
-            if delaySeconds > 0 {
-                        try await reconnectSleeper(delaySeconds)
+                return
             }
+
+            setStatus(for: config, state: .reconnecting)
+            let delaySeconds = max(TimeInterval.zero, reconnectDelayProvider())
+            reconnectTasks[config.name] = ManagedMCPTask(generation: generation) { [weak self] in
+                guard let self else { return }
+                do {
+                    if delaySeconds > 0 {
+                        try await reconnectSleeper(delaySeconds)
+                    }
                     try Task.checkCancellation()
                 } catch {
                     self.clearReconnectTask(serverName: config.name, generation: generation)
                     return
                 }
                 self.performScheduledReconnect(serverName: config.name, generation: generation)
+            }
         }
-    }
 
         private func performScheduledReconnect(serverName: String, generation: UInt64) {
             guard reconnectTasks[serverName]?.generation == generation else { return }
@@ -640,13 +641,13 @@ class MCPServerManager: ObservableObject {
             guard serverGenerations[serverName] == generation,
                   let config = serverConfigs.first(where: { $0.name == serverName }),
                   config.enabled
-        else {
-            return
-        }
+            else {
+                return
+            }
             launchConnection(to: config, autoDisableOnFailure: false)
-    }
+        }
 
-    func disconnectServer(_ serverName: String) {
+        func disconnectServer(_ serverName: String) {
             _ = advanceGeneration(for: serverName)
             cancelServerTasks(for: serverName)
 
@@ -656,22 +657,22 @@ class MCPServerManager: ObservableObject {
             }
             removeArtifacts(for: serverName)
 
-        if let config = serverConfigs.first(where: { $0.name == serverName }) {
+            if let config = serverConfigs.first(where: { $0.name == serverName }) {
                 setStatus(for: config, state: config.enabled ? .idle : .disabled)
+            }
         }
-    }
 
-    func connectToAllEnabledServers() async {
-        let enabledConfigs = serverConfigs.filter(\.enabled)
+        func connectToAllEnabledServers() async {
+            let enabledConfigs = serverConfigs.filter(\.enabled)
             for config in enabledConfigs {
                 launchConnection(to: config)
-        }
+            }
 
             let operations = enabledConfigs.compactMap { connectionTasks[$0.name] }
             await awaitOperations(operations)
-    }
+        }
 
-    func disconnectAllServers() {
+        func disconnectAllServers() {
             discoveryBatchTask?.task.cancel()
             discoveryBatchTask = nil
             isDiscovering = false
@@ -682,13 +683,13 @@ class MCPServerManager: ObservableObject {
                 .union(reconnectTasks.keys)
                 .union(discoveryTasks.keys)
             for serverName in serverNames {
-            disconnectServer(serverName)
+                disconnectServer(serverName)
+            }
         }
-    }
 
-    // MARK: - Tool Discovery
+        // MARK: - Tool Discovery
 
-    func discoverAllTools() async {
+        func discoverAllTools() async {
             discoveryBatchTask?.task.cancel()
             discoveryBatchGeneration &+= 1
             let generation = discoveryBatchGeneration
@@ -700,8 +701,8 @@ class MCPServerManager: ObservableObject {
                     if self.discoveryBatchTask?.generation == generation {
                         self.discoveryBatchTask = nil
                         self.isDiscovering = false
+                    }
                 }
-            }
                 guard !Task.isCancelled else { return }
 
                 let snapshot = Array(self.services.map { ($0.key, $0.value) })
@@ -711,22 +712,22 @@ class MCPServerManager: ObservableObject {
                         generation: managed.generation,
                         service: managed.service,
                         forceNew: true
-                )
-            }
+                    )
+                }
                 await self.awaitSharedOperations(operations)
 
                 guard self.discoveryBatchTask?.generation == generation,
                       !Task.isCancelled
                 else {
                     return
+                }
+                self.refreshAllStatusToolCounts()
             }
-            self.refreshAllStatusToolCounts()
-        }
             discoveryBatchTask = operation
             await awaitOperation(operation)
-    }
+        }
 
-    func discoverTools(for serverName: String) async {
+        func discoverTools(for serverName: String) async {
             guard let managed = services[serverName], managed.service.isConnected,
                   let operation = startDiscoveryOperation(
                       serverName: serverName,
@@ -797,8 +798,8 @@ class MCPServerManager: ObservableObject {
             guard isCurrentService(service, serverName: serverName, generation: generation),
                   service.isConnected
             else {
-            return
-        }
+                return
+            }
 
             guard let result = await Self.discoverCatalog(from: service, serverName: serverName) else {
                 return
@@ -808,7 +809,7 @@ class MCPServerManager: ObservableObject {
                   !Task.isCancelled
             else {
                 return
-        }
+            }
 
             availableTools.removeAll { $0.serverName == serverName }
             availableResources.removeAll { $0.serverName == serverName }
@@ -818,18 +819,18 @@ class MCPServerManager: ObservableObject {
             invalidateToolCache()
             refreshStatusToolCount(for: serverName)
 
-        DiagnosticsLogger.log(
-            .mcpServerManager,
-            level: .info,
-            message: "Discovery complete",
-            metadata: [
-                "server": serverName,
-                "tools": "\(result.tools.count)",
+            DiagnosticsLogger.log(
+                .mcpServerManager,
+                level: .info,
+                message: "Discovery complete",
+                metadata: [
+                    "server": serverName,
+                    "tools": "\(result.tools.count)",
                     "resources": "\(result.resources.count)",
                     "generation": "\(generation)"
-            ]
-        )
-    }
+                ]
+            )
+        }
 
         private struct DiscoveryResult: Sendable {
             let tools: [MCPTool]
@@ -1014,192 +1015,192 @@ class MCPServerManager: ObservableObject {
             scheduleReconnect(for: config, generation: generation)
         }
 
-    // MARK: - Tool Execution
+        // MARK: - Tool Execution
 
-    nonisolated func executeTool(name: String, arguments: [String: Any]) async throws -> String {
-        struct ToolExecutionContext: @unchecked Sendable {
-            let service: MCPServicing
-            let toolName: String
-            let arguments: [String: AnyCodable]
+        nonisolated func executeTool(name: String, arguments: [String: Any]) async throws -> String {
+            struct ToolExecutionContext: @unchecked Sendable {
+                let service: MCPServicing
+                let toolName: String
+                let arguments: [String: AnyCodable]
+            }
+
+            let sendableArguments = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
+                result[pair.key] = AnyCodable(pair.value)
+            }
+
+            let context = try await MainActor.run { () throws -> ToolExecutionContext in
+                // `name` is the model-facing name, which may carry a `server__` prefix.
+                if !isToolCacheValid {
+                    refreshToolCache()
+                }
+                // Aliases are bound to one server and tool for the session (MCPToolNaming), so a
+                // stale alias finds its own tool or nothing, never a different server's tool.
+                guard let tool = toolLookup[name] else {
+                    throw MCPManagerError.toolNotFound(name)
+                }
+
+                guard let managed = services[tool.serverName], managed.service.isConnected else {
+                    throw MCPManagerError.toolNotFound(name)
+                }
+
+                return ToolExecutionContext(service: managed.service, toolName: tool.name, arguments: sendableArguments)
+            }
+
+            do {
+                return try await withTimeout(seconds: 30) {
+                    let bridgedArguments = context.arguments.mapValues { $0.value }
+                    return try await context.service.callTool(name: context.toolName, arguments: bridgedArguments)
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch MCPServiceError.timeout {
+                throw MCPManagerError.executionFailed(name, "Tool execution timed out after 30 seconds")
+            } catch {
+                throw MCPManagerError.executionFailed(name, error.localizedDescription)
+            }
         }
 
-        let sendableArguments = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
-            result[pair.key] = AnyCodable(pair.value)
+        // MARK: - Server Status
+
+        func isServerConnected(_ serverName: String) -> Bool {
+            if case .connected? = serverStatuses[serverName]?.state {
+                return true
+            }
+            return services[serverName]?.service.isConnected ?? false
         }
 
-        let context = try await MainActor.run { () throws -> ToolExecutionContext in
-            // `name` is the model-facing name, which may carry a `server__` prefix.
+        func getConnectedServerCount() -> Int {
+            serverStatuses.values.count(where: {
+                if case .connected = $0.state {
+                    return true
+                }
+                return false
+            })
+        }
+
+        func getServerStatus(_ serverName: String) -> MCPServerStatus? {
+            serverStatuses[serverName]
+        }
+
+        // MARK: - Tool Helpers
+
+        /// Returns all tools from enabled servers (cached for performance)
+        func getEnabledTools() -> [MCPTool] {
             if !isToolCacheValid {
                 refreshToolCache()
             }
-            // Aliases are bound to one server and tool for the session (MCPToolNaming), so a
-            // stale alias finds its own tool or nothing, never a different server's tool.
-            guard let tool = toolLookup[name] else {
-                throw MCPManagerError.toolNotFound(name)
+            return cachedEnabledTools
+        }
+
+        /// Returns enabled tools in OpenAI function format (cached for performance)
+        func getEnabledToolsAsOpenAIFunctions() -> [[String: Any]] {
+            if !isToolCacheValid {
+                refreshToolCache()
             }
-
-                guard let managed = services[tool.serverName], managed.service.isConnected else {
-                throw MCPManagerError.toolNotFound(name)
+            if !isOpenAIFunctionCacheValid {
+                cachedOpenAIFunctions = cachedEnabledTools.map { tool in
+                    tool.toOpenAIFunction(exposedName: exposedToolNames[tool.id])
+                }
+                isOpenAIFunctionCacheValid = true
             }
-
-                return ToolExecutionContext(service: managed.service, toolName: tool.name, arguments: sendableArguments)
+            return cachedOpenAIFunctions
         }
 
-        do {
-            return try await withTimeout(seconds: 30) {
-                let bridgedArguments = context.arguments.mapValues { $0.value }
-                return try await context.service.callTool(name: context.toolName, arguments: bridgedArguments)
+        /// Refresh the enabled tools cache
+        private func refreshToolCache() {
+            let enabledServerNames = Set(serverConfigs.lazy.filter(\.enabled).map(\.name))
+            cachedEnabledTools = availableTools.filter { tool in
+                enabledServerNames.contains(tool.serverName)
             }
-            } catch is CancellationError {
-                throw CancellationError()
-        } catch MCPServiceError.timeout {
-            throw MCPManagerError.executionFailed(name, "Tool execution timed out after 30 seconds")
-        } catch {
-            throw MCPManagerError.executionFailed(name, error.localizedDescription)
+            exposedToolNames = toolNaming.assign(cachedEnabledTools, reserved: Self.reservedToolNames)
+            toolLookup = Dictionary(
+                cachedEnabledTools.map { (exposedToolNames[$0.id] ?? $0.name, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            cachedOpenAIFunctions = [] // Invalidate OpenAI format cache
+            isToolCacheValid = true
+            isOpenAIFunctionCacheValid = false
         }
     }
 
-    // MARK: - Server Status
+    // MARK: - Errors
 
-    func isServerConnected(_ serverName: String) -> Bool {
-        if case .connected? = serverStatuses[serverName]?.state {
-            return true
-        }
-            return services[serverName]?.service.isConnected ?? false
-    }
+    enum MCPManagerError: LocalizedError {
+        case toolNotFound(String)
+        case executionFailed(String, String)
 
-    func getConnectedServerCount() -> Int {
-        serverStatuses.values.count(where: {
-            if case .connected = $0.state {
-                return true
+        var errorDescription: String? {
+            switch self {
+            case let .toolNotFound(name):
+                "Tool '\(name)' not found or server not connected"
+            case let .executionFailed(name, reason):
+                "Failed to execute tool '\(name)': \(reason)"
             }
-            return false
-        })
-    }
-
-    func getServerStatus(_ serverName: String) -> MCPServerStatus? {
-        serverStatuses[serverName]
-    }
-
-    // MARK: - Tool Helpers
-
-    /// Returns all tools from enabled servers (cached for performance)
-    func getEnabledTools() -> [MCPTool] {
-        if !isToolCacheValid {
-            refreshToolCache()
-        }
-        return cachedEnabledTools
-    }
-
-    /// Returns enabled tools in OpenAI function format (cached for performance)
-    func getEnabledToolsAsOpenAIFunctions() -> [[String: Any]] {
-        if !isToolCacheValid {
-            refreshToolCache()
-        }
-        if !isOpenAIFunctionCacheValid {
-            cachedOpenAIFunctions = cachedEnabledTools.map { tool in
-                tool.toOpenAIFunction(exposedName: exposedToolNames[tool.id])
-            }
-            isOpenAIFunctionCacheValid = true
-        }
-        return cachedOpenAIFunctions
-    }
-
-    /// Refresh the enabled tools cache
-    private func refreshToolCache() {
-        let enabledServerNames = Set(serverConfigs.lazy.filter(\.enabled).map(\.name))
-        cachedEnabledTools = availableTools.filter { tool in
-            enabledServerNames.contains(tool.serverName)
-        }
-        exposedToolNames = toolNaming.assign(cachedEnabledTools, reserved: Self.reservedToolNames)
-        toolLookup = Dictionary(
-            cachedEnabledTools.map { (exposedToolNames[$0.id] ?? $0.name, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        cachedOpenAIFunctions = [] // Invalidate OpenAI format cache
-        isToolCacheValid = true
-        isOpenAIFunctionCacheValid = false
-    }
-}
-
-// MARK: - Errors
-
-enum MCPManagerError: LocalizedError {
-    case toolNotFound(String)
-    case executionFailed(String, String)
-
-    var errorDescription: String? {
-        switch self {
-        case let .toolNotFound(name):
-            "Tool '\(name)' not found or server not connected"
-        case let .executionFailed(name, reason):
-            "Failed to execute tool '\(name)': \(reason)"
         }
     }
-}
 
-// MARK: - Status Helpers
+    // MARK: - Status Helpers
 
-private extension MCPServerManager {
-    func initializeStatusEntries() {
-        let now = Date()
-        // Server names are not enforced to be unique; keep the first entry instead of trapping.
-        serverStatuses = Dictionary(
-            serverConfigs.map { config in
-                (
-                    config.name,
-                    MCPServerStatus(
-                        configID: config.id,
-                        name: config.name,
-                        state: config.enabled ? .idle : .disabled,
-                        lastError: nil,
-                        toolsCount: availableTools.count(where: { $0.serverName == config.name }),
-                        lastUpdated: now
+    private extension MCPServerManager {
+        func initializeStatusEntries() {
+            let now = Date()
+            // Server names are not enforced to be unique; keep the first entry instead of trapping.
+            serverStatuses = Dictionary(
+                serverConfigs.map { config in
+                    (
+                        config.name,
+                        MCPServerStatus(
+                            configID: config.id,
+                            name: config.name,
+                            state: config.enabled ? .idle : .disabled,
+                            lastError: nil,
+                            toolsCount: availableTools.count(where: { $0.serverName == config.name }),
+                            lastUpdated: now
+                        )
                     )
-                )
-            },
-            uniquingKeysWith: { first, _ in first }
-        )
-    }
-
-    func setStatus(
-        for config: MCPServerConfig,
-        state: MCPServerStatus.State?,
-        error: String? = nil,
-        clearExistingError: Bool = false
-    ) {
-        let existingStatus = serverStatuses[config.name]
-        let resolvedState = state ?? existingStatus?.state ?? (config.enabled ? .idle : .disabled)
-
-        var resolvedError = error ?? existingStatus?.lastError
-        if clearExistingError {
-            resolvedError = nil
-        }
-        if case let .error(message) = resolvedState {
-            resolvedError = message
+                },
+                uniquingKeysWith: { first, _ in first }
+            )
         }
 
-        let toolCount = availableTools.count(where: { $0.serverName == config.name })
-        serverStatuses[config.name] = MCPServerStatus(
-            configID: config.id,
-            name: config.name,
-            state: resolvedState,
-            lastError: resolvedError,
-            toolsCount: toolCount,
-            lastUpdated: Date()
-        )
-    }
+        func setStatus(
+            for config: MCPServerConfig,
+            state: MCPServerStatus.State?,
+            error: String? = nil,
+            clearExistingError: Bool = false
+        ) {
+            let existingStatus = serverStatuses[config.name]
+            let resolvedState = state ?? existingStatus?.state ?? (config.enabled ? .idle : .disabled)
 
-    func refreshStatusToolCount(for serverName: String) {
-        guard let config = serverConfigs.first(where: { $0.name == serverName }) else { return }
-        setStatus(for: config, state: nil)
-    }
+            var resolvedError = error ?? existingStatus?.lastError
+            if clearExistingError {
+                resolvedError = nil
+            }
+            if case let .error(message) = resolvedState {
+                resolvedError = message
+            }
 
-    func refreshAllStatusToolCounts() {
-        for config in serverConfigs {
+            let toolCount = availableTools.count(where: { $0.serverName == config.name })
+            serverStatuses[config.name] = MCPServerStatus(
+                configID: config.id,
+                name: config.name,
+                state: resolvedState,
+                lastError: resolvedError,
+                toolsCount: toolCount,
+                lastUpdated: Date()
+            )
+        }
+
+        func refreshStatusToolCount(for serverName: String) {
+            guard let config = serverConfigs.first(where: { $0.name == serverName }) else { return }
             setStatus(for: config, state: nil)
         }
+
+        func refreshAllStatusToolCounts() {
+            for config in serverConfigs {
+                setStatus(for: config, state: nil)
+            }
+        }
     }
-}
-// swiftlint:enable type_body_length
+    // swiftlint:enable type_body_length
 #endif

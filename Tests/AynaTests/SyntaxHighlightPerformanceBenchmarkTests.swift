@@ -1,9 +1,9 @@
+// swiftformat:options --ifdef no-indent
 #if os(macOS)
 import AppKit
+@testable import Ayna
 import Foundation
 import Testing
-
-@testable import Ayna
 
 @Suite("Syntax Highlight Performance Benchmarks", .tags(.slow), .serialized)
 @MainActor

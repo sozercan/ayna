@@ -82,7 +82,7 @@
 
         @Test("Register with hotkey string")
         func registerWithHotkeyString() throws {
-            try service.register(try #require(HotkeyCombination(string: "⌘⇧Space")))
+            try service.register(#require(HotkeyCombination(string: "⌘⇧Space")))
 
             #expect(service.isRegistered)
             service.unregister()
@@ -90,7 +90,7 @@
 
         @Test("Register with alternative modifiers")
         func registerWithAlternativeModifiers() throws {
-            try service.register(try #require(HotkeyCombination(string: "cmd+shift+space")))
+            try service.register(#require(HotkeyCombination(string: "cmd+shift+space")))
 
             #expect(service.isRegistered)
             service.unregister()

@@ -230,7 +230,7 @@ import Testing
             let conversationId = UUID()
 
             let firstListing = Task { try await service.listDirectory(path: link.path, conversationId: conversationId) }
-            permissionService.approve(try #require(await waitForPending(permissionService)).id)
+            try permissionService.approve(#require(await waitForPending(permissionService)).id)
             _ = try await firstListing.value
 
             try FileManager.default.removeItem(at: link)
@@ -305,7 +305,7 @@ import Testing
             #expect(await first.value)
             #expect(await second.value)
             #expect(permissionService.pendingApprovals.map(\.conversationId) == [other])
-            permissionService.deny(try #require(permissionService.pendingApprovals.first).id)
+            try permissionService.deny(#require(permissionService.pendingApprovals.first).id)
             #expect(await unrelated.value == false)
         }
     }

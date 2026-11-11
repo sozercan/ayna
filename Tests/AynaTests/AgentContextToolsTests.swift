@@ -400,7 +400,7 @@ import Testing
         }
 
         @Test
-        func `Older saved strings parse to the key that was recorded`() throws {
+        func `Older saved strings parse to the key that was recorded`() {
             #expect(HotkeyCombination(storage: "⌘⇧Space") == .default)
             #expect(HotkeyCombination(storage: "cmd+shift+space") == .default)
             let combination = HotkeyCombination(keyCode: UInt32(kVK_ANSI_K), modifiers: UInt32(controlKey | optionKey))
@@ -416,7 +416,7 @@ import Testing
         }
 
         @Test
-        func `The saved shortcut keeps its key code whatever the layout shows`() throws {
+        func `The saved shortcut keeps its key code whatever the layout shows`() {
             // On a German layout the key in the US "Z" position types "y".
             let combination = HotkeyCombination(keyCode: UInt32(kVK_ANSI_Z), modifiers: UInt32(controlKey | optionKey))
             let german = combination.displayString(layoutCharacter: { $0 == UInt32(kVK_ANSI_Z) ? "Y" : nil })

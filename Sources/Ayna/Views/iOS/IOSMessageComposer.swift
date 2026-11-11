@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 #if os(iOS)
 //
 //  IOSMessageComposer.swift
@@ -56,13 +57,13 @@ struct IOSMessageComposer: View {
     @ViewBuilder
     private var composerButtonBackground: some View {
         #if compiler(>=6.2)
-            if #available(iOS 26.0, *) {
-                Circle().fill(.regularMaterial).glassEffect()
-            } else {
-                Color(uiColor: colorScheme == .dark ? .systemGray5 : .systemGray4)
-            }
-        #else
+        if #available(iOS 26.0, *) {
+            Circle().fill(.regularMaterial).glassEffect()
+        } else {
             Color(uiColor: colorScheme == .dark ? .systemGray5 : .systemGray4)
+        }
+        #else
+        Color(uiColor: colorScheme == .dark ? .systemGray5 : .systemGray4)
         #endif
     }
 
@@ -70,13 +71,13 @@ struct IOSMessageComposer: View {
     @ViewBuilder
     private var composerFieldBackground: some View {
         #if compiler(>=6.2)
-            if #available(iOS 26.0, *) {
-                Capsule().fill(.regularMaterial).glassEffect()
-            } else {
-                Color(uiColor: colorScheme == .dark ? .secondarySystemBackground : .tertiarySystemFill)
-            }
-        #else
+        if #available(iOS 26.0, *) {
+            Capsule().fill(.regularMaterial).glassEffect()
+        } else {
             Color(uiColor: colorScheme == .dark ? .secondarySystemBackground : .tertiarySystemFill)
+        }
+        #else
+        Color(uiColor: colorScheme == .dark ? .secondarySystemBackground : .tertiarySystemFill)
         #endif
     }
 
@@ -224,8 +225,8 @@ struct IOSMessageComposer: View {
                             errorMessage = message
                         }
                     )
-                        .frame(maxWidth: .infinity)
-                        .accessibilityIdentifier("\(identifierPrefix).textEditor")
+                    .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("\(identifierPrefix).textEditor")
 
                     // Send/Stop button inside the text field - iMessage style
                     if hasSendableContent || isGenerating {

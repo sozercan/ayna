@@ -189,7 +189,7 @@
 
                 let iterations = 200
                 let start = Date()
-                for _ in 0..<iterations {
+                for _ in 0 ..< iterations {
                     #expect(sut.formatFileSize(1_048_576) == expected)
                 }
                 let elapsed = Date().timeIntervalSince(start)
@@ -206,7 +206,7 @@
                 defer { try? FileManager.default.removeItem(at: root) }
 
                 let fileCount = 80
-                for index in 0..<fileCount {
+                for index in 0 ..< fileCount {
                     let subdirectory = root.appendingPathComponent("dir\(index % 8)")
                     try FileManager.default.createDirectory(at: subdirectory, withIntermediateDirectories: true)
 

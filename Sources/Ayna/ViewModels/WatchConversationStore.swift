@@ -708,9 +708,9 @@
         }
 
         /// Treats direct replacement as an in-progress local draft.
-        @discardableResult
         /// `persist: false` keeps the change in memory (for streaming updates); the next persisting
         /// change, such as finishing the draft, writes it.
+        @discardableResult
         func replaceConversation(_ conversation: WatchConversation, persist: Bool = true) -> Bool {
             guard committedConversation(for: conversation.id) != nil else { return false }
             return syncDraft(conversation, persist: persist)

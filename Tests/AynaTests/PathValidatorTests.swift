@@ -374,7 +374,7 @@ struct PathValidatorTests {
         var denied = 0
 
         let start = Date()
-        for _ in 0..<iterations {
+        for _ in 0 ..< iterations {
             for testCase in cases {
                 let result = validator.validate(testCase.path, operation: testCase.operation)
                 #expect(result.isAllowed == testCase.expectedAllowed)

@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 #if os(macOS)
 //
 //  MacChatView+Retry.swift
@@ -71,9 +72,9 @@ extension MacChatView {
         guard !isGenerating, sendPreparationTask == nil else { return }
         let targetConversation = currentConversation
         guard let assistantIndex = targetConversation.messages.firstIndex(where: {
-            $0.id == beforeMessageID
-        }), assistantIndex > 0,
-            targetConversation.messages[..<assistantIndex].last(where: { $0.role == .user }) != nil
+                  $0.id == beforeMessageID
+              }), assistantIndex > 0,
+              targetConversation.messages[..<assistantIndex].last(where: { $0.role == .user }) != nil
         else {
             return
         }
@@ -157,7 +158,7 @@ extension MacChatView {
                   $0.id == beforeMessageID
               }), assistantIndex > 0,
               let userMessage = targetConversation.messages[..<assistantIndex]
-              .last(where: { $0.role == .user }),
+                  .last(where: { $0.role == .user }),
               let conversationIndex = conversationManager.conversations.firstIndex(where: {
                   $0.id == conversationID
               })
@@ -189,7 +190,7 @@ extension MacChatView {
                   newContent: newContent
               ),
               let editedMessage = conversationManager.conversation(byId: conversationID)?
-              .messages.first(where: { $0.id == messageID })
+                  .messages.first(where: { $0.id == messageID })
         else {
             return
         }

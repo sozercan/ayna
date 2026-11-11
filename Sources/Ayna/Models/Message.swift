@@ -30,7 +30,7 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
     var content: String
     let timestamp: Date
     var isLiked: Bool
-        var toolCalls: [MCPToolCall]?
+    var toolCalls: [MCPToolCall]?
     var model: String? // Track which model generated this message
 
     // Multi-model response support

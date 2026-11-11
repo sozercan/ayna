@@ -50,7 +50,7 @@
         }
 
         @Test
-        func `Streaming updates stay in memory until the next persisting change`() throws {
+        func `Streaming updates stay in memory until the next persisting change`() {
             let fixture = makeFixture()
             let conversation = makeConversation(messages: [makeMessage(role: .user, content: "Prompt")])
             fixture.store.applySyncSnapshot(snapshot(revision: 1, conversations: [conversation]))

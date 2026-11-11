@@ -46,6 +46,7 @@ struct ToolExecutionResultTests {
         #expect(citations.map(\.number) == [1, 2])
         #expect(citations.map(\.title) == ["First", "Second"])
     }
+
     @Test("Watch message round trip preserves tool metadata")
     func watchMessageRoundTripPreservesToolMetadata() throws {
         let result = ToolExecutionResult(
@@ -97,5 +98,4 @@ struct ToolExecutionResultTests {
         #expect(assistantContent?.contains(where: { $0["type"] as? String == "tool_use" }) == true)
         #expect(resultContent?.contains(where: { $0["type"] as? String == "tool_result" }) == true)
     }
-
 }

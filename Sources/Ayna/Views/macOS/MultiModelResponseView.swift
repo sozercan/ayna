@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 #if os(macOS)
 //
 //  MultiModelResponseView.swift
@@ -659,65 +660,65 @@ struct MultiModelSelector: View {
 // MARK: - Previews
 
 #if DEBUG
-    struct MultiModelResponseView_Previews: PreviewProvider {
-        static var previews: some View {
-            let groupId = UUID()
-            let responses = [
-                Message(
-                    role: .assistant,
-                    content: "This is a response from GPT-4o.",
-                    model: "gpt-4o",
-                    responseGroupId: groupId
-                ),
-                Message(
-                    role: .assistant,
-                    content: "Claude's response here.",
-                    model: "claude-3.5-sonnet",
-                    responseGroupId: groupId
-                )
-            ]
-
-            var conversation = Conversation()
-            conversation.responseGroups = [
-                ResponseGroup(
-                    id: groupId,
-                    userMessageId: UUID(),
-                    responses: [
-                        ResponseGroup.ResponseEntry(id: responses[0].id, modelName: "gpt-4o", status: .completed),
-                        ResponseGroup.ResponseEntry(id: responses[1].id, modelName: "claude-3.5-sonnet", status: .completed)
-                    ]
-                )
-            ]
-
-            return MultiModelResponseView(
-                responseGroupId: groupId,
-                responses: responses,
-                conversation: conversation,
-                defaultCandidateId: responses.first?.id
+struct MultiModelResponseView_Previews: PreviewProvider {
+    static var previews: some View {
+        let groupId = UUID()
+        let responses = [
+            Message(
+                role: .assistant,
+                content: "This is a response from GPT-4o.",
+                model: "gpt-4o",
+                responseGroupId: groupId
+            ),
+            Message(
+                role: .assistant,
+                content: "Claude's response here.",
+                model: "claude-3.5-sonnet",
+                responseGroupId: groupId
             )
-            .frame(width: 800)
+        ]
+
+        var conversation = Conversation()
+        conversation.responseGroups = [
+            ResponseGroup(
+                id: groupId,
+                userMessageId: UUID(),
+                responses: [
+                    ResponseGroup.ResponseEntry(id: responses[0].id, modelName: "gpt-4o", status: .completed),
+                    ResponseGroup.ResponseEntry(id: responses[1].id, modelName: "claude-3.5-sonnet", status: .completed)
+                ]
+            )
+        ]
+
+        return MultiModelResponseView(
+            responseGroupId: groupId,
+            responses: responses,
+            conversation: conversation,
+            defaultCandidateId: responses.first?.id
+        )
+        .frame(width: 800)
+        .padding()
+    }
+}
+
+struct MultiModelSelector_Previews: PreviewProvider {
+    static var previews: some View {
+        PreviewWrapper()
+    }
+
+    struct PreviewWrapper: View {
+        @State private var selectedModels: Set<String> = ["gpt-4o"]
+
+        var body: some View {
+            MultiModelSelector(
+                selectedModels: $selectedModels,
+                availableModels: ["gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet"],
+                maxSelection: 4
+            )
+            .frame(width: 250)
             .padding()
         }
     }
-
-    struct MultiModelSelector_Previews: PreviewProvider {
-        static var previews: some View {
-            PreviewWrapper()
-        }
-
-        struct PreviewWrapper: View {
-            @State private var selectedModels: Set<String> = ["gpt-4o"]
-
-            var body: some View {
-                MultiModelSelector(
-                    selectedModels: $selectedModels,
-                    availableModels: ["gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet"],
-                    maxSelection: 4
-                )
-                .frame(width: 250)
-                .padding()
-            }
-        }
-    }
+}
 #endif
 #endif

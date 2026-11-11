@@ -184,7 +184,7 @@ final class MemoryFactExtractor {
             .compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && $0.count <= maximumFactLength }
             .prefix(maximumFactsPerPass)
-            .map { $0 }
+            .map(\.self)
     }
 
     static func isDuplicate(_ fact: String, of known: [String]) -> Bool {

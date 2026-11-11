@@ -539,7 +539,7 @@
                 }
                 // A delete removes the conversation by ID and needs no history.
                 let isDelete = mutation.fields.contains(.delete)
-                if !isDelete, !(await hydrateBeforeWatchEdit(mutation.conversationID, in: conversationManager)) {
+                if !isDelete, await !hydrateBeforeWatchEdit(mutation.conversationID, in: conversationManager) {
                     return .retry(for: mutation)
                 }
 

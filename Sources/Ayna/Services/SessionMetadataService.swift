@@ -51,30 +51,30 @@ final class SessionMetadataService {
 
     private var currentDeviceType: SessionMetadata.DeviceType {
         #if os(macOS)
-            return .desktop
+            .desktop
         #elseif os(iOS)
             // Check if iPad
             if UIDevice.current.userInterfaceIdiom == .pad {
-                return .tablet
+                .tablet
             } else {
-                return .phone
+                .phone
             }
         #elseif os(watchOS)
-            return .watch
+            .watch
         #else
-            return .desktop
+            .desktop
         #endif
     }
 
     private var currentPlatform: SessionMetadata.Platform {
         #if os(macOS)
-            return .macOS
+            .macOS
         #elseif os(iOS)
-            return .iOS
+            .iOS
         #elseif os(watchOS)
-            return .watchOS
+            .watchOS
         #else
-            return .macOS
+            .macOS
         #endif
     }
 
@@ -86,16 +86,16 @@ final class SessionMetadataService {
 
     private var isDarkModeEnabled: Bool {
         #if os(macOS)
-            return NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         #elseif os(iOS)
             // This requires being on the main thread and having access to a window
             // For simplicity, we'll use the current trait collection
-            return UITraitCollection.current.userInterfaceStyle == .dark
+            UITraitCollection.current.userInterfaceStyle == .dark
         #elseif os(watchOS)
             // watchOS is always dark
-            return true
+            true
         #else
-            return false
+            false
         #endif
     }
 

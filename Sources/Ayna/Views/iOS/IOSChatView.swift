@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 #if os(iOS)
 //
 //  IOSChatView.swift
@@ -134,13 +135,13 @@ struct IOSChatView: View {
                             scrollToBottom(proxy: proxy, conversation: conversation)
                         }
                     }
-                        .onChange(of: conversation.updatedAt) {
-                            // Message content, tool metadata, citations, and response status can change
-                            // without changing the message count. Refresh copied display items for all.
-                            updateDisplayableItems()
-                        }
+                    .onChange(of: conversation.updatedAt) {
+                        // Message content, tool metadata, citations, and response status can change
+                        // without changing the message count. Refresh copied display items for all.
+                        updateDisplayableItems()
+                    }
                     .onChange(of: conversation.messages.last?.content) {
-                            updateDisplayableItems()
+                        updateDisplayableItems()
                         // Only scroll during generation, and only while following the reply.
                         // A transaction without animations keeps rapid updates smooth.
                         if viewModel.isGenerating, followsLatest, let lastId = conversation.messages.last?.id {
@@ -311,7 +312,7 @@ struct IOSChatView: View {
             initializeSelectedModelsIfNeeded()
         }
         .onDisappear {
-                viewModel.cancelOwnedOperations()
+            viewModel.cancelOwnedOperations()
         }
         .onChange(of: conversation?.model) { _, newModel in
             // Re-initialize if the conversation model changes and selectedModels is empty
@@ -358,7 +359,6 @@ struct IOSChatView: View {
             }
         }
     }
-
 }
 
 // MARK: - Conversation System Prompt Sheet

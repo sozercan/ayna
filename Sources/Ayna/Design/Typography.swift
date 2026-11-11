@@ -221,7 +221,6 @@ public enum Typography {
 
     /// Standard line spacing for body text
     public static let bodyLineSpacing: CGFloat = 4
-
 }
 
 // MARK: - View Modifiers

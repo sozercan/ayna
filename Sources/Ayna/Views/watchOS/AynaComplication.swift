@@ -60,7 +60,8 @@
         private func loadConversationData() -> (count: Int, lastTitle: String?) {
             let persistenceKey = "com.sertacozercan.ayna.watch.conversations"
             guard let defaults = UserDefaults(suiteName: "group.com.sertacozercan.ayna"),
-                  let data = defaults.data(forKey: persistenceKey) else {
+                  let data = defaults.data(forKey: persistenceKey)
+            else {
                 return (0, nil)
             }
 

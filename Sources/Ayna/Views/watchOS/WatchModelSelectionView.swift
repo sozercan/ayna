@@ -78,11 +78,11 @@
                 .onAppear {
                     // Auto-select if only one model available
                     if WatchModelSelectionCoordinator.shouldAutoSelect(
-                        availableModelCount: watchUsableModels.count,
-                        conversationID: conversationId
-                    ),
-                        let onlyModel = watchUsableModels.first,
-                        !selectModel(onlyModel)
+                           availableModelCount: watchUsableModels.count,
+                           conversationID: conversationId
+                       ),
+                       let onlyModel = watchUsableModels.first,
+                       !selectModel(onlyModel)
                     {
                         showsSelectionError = true
                     }

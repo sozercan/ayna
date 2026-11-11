@@ -5,10 +5,9 @@
 //  Tests for DuckDuckGo HTML search scraping, URL decoding, and HTML stripping.
 //
 
+@testable import Ayna
 import Foundation
 import Testing
-
-@testable import Ayna
 
 @Suite("DuckDuckGoSearchService Tests", .tags(.networking, .async), .serialized)
 @MainActor
@@ -307,8 +306,13 @@ private final class DDGMockURLProtocol: URLProtocol, @unchecked Sendable {
         lastRequest = nil
     }
 
-    override static func canInit(with _: URLRequest) -> Bool { true }
-    override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override static func canInit(with _: URLRequest) -> Bool {
+        true
+    }
+
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
 
     override func startLoading() {
         guard let handler = DDGMockURLProtocol.requestHandler else {
