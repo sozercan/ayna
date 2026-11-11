@@ -37,6 +37,9 @@ struct AgentsSettingsSection: View {
                 permissionPicker(for: "list_directory", label: "List Directories")
                 permissionPicker(for: "search_files", label: "Search Files")
                 permissionPicker(for: "run_command", label: "Run Commands")
+                permissionPicker(for: "git_context", label: "Git Context")
+                permissionPicker(for: "project_context", label: "Project Context")
+                permissionPicker(for: "update_tasks", label: "Task List")
                 // web_fetch has no approval step, so it is either allowed or not.
                 permissionPicker(for: "web_fetch", label: "Web Fetch", levels: [.automatic, .denied])
             }
@@ -219,6 +222,12 @@ struct AgentsSettingsSection: View {
             "Permission level for executing shell commands"
         case "web_fetch":
             "Permission level for fetching content from URLs"
+        case "git_context":
+            "Permission level for reading git branch, status, and recent commits"
+        case "project_context":
+            "Permission level for reading the project's AI context files"
+        case "update_tasks":
+            "Permission level for updating the task list shown above the composer"
         default:
             "Permission level for this tool"
         }

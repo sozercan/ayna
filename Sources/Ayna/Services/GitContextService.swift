@@ -304,54 +304,65 @@ import os.log
             return nil
         }
 
+        /// How long a single git command may run before it is stopped.
+        static let commandTimeout: Duration = .seconds(10)
+
         private func runGitCommand(_ arguments: [String], in directory: URL) async -> GitCommandResult {
-            // Run blocking Process operations off the main thread to prevent UI freezes
-            await withCheckedContinuation { continuation in
-                Task.detached {
-                    let process = Process()
-                    let stdoutPipe = Pipe()
-                    let stderrPipe = Pipe()
+            await Self.runGit(arguments, in: directory, timeout: Self.commandTimeout)
+        }
 
-                    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        /// Runs git off the main actor. Both pipes are drained concurrently (reading one to the
+        /// end first deadlocks once git fills the other), and the process is stopped on timeout.
+        nonisolated static func runGit(
+            _ arguments: [String],
+            in directory: URL,
+            timeout: Duration
+        ) async -> GitCommandResult {
+            let process = Process()
+            let stdoutPipe = Pipe()
+            let stderrPipe = Pipe()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            // Security: disable hooks and credential helpers so a repository cannot run code.
+            process.arguments = [
+                "-c", "core.hooksPath=/dev/null",
+                "-c", "credential.helper="
+            ] + arguments
+            process.currentDirectoryURL = directory
+            process.standardOutput = stdoutPipe
+            process.standardError = stderrPipe
+            process.standardInput = FileHandle.nullDevice
+            var environment = ProcessInfo.processInfo.environment
+            environment["GIT_CONFIG_NOSYSTEM"] = "1"
+            environment["GIT_TERMINAL_PROMPT"] = "0"
+            environment["GIT_OPTIONAL_LOCKS"] = "0" // Read-only queries never take the index lock
+            process.environment = environment
 
-                    // Security: Prepend config options to disable hooks and credential helpers
-                    // This prevents malicious repositories from executing code via git hooks
-                    let secureArgs = [
-                        "-c", "core.hooksPath=/dev/null", // Disable all hooks
-                        "-c", "credential.helper=", // Disable credential helpers
-                    ] + arguments
+            do {
+                try process.run()
+            } catch {
+                return GitCommandResult(exitCode: -1, stdout: "", stderr: error.localizedDescription)
+            }
 
-                    process.arguments = secureArgs
-                    process.currentDirectoryURL = directory
-                    process.standardOutput = stdoutPipe
-                    process.standardError = stderrPipe
-
-                    // Security: Set environment to ignore system and global git config
-                    var environment = ProcessInfo.processInfo.environment
-                    environment["GIT_CONFIG_NOSYSTEM"] = "1" // Ignore system-wide config
-                    environment["GIT_TERMINAL_PROMPT"] = "0" // Disable terminal prompts
-                    process.environment = environment
-
-                    do {
-                        try process.run()
-                        let stdoutData = try stdoutPipe.fileHandleForReading.readToEnd() ?? Data()
-                        let stderrData = try stderrPipe.fileHandleForReading.readToEnd() ?? Data()
-                        process.waitUntilExit()
-
-                        continuation.resume(returning: GitCommandResult(
-                            exitCode: process.terminationStatus,
-                            stdout: String(data: stdoutData, encoding: .utf8) ?? "",
-                            stderr: String(data: stderrData, encoding: .utf8) ?? ""
-                        ))
-                    } catch {
-                        continuation.resume(returning: GitCommandResult(
-                            exitCode: -1,
-                            stdout: "",
-                            stderr: error.localizedDescription
-                        ))
-                    }
+            let stdoutHandle = stdoutPipe.fileHandleForReading
+            let stderrHandle = stderrPipe.fileHandleForReading
+            async let stdoutData = Task.detached { stdoutHandle.readDataToEndOfFile() }.value
+            async let stderrData = Task.detached { stderrHandle.readDataToEndOfFile() }.value
+            let timeoutTask = Task.detached {
+                try? await Task.sleep(for: timeout)
+                if !Task.isCancelled, process.isRunning {
+                    process.terminate()
                 }
             }
+            let (output, errors) = await (stdoutData, stderrData)
+            process.waitUntilExit()
+            let timedOut = process.terminationReason == .uncaughtSignal && !timeoutTask.isCancelled
+            timeoutTask.cancel()
+
+            return GitCommandResult(
+                exitCode: process.terminationStatus,
+                stdout: String(data: output, encoding: .utf8) ?? "",
+                stderr: timedOut ? "git timed out" : String(data: errors, encoding: .utf8) ?? ""
+            )
         }
 
         private func log(_ level: OSLogType, _ message: String, metadata: [String: String] = [:]) {

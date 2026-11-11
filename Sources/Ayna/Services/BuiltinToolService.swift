@@ -20,6 +20,9 @@ import os.log
 // - `list_directory`: List files in directory
 // - `search_files`: Grep-like search
 // - `run_command`: Execute shell command
+// - `git_context`: Read branch, status, and recent commits
+// - `project_context`: Read project type and AI context files (AGENTS.md, CLAUDE.md, ...)
+// - `update_tasks`: Replace the conversation's task list shown above the composer
 //
 // Uses dependency injection via SwiftUI Environment.
 #if os(macOS)
@@ -197,7 +200,7 @@ import os.log
 
         private let permissionService: PermissionService
         private var shellSandbox: ShellSandbox
-        private var pathValidator: PathValidator
+        private(set) var pathValidator: PathValidator
         private let processStartGate: @Sendable () async -> Void
         private let processCompletionGate: @Sendable () async -> Void
         private let processEscalationGate: @Sendable () async -> Void
@@ -242,6 +245,9 @@ import os.log
             static let listDirectory = "list_directory"
             static let searchFiles = "search_files"
             static let runCommand = "run_command"
+            static let gitContext = "git_context"
+            static let projectContext = "project_context"
+            static let updateTasks = "update_tasks"
         }
 
         // MARK: - Initialization
@@ -310,7 +316,7 @@ import os.log
 
         /// Asks for approval according to the tool's permission level. `riskReason` is set when a
         /// path or sandbox check needs approval whatever the level (except Denied, which refuses).
-        private func authorize(
+        func authorize(
             tool: String,
             description: String,
             details: String,
@@ -1100,6 +1106,18 @@ import os.log
                     }
                     let results = try await searchFiles(pattern: pattern, path: path, conversationId: conversationId)
                     return formatSearchResults(results)
+
+                case ToolName.gitContext:
+                    return try await gitContext(path: arguments["path"] as? String, conversationId: conversationId)
+
+                case ToolName.projectContext:
+                    return try await projectContext(path: arguments["path"] as? String, conversationId: conversationId)
+
+                case ToolName.updateTasks:
+                    guard let tasks = arguments["tasks"] as? [[String: Any]] else {
+                        return "ERROR: Missing required parameter 'tasks'"
+                    }
+                    return try await updateTasks(tasks, conversationId: conversationId)
 
                 case ToolName.runCommand:
                     guard let command = arguments["command"] as? String else {

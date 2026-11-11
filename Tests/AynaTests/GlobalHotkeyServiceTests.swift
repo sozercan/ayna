@@ -55,7 +55,7 @@
 
         @Test("Register default succeeds")
         func registerDefaultSucceeds() throws {
-            try service.registerDefault()
+            try service.register(.default)
 
             #expect(service.isRegistered)
             service.unregister()
@@ -82,7 +82,7 @@
 
         @Test("Register with hotkey string")
         func registerWithHotkeyString() throws {
-            try service.register(hotkeyString: "⌘⇧Space")
+            try service.register(try #require(HotkeyCombination(string: "⌘⇧Space")))
 
             #expect(service.isRegistered)
             service.unregister()
@@ -90,7 +90,7 @@
 
         @Test("Register with alternative modifiers")
         func registerWithAlternativeModifiers() throws {
-            try service.register(hotkeyString: "cmd+shift+space")
+            try service.register(try #require(HotkeyCombination(string: "cmd+shift+space")))
 
             #expect(service.isRegistered)
             service.unregister()

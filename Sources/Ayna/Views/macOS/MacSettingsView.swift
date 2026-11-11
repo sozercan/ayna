@@ -274,7 +274,7 @@ struct AttachFromAppSettingsSection: View {
                     if newValue {
                         // Register hotkey when enabled
                         do {
-                            try GlobalHotkeyService.shared.registerDefault()
+                            try GlobalHotkeyService.shared.registerSaved()
                             AccessibilityService.shared.startMonitoring()
                         } catch {
                             DiagnosticsLogger.log(
@@ -294,12 +294,7 @@ struct AttachFromAppSettingsSection: View {
             if isEnabled {
                 // Hotkey display
                 LabeledContent("Hotkey") {
-                    Text(AppPreferences.attachFromAppHotkey)
-                        .font(Typography.code)
-                        .padding(.horizontal, Spacing.sm)
-                        .padding(.vertical, Spacing.xxs)
-                        .background(Theme.backgroundSecondary)
-                        .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.xs))
+                    HotkeyRecorderView()
                 }
                 .accessibilityIdentifier("settings.attachFromApp.hotkey")
 
@@ -324,7 +319,7 @@ struct AttachFromAppSettingsSection: View {
         } header: {
             Text("Attach from App")
         } footer: {
-            Text("Press \(AppPreferences.attachFromAppHotkey) anywhere to capture content from the focused app and ask questions about it. Requires Accessibility permission.")
+            Text("Press the hotkey anywhere to capture content from the focused app and ask questions about it. Requires Accessibility permission.")
                 .font(Typography.caption)
         }
         .onAppear {
@@ -354,7 +349,7 @@ struct ToolsSettingsView: View {
                         .fontWeight(.semibold)
 
                     let webSearchCount = tavilyService.isEnabled ? 1 : 0
-                    let agenticToolCount = agentSettings.settings.isEnabled ? 6 : 0
+                    let agenticToolCount = agentSettings.settings.isEnabled ? BuiltinToolService.toolNames.count : 0
                     let toolCount = webSearchCount + agenticToolCount + mcpManager.availableTools.count
                     Text("\(toolCount) tools available")
                         .font(Typography.caption)
@@ -610,7 +605,7 @@ struct AgenticToolsRow: View {
                     if agentSettings.settings.isEnabled {
                         Text("•")
                             .foregroundStyle(Theme.textSecondary)
-                        Text("6 tools")
+                        Text("\(BuiltinToolService.toolNames.count) tools")
                             .font(Typography.caption)
                             .foregroundStyle(Theme.accent)
                     }

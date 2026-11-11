@@ -201,65 +201,24 @@
 
         // MARK: - Hotkey Configuration
 
-        /// Registers the default hotkey (⌘⇧Space)
-        func registerDefault() throws {
-            try register(
-                keyCode: UInt32(kVK_Space),
-                modifiers: UInt32(cmdKey | shiftKey)
-            )
+        /// Registers the hotkey saved in settings (⌘⇧Space unless the user recorded another).
+        func registerSaved() throws {
+            try register(HotkeyCombination(string: AppPreferences.attachFromAppHotkey) ?? .default)
         }
 
-        /// Parses a hotkey string like "⌘⇧Space" and registers it
-        /// - Parameter hotkeyString: The hotkey string to parse
-        func register(hotkeyString: String) throws {
-            guard let parsed = parseHotkeyString(hotkeyString) else {
-                DiagnosticsLogger.log(
-                    .attachFromApp,
-                    level: .fault,
-                    message: "⚠️ Unrecognized key in hotkey string, skipping registration",
-                    metadata: ["hotkeyString": hotkeyString]
-                )
-                return
-            }
-            try register(keyCode: parsed.keyCode, modifiers: parsed.modifiers)
+        func register(_ combination: HotkeyCombination) throws {
+            try register(keyCode: combination.keyCode, modifiers: combination.modifiers)
         }
 
-        /// Parses a hotkey string into key code and modifiers; returns nil if no key is recognized
-        private func parseHotkeyString(_ string: String) -> (keyCode: UInt32, modifiers: UInt32)? {
-            var modifiers: UInt32 = 0
-            var keyCode: UInt32?
-
-            // Parse modifiers
-            if string.contains("⌘") || string.lowercased().contains("cmd") {
-                modifiers |= UInt32(cmdKey)
+        /// Switches to a new hotkey, restoring the previous one if the new one cannot be registered
+        /// (for example because another app already owns it).
+        func replaceHotkey(with combination: HotkeyCombination, previous: HotkeyCombination) throws {
+            do {
+                try register(combination)
+            } catch {
+                try? register(previous)
+                throw error
             }
-            if string.contains("⇧") || string.lowercased().contains("shift") {
-                modifiers |= UInt32(shiftKey)
-            }
-            if string.contains("⌥") || string.lowercased().contains("opt") || string.lowercased().contains("alt") {
-                modifiers |= UInt32(optionKey)
-            }
-            if string.contains("⌃") || string.lowercased().contains("ctrl") {
-                modifiers |= UInt32(controlKey)
-            }
-
-            // Parse key
-            let lowercased = string.lowercased()
-            if lowercased.contains("space") {
-                keyCode = UInt32(kVK_Space)
-            } else if lowercased.contains("return") || lowercased.contains("enter") {
-                keyCode = UInt32(kVK_Return)
-            } else if lowercased.contains("tab") {
-                keyCode = UInt32(kVK_Tab)
-            } else if lowercased.contains("escape") || lowercased.contains("esc") {
-                keyCode = UInt32(kVK_Escape)
-            }
-            // Add more key mappings as needed
-
-            guard let resolvedKeyCode = keyCode else {
-                return nil
-            }
-            return (resolvedKeyCode, modifiers)
         }
     }
 
@@ -274,7 +233,9 @@
             case let .eventHandlerInstallFailed(status):
                 "Failed to install event handler (status: \(status))"
             case let .registrationFailed(status):
-                "Failed to register hotkey (status: \(status))"
+                status == OSStatus(eventHotKeyExistsErr)
+                    ? "Another app already uses this shortcut"
+                    : "Failed to register hotkey (status: \(status))"
             }
         }
     }

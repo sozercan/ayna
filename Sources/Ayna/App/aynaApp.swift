@@ -437,7 +437,7 @@ private func setupWorkWithApps(conversationManager: ConversationManager) {
 
     // Register the global hotkey
     do {
-        try GlobalHotkeyService.shared.registerDefault()
+        try GlobalHotkeyService.shared.registerSaved()
     } catch {
         DiagnosticsLogger.log(
             .attachFromApp,
