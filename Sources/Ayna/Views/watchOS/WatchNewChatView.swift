@@ -81,8 +81,8 @@
                 guard !trimmed.isEmpty else { return }
 
                 // Create the conversation only now
+                // No haptic here: sending the first message already plays one.
                 guard let newId = viewModel.createNewConversation() else { return }
-                HapticEngine.newConversation()
                 createdConversationId = newId
                 conversationStore.selectedConversationId = newId
 
