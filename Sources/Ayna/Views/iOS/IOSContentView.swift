@@ -270,8 +270,13 @@ struct IOSNewChatView: View {
                             proxy.scrollTo(lastId, anchor: .bottom)
                         }
                     }
-                    .onChange(of: viewModel.isGenerating) { _, _ in
+                    .onChange(of: viewModel.isGenerating) { _, newValue in
                         updateDisplayableItems()
+                        // A new reply (a retry, or the next message) starts following again
+                        if newValue, let lastId = conversation.messages.last?.id {
+                            followsLatest = true
+                            proxy.scrollTo(lastId, anchor: .bottom)
+                        }
                     }
                     .onAppear {
                         updateDisplayableItems()

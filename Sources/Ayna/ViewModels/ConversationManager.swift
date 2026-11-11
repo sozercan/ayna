@@ -1113,7 +1113,8 @@ final class ConversationManager: ObservableObject {
     // Loading reconciles legacy, metadata-only, and durable snapshots in one transaction.
     // swiftlint:disable:next function_body_length
     private func loadConversations(
-        allowingActiveClearGeneration allowedClearGeneration: UInt64? = nil
+        allowingActiveClearGeneration allowedClearGeneration: UInt64? = nil,
+        preservingUnsavedChanges: Bool = false
     ) async {
         let spotlightIndexWasCleared = await completePendingPrivacyCleanupIfNeeded()
         cancelAllFullConversationLoads()
@@ -1171,6 +1172,7 @@ final class ConversationManager: ObservableObject {
             let protectedPersistenceIds = dirtyIds
                 .union(persistingAtLoadStart)
                 .union(persistedDuringLoadIds)
+                .union(preservingUnsavedChanges ? unsavedStoredConversationIds(in: metadataFromDisk) : [])
             let deletingIds = persistenceState.deletingIds
                 .union(managerDeletionTasks.keys)
                 .union(deletingAtLoadStart)
@@ -1276,8 +1278,10 @@ final class ConversationManager: ObservableObject {
                 pathsById[metadata.id] = paths
             }
 
-            // If selected conversation no longer exists, clear selection
+            // If selected conversation no longer exists, clear selection. The new-chat
+            // placeholder is never stored, and clearing it would discard its draft.
             if let selectedId = selectedConversationId,
+               selectedId != Self.newConversationId,
                !conversations.contains(where: { $0.id == selectedId })
             {
                 selectedConversationId = nil
@@ -1805,7 +1809,20 @@ final class ConversationManager: ObservableObject {
         while let clearTask = clearConversationsTask {
             await clearTask.value
         }
-        await loadConversations()
+        await loadConversations(preservingUnsavedChanges: true)
+    }
+
+    /// Stored conversations whose fully loaded in-memory copy has changes not yet saved, such
+    /// as a reply still streaming in (streaming updates are saved when the reply finishes). A
+    /// user-requested reload keeps these instead of replacing them with the stored copy.
+    /// Conversations that are not on disk keep following the dirty-save rule.
+    private func unsavedStoredConversationIds(in metadataFromDisk: [ConversationMetadata]) -> Set<UUID> {
+        let storedIds = Set(metadataFromDisk.map(\.id))
+        return Set(conversations.lazy.filter { conversation in
+            storedIds.contains(conversation.id)
+                && !self.metadataOnlyConversationIds.contains(conversation.id)
+                && self.durableDiskBaseline[conversation.id]?.conversation != conversation
+        }.map(\.id))
     }
 
     @discardableResult
