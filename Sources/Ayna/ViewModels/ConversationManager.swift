@@ -900,6 +900,8 @@ final class ConversationManager: ObservableObject {
     /// conversation's summary.
     private func conversationDidPersist(_ conversation: Conversation) {
         guard getConversationIndex(for: conversation.id) != nil else { return }
+        // What is on disk now, so a reload can tell saved changes from unsaved ones.
+        durableDiskBaseline[conversation.id] = (conversation, metadataOnlyConversationIds.contains(conversation.id))
         conversationSummaryUpdateOperation(conversation)
     }
 

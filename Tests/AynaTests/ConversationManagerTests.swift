@@ -1096,6 +1096,36 @@ struct ConversationManagerTests {
 
     @Test
     @MainActor
+    func `reload takes a newer stored copy once the reply has been saved`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: "test-saved-reload-key", keychain: InMemoryKeychainStorage())
+        var conversation = Conversation(title: "Original")
+        conversation.addMessage(Message(role: .user, content: "Question"))
+        let reply = Message(role: .assistant, content: "")
+        conversation.addMessage(reply)
+        try await store.save(conversation)
+
+        let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
+        _ = await manager.loadingTask?.value
+        _ = try #require(await manager.ensureConversationLoaded(conversation.id))
+        await manager.flushPendingSaves()
+        #expect(manager.appendToMessage(conversationId: conversation.id, messageId: reply.id, chunk: "Answer"))
+        let finished = try #require(manager.conversations.first { $0.id == conversation.id })
+        await manager.saveImmediately(finished).value
+
+        // Another writer (for example the Watch) renames it on disk afterwards.
+        var external = finished
+        external.title = "Renamed elsewhere"
+        external.updatedAt = finished.updatedAt.addingTimeInterval(60)
+        try await store.save(external)
+
+        await manager.reloadConversations()
+
+        #expect(manager.conversations.first { $0.id == conversation.id }?.title == "Renamed elsewhere")
+    }
+
+    @Test
+    @MainActor
     func `reload keeps the new-chat selection`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: "test-new-chat-reload-key", keychain: InMemoryKeychainStorage())

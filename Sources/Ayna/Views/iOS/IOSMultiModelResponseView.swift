@@ -524,9 +524,6 @@ struct IOSMultiModelSelector: View {
     }
 
     private func toggleModel(_ model: String) {
-        let generator = UIImpactFeedbackGenerator(style: .light)
-        generator.impactOccurred()
-
         if !multiModelEnabled {
             // Single-select mode: always replace selection
             if selectedModels != [model] {
