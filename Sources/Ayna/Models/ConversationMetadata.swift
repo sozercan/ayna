@@ -102,8 +102,11 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
         let decodedSearchText = try container.decodeIfPresent(String.self, forKey: .searchableText)
         lastMessagePreview = decodedPreview ?? ""
         searchableText = decodedSearchText ?? title
-        requiresBackfill = messageCount > 0 && (decodedPreview == nil || decodedSearchText == nil)
         attachmentPaths = try container.decodeIfPresent([String].self, forKey: .attachmentPaths)
+        // Sidecars written before attachment paths were recorded are rebuilt once from the full
+        // record, so deleting an unopened conversation can still remove its files.
+        requiresBackfill = messageCount > 0
+            && (decodedPreview == nil || decodedSearchText == nil || attachmentPaths == nil)
     }
 
     func encode(to encoder: Encoder) throws {

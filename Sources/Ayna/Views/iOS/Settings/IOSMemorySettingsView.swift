@@ -283,9 +283,8 @@
 
         private func clearAllMemory() {
             Task {
-                await memoryService.clearAllFacts()
                 do {
-                    try await summaryService.clearAllSummaries()
+                    try await memoryProvider.clearAllMemory()
                 } catch {
                     clearErrorMessage = "Stored facts were cleared, but conversation summaries could not be deleted. \(error.localizedDescription)"
                 }

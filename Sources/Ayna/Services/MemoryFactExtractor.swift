@@ -55,8 +55,15 @@ final class MemoryFactExtractor {
                 return
             }
             await self?.extract(from: conversation)
+            // A replacement timer may already sit in this slot; only the current task clears it.
+            guard !Task.isCancelled else { return }
             self?.idleTasks[conversation.id] = nil
         }
+    }
+
+    func cancel(conversationId: UUID) {
+        idleTasks.removeValue(forKey: conversationId)?.cancel()
+        examinedMessageIDs.removeValue(forKey: conversationId)
     }
 
     func cancelAll() {
@@ -74,11 +81,12 @@ final class MemoryFactExtractor {
         }
         guard !newMessages.isEmpty else { return }
 
-        let known = existingFacts().map(\.content)
-        let prompt = Self.prompt(userMessages: newMessages.map(\.content), existingFacts: known)
+        let request = Self.prompt(userMessages: newMessages, existingFacts: existingFacts().map(\.content))
         let response: String
         do {
-            response = try await generate(prompt, conversation.model)
+            response = try await generate(request.prompt, conversation.model)
+        } catch is CancellationError {
+            return
         } catch {
             DiagnosticsLogger.log(
                 .conversationManager,
@@ -88,8 +96,13 @@ final class MemoryFactExtractor {
             )
             return
         }
-        examinedMessageIDs[conversation.id, default: []].formUnion(newMessages.map(\.id))
+        // Cancelled while generating (conversation deleted, memory cleared, extraction off).
+        guard !Task.isCancelled else { return }
+        // Only messages that made it into the prompt count as read; the rest go in a later pass.
+        examinedMessageIDs[conversation.id, default: []].formUnion(request.includedMessageIDs)
 
+        // Facts may have changed while the model was answering (another pass, manual edits).
+        let known = existingFacts().map(\.content)
         var stored: [String] = []
         for fact in Self.parseFacts(response) where !Self.isDuplicate(fact, of: known + stored) {
             storeFact(fact)
@@ -114,15 +127,25 @@ final class MemoryFactExtractor {
     people. Never include secrets such as passwords, keys, or financial or health details.
     """
 
-    static func prompt(userMessages: [String], existingFacts: [String]) -> String {
+    /// Builds the prompt from the newest messages that fit, truncating one that alone is too long.
+    static func prompt(
+        userMessages: [Message],
+        existingFacts: [String]
+    ) -> (prompt: String, includedMessageIDs: [UUID]) {
         var messages = ""
+        var included: [UUID] = []
         for message in userMessages.reversed() {
-            let entry = "- \(message.trimmingCharacters(in: .whitespacesAndNewlines))\n"
+            var text = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if included.isEmpty, text.count > maximumPromptCharacters - 3 {
+                text = String(text.prefix(maximumPromptCharacters - 3))
+            }
+            let entry = "- \(text)\n"
             guard messages.count + entry.count <= maximumPromptCharacters else { break }
             messages = entry + messages
+            included.append(message.id)
         }
         let known = existingFacts.isEmpty ? "(none)" : existingFacts.map { "- \($0)" }.joined(separator: "\n")
-        return """
+        let prompt = """
         \(instructions)
 
         Already known (do not repeat):
@@ -133,6 +156,7 @@ final class MemoryFactExtractor {
         Reply with a JSON array of at most \(maximumFactsPerPass) short facts written in the third \
         person, for example ["Works as a nurse", "Prefers metric units"]. Reply with [] if there are none.
         """
+        return (prompt, included)
     }
 
     /// Reads the JSON array from a reply, tolerating surrounding text or a code fence.
@@ -200,18 +224,28 @@ final class MemoryFactExtractor {
 
     private static func generateWithModel(prompt: String, model: String) async throws -> String {
         let reply = ExtractionReply()
-        return try await withCheckedThrowingContinuation { continuation in
-            reply.continuation = continuation
-            _ = AIService.shared.sendMessage(
-                messages: [Message(role: .user, content: prompt)],
-                model: model,
-                temperature: 0,
-                stream: false,
-                requestLane: .background,
-                onChunk: { reply.append($0) },
-                onComplete: { reply.finish(nil) },
-                onError: { reply.finish($0) }
-            )
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                reply.continuation = continuation
+                guard !Task.isCancelled else {
+                    reply.finish(CancellationError())
+                    return
+                }
+                reply.request = AIService.shared.sendMessage(
+                    messages: [Message(role: .user, content: prompt)],
+                    model: model,
+                    temperature: 0,
+                    stream: false,
+                    requestLane: .background,
+                    onChunk: { reply.append($0) },
+                    onComplete: { reply.finish(nil) },
+                    onError: { reply.finish($0) }
+                )
+            }
+        } onCancel: {
+            // Stop the remote request and resume the caller, which then stores nothing.
+            Task { @MainActor in reply.request?.cancel() }
+            reply.finish(CancellationError())
         }
     }
 }
@@ -221,6 +255,7 @@ private final class ExtractionReply: @unchecked Sendable {
     private let lock = NSLock()
     private var text = ""
     var continuation: CheckedContinuation<String, Error>?
+    @MainActor var request: AITextRequest?
 
     func append(_ chunk: String) {
         lock.withLock { text += chunk }

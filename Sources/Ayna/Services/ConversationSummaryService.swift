@@ -99,6 +99,8 @@ final class ConversationSummaryService {
     }
 
     private var changesBeforeLoad: [PendingChange] = []
+    /// The load in progress, so concurrent callers share one load instead of racing.
+    @ObservationIgnored private var inFlightLoad: Task<Void, Never>?
 
     /// Token budget for summaries context (approximate)
     static let defaultTokenBudget = 500
@@ -163,8 +165,19 @@ final class ConversationSummaryService {
 
     // MARK: - Loading
 
-    /// Loads summaries from encrypted storage.
+    /// Loads summaries from encrypted storage. Concurrent calls share one load.
     func loadSummaries() async {
+        if let inFlightLoad {
+            await inFlightLoad.value
+            return
+        }
+        let load = Task { await self.performLoad() }
+        inFlightLoad = load
+        await load.value
+        inFlightLoad = nil
+    }
+
+    private func performLoad() async {
         guard !isConversationClearInProgress else {
             isLoaded = true
             return
@@ -217,15 +230,14 @@ final class ConversationSummaryService {
             )
         } catch {
             guard storageGeneration == generation, !isConversationClearInProgress else { return }
+            // Stay unloaded and keep the queued changes: declaring an empty digest loaded would
+            // let the next save erase the stored summaries. A later load replays the queue.
             DiagnosticsLogger.log(
                 .conversationManager,
                 level: .error,
                 message: "❌ Failed to load conversation summaries",
                 metadata: ["error": error.localizedDescription]
             )
-            digest = RecentConversationsDigest()
-            changesBeforeLoad.removeAll()
-            isLoaded = true
         }
     }
 
@@ -482,8 +494,13 @@ final class ConversationSummaryService {
         await activeSaveTask?.value
     }
 
-    /// Forces an immediate save.
+    /// Forces an immediate save, once the stored digest has loaded; saving before that would
+    /// overwrite the stored summaries with only the changes queued so far.
     func saveImmediately() async {
+        if let inFlightLoad {
+            await inFlightLoad.value
+        }
+        guard isLoaded else { return }
         await cancelPendingSave()
         await saveNow()
     }
