@@ -391,6 +391,46 @@
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func `Remembered write approval does not follow a retargeted symlink`() async throws {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("BuiltinToolRememberedRetarget-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let original = directory.appendingPathComponent("original.txt")
+            let other = directory.appendingPathComponent("other.txt")
+            let link = directory.appendingPathComponent("link.txt")
+            try "original".write(to: original, atomically: true, encoding: .utf8)
+            try "other".write(to: other, atomically: true, encoding: .utf8)
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: original)
+            let permissionService = PermissionService()
+            let service = BuiltinToolService(permissionService: permissionService, projectRoot: directory)
+
+            // First write: approve and remember for the session.
+            let first = Task {
+                try await service.writeFile(path: link.path, content: "first", conversationId: UUID())
+            }
+            await waitForPendingApproval(permissionService)
+            let firstID = try #require(permissionService.pendingApprovals.first?.id)
+            permissionService.approve(firstID, rememberForSession: true)
+            try await first.value
+            #expect(try String(contentsOf: original, encoding: .utf8) == "first")
+
+            // Retarget the link; the remembered approval must not cover the new file.
+            try FileManager.default.removeItem(at: link)
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: other)
+            let second = Task {
+                try await service.writeFile(path: link.path, content: "second", conversationId: UUID())
+            }
+            await waitForPendingApproval(permissionService)
+            let secondApproval = try #require(permissionService.pendingApprovals.first)
+            #expect(secondApproval.details == other.resolvingSymlinksInPath().standardized.path)
+            permissionService.deny(secondApproval.id)
+
+            await #expect(throws: ToolExecutionError.self) { try await second.value }
+            #expect(try String(contentsOf: other, encoding: .utf8) == "other")
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func `Edit rejects a symlink retargeted while approval is pending`() async throws {
             let directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent("BuiltinToolRetargetEdit-\(UUID().uuidString)")

@@ -361,10 +361,12 @@ import os.log
             // retargeted while approval is pending cannot redirect the write.
             let approvedTarget = resolvedTargetURL(for: path)
 
-            // Write operations always require approval unless already approved
+            // Write operations always require approval unless already approved.
+            // Approvals (including remembered ones) are keyed by the resolved target,
+            // so retargeting a symlink between calls requires fresh approval.
             let permissionLevel = permissionService.checkPermission(
                 tool: ToolName.writeFile,
-                details: path,
+                details: approvedTarget.path,
                 defaultLevel: .askOnce
             )
 
@@ -373,7 +375,7 @@ import os.log
                 let approved = await permissionService.requestApproval(
                     toolName: ToolName.writeFile,
                     description: description,
-                    details: path,
+                    details: approvedTarget.path,
                     conversationId: conversationId
                 )
                 try Task.checkCancellation()
@@ -500,9 +502,11 @@ import os.log
                 editApprovalReason = nil
             }
 
+            // Keyed by the resolved target, like write_file, so remembered approvals
+            // cannot follow a retargeted symlink to a different file.
             let permissionLevel = permissionService.checkPermission(
                 tool: ToolName.editFile,
-                details: path,
+                details: approvedTarget.path,
                 defaultLevel: .askOnce
             )
 
@@ -511,7 +515,7 @@ import os.log
                 let approved = await permissionService.requestApproval(
                     toolName: ToolName.editFile,
                     description: description,
-                    details: path,
+                    details: approvedTarget.path,
                     diffPreview: diffPreview,
                     conversationId: conversationId
                 )
