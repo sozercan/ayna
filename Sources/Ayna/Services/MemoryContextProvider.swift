@@ -19,7 +19,7 @@ final class MemoryContextProvider {
     private let summaryService: ConversationSummaryService
 
     /// Task for loading memory data (tracked to avoid fire-and-forget)
-    private nonisolated(unsafe) var loadTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var loadTask: Task<Void, Never>?
 
     /// Whether memory features are enabled globally
     private(set) var isMemoryEnabled: Bool = false {

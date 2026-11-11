@@ -102,7 +102,7 @@ struct ChatInputArea: View {
             if let icon = appContent.appIcon {
                 Image(nsImage: icon)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .scaledToFit()
                     .frame(width: 20, height: 20)
             } else {
                 Image(systemName: "app.fill")
@@ -361,7 +361,7 @@ struct AttachedFileRow: View {
             if let thumbnail {
                 Image(nsImage: thumbnail)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .scaledToFill()
                     .frame(width: 48, height: 48)
                     .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm))
             } else if isImageFile {
@@ -436,7 +436,7 @@ private struct PastedImageRow: View {
             if let thumbnail {
                 Image(nsImage: thumbnail)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .scaledToFill()
                     .frame(width: 48, height: 48)
                     .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm))
             } else {

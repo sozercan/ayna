@@ -9,7 +9,7 @@ import Foundation
 
 /// Ephemeral metadata about the current session.
 /// Generated fresh each session and not persisted.
-struct SessionMetadata: Codable, Sendable {
+struct SessionMetadata: Sendable {
     let deviceType: DeviceType
     let platform: Platform
     let appVersion: String
@@ -114,28 +114,5 @@ struct SessionMetadata: Codable, Sendable {
         }
 
         return lines.joined(separator: "\n")
-    }
-}
-
-// MARK: - TimeZone Codable Conformance
-
-extension TimeZone: @retroactive Codable {
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        let identifier = try container.decode(String.self)
-        guard let timezone = TimeZone(identifier: identifier) else {
-            throw DecodingError.dataCorrupted(
-                DecodingError.Context(
-                    codingPath: decoder.codingPath,
-                    debugDescription: "Invalid timezone identifier: \(identifier)"
-                )
-            )
-        }
-        self = timezone
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        try container.encode(identifier)
     }
 }

@@ -68,7 +68,7 @@
                     if let icon = content.appIcon {
                         Image(nsImage: icon)
                             .resizable()
-                            .aspectRatio(contentMode: .fit)
+                            .scaledToFit()
                             .frame(width: 32, height: 32)
                             .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm))
                     } else {

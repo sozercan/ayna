@@ -385,18 +385,12 @@ import os.log
             // Re-resolve at operation time to ensure symlink hasn't changed since validation
             let expandedPath = (path as NSString).expandingTildeInPath
             let expandedURL = URL(fileURLWithPath: expandedPath)
-            let url: URL
-            do {
-                // For new files, resolve the parent directory's symlinks
-                if FileManager.default.fileExists(atPath: expandedURL.path) {
-                    url = try expandedURL.resolvingSymlinksInPath()
-                } else {
-                    // File doesn't exist yet - resolve parent and append filename
-                    let parent = try expandedURL.deletingLastPathComponent().resolvingSymlinksInPath()
-                    url = parent.appendingPathComponent(expandedURL.lastPathComponent)
-                }
-            } catch {
-                throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path: \(error.localizedDescription)")
+            let url: URL = if FileManager.default.fileExists(atPath: expandedURL.path) {
+                expandedURL.resolvingSymlinksInPath()
+            } else {
+                // File doesn't exist yet - resolve the parent's symlinks and append the filename
+                expandedURL.deletingLastPathComponent().resolvingSymlinksInPath()
+                    .appendingPathComponent(expandedURL.lastPathComponent)
             }
 
             // Re-validate the resolved path to catch symlink changes
@@ -510,12 +504,7 @@ import os.log
             // Resolve path with symlink resolution to prevent TOCTOU attacks
             let expandedPath = (path as NSString).expandingTildeInPath
             let expandedURL = URL(fileURLWithPath: expandedPath)
-            let url: URL
-            do {
-                url = try expandedURL.resolvingSymlinksInPath()
-            } catch {
-                throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path: \(error.localizedDescription)")
-            }
+            let url = expandedURL.resolvingSymlinksInPath()
 
             // Re-validate the resolved path to catch symlink changes
             let revalidation = pathValidator.validate(url.path, operation: .write)

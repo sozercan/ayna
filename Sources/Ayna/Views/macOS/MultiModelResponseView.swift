@@ -312,7 +312,7 @@ struct MultiModelResponseCard: View {
                         let nsImage = decodedImage
                         Image(nsImage: nsImage)
                             .resizable()
-                            .aspectRatio(contentMode: .fit)
+                            .scaledToFit()
                             .frame(maxWidth: .infinity)
                             .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg))
                             .contextMenu {

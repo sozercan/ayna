@@ -159,7 +159,7 @@
             }
 
             // Safe cast after type check - AXUIElement is a CFTypeRef alias
-            return unsafeBitCast(element, to: AXUIElement.self)
+            return unsafeDowncast(element, to: AXUIElement.self)
         }
 
         /// Gets an attribute value from an AXUIElement.
@@ -238,7 +238,7 @@
             }
 
             // Safe cast after type check - AXUIElement is a CFTypeRef alias
-            return unsafeBitCast(window, to: AXUIElement.self)
+            return unsafeDowncast(window, to: AXUIElement.self)
         }
 
         /// Gets the window title from an application.
@@ -486,7 +486,7 @@
             }
 
             // Safe cast after type check - AXUIElement is a CFTypeRef alias
-            return unsafeBitCast(element, to: AXUIElement.self)
+            return unsafeDowncast(element, to: AXUIElement.self)
         }
 
         /// Attempts to find the main content element in a window.

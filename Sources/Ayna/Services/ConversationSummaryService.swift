@@ -86,12 +86,12 @@ final class ConversationSummaryService {
     private var conversationClearGeneration: UInt64 = 0
     private var isConversationClearInProgress = false
     private var storedDigestWasDeferredForPendingCleanup = false
-    private nonisolated(unsafe) var saveTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var saveTask: Task<Void, Never>?
     private let saveDebounceDuration: Duration = .seconds(2)
 
     /// Conversations pending summarization (debounced)
     private var pendingSummarization: Set<UUID> = []
-    private nonisolated(unsafe) var summarizationTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var summarizationTask: Task<Void, Never>?
     private let summarizationDebounce: Duration = .seconds(300) // 5 minutes
 
     /// Token budget for summaries context (approximate)
