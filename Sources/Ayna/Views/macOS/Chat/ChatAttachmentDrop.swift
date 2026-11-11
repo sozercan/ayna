@@ -38,6 +38,32 @@ enum ChatAttachmentDrop {
         }
     }
 
+    /// Attaches asynchronously loaded drop URLs within the composer's import session: Send stays
+    /// disabled while they load, and a result arriving after the session rotated is discarded.
+    @discardableResult
+    static func receiveDrop(
+        loadFileURLs: @escaping @MainActor () async -> [URL],
+        attachedFiles: Binding<[URL]>,
+        pastedImages: Binding<[PastedImage]>,
+        importSessionID: Binding<UUID>,
+        isImporting: Binding<Bool>
+    ) -> Task<Void, Never> {
+        let sessionID = importSessionID.wrappedValue
+        let marksImporting = !isImporting.wrappedValue
+        if marksImporting {
+            isImporting.wrappedValue = true
+        }
+        return Task { @MainActor in
+            let fileURLs = await loadFileURLs()
+            if marksImporting, isImporting.wrappedValue {
+                isImporting.wrappedValue = false
+            }
+            guard importSessionID.wrappedValue == sessionID else { return }
+            // Read the count after loading: a paste may have finished in the meantime.
+            attach(fileURLs, to: attachedFiles, pastedImageCount: pastedImages.wrappedValue.count)
+        }
+    }
+
     /// Loads file URLs from drop providers in their dropped order.
     static func fileURLs(from providers: [NSItemProvider]) async -> [URL] {
         var fileURLs: [URL] = []
@@ -56,25 +82,26 @@ enum ChatAttachmentDrop {
 }
 
 /// Makes a whole chat screen a drop target for file attachments.
+///
+/// Dropped URLs load asynchronously, so a drop joins the composer's import session like a
+/// paste: Send stays disabled while it loads, and a result arriving after Send is discarded.
 private struct ChatAttachmentDropModifier: ViewModifier {
     @Binding var attachedFiles: [URL]
     @Binding var pastedImages: [PastedImage]
+    @Binding var importSessionID: UUID
+    @Binding var isImporting: Bool
     @State private var isTargeted = false
 
     func body(content: Content) -> some View {
         content
             .onDrop(of: [.fileURL], isTargeted: $isTargeted) { providers in
-                let attachedFiles = $attachedFiles
-                let pastedImages = $pastedImages
-                Task { @MainActor in
-                    let fileURLs = await ChatAttachmentDrop.fileURLs(from: providers)
-                    // Read the count after loading: a paste may have finished in the meantime.
-                    ChatAttachmentDrop.attach(
-                        fileURLs,
-                        to: attachedFiles,
-                        pastedImageCount: pastedImages.wrappedValue.count
-                    )
-                }
+                ChatAttachmentDrop.receiveDrop(
+                    loadFileURLs: { await ChatAttachmentDrop.fileURLs(from: providers) },
+                    attachedFiles: $attachedFiles,
+                    pastedImages: $pastedImages,
+                    importSessionID: $importSessionID,
+                    isImporting: $isImporting
+                )
                 return true
             }
             .overlay {
@@ -100,8 +127,18 @@ private struct ChatAttachmentDropModifier: ViewModifier {
 
 extension View {
     /// Attaches files dropped anywhere on this view to the composer.
-    func chatAttachmentDropTarget(attachedFiles: Binding<[URL]>, pastedImages: Binding<[PastedImage]>) -> some View {
-        modifier(ChatAttachmentDropModifier(attachedFiles: attachedFiles, pastedImages: pastedImages))
+    func chatAttachmentDropTarget(
+        attachedFiles: Binding<[URL]>,
+        pastedImages: Binding<[PastedImage]>,
+        importSessionID: Binding<UUID>,
+        isImporting: Binding<Bool>
+    ) -> some View {
+        modifier(ChatAttachmentDropModifier(
+            attachedFiles: attachedFiles,
+            pastedImages: pastedImages,
+            importSessionID: importSessionID,
+            isImporting: isImporting
+        ))
     }
 }
 #endif

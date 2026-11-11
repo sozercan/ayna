@@ -255,7 +255,12 @@ struct MacNewChatView: View {
                 }
             }
         }
-        .chatAttachmentDropTarget(attachedFiles: $attachedFiles, pastedImages: $pastedImages)
+        .chatAttachmentDropTarget(
+            attachedFiles: $attachedFiles,
+            pastedImages: $pastedImages,
+            importSessionID: $pasteImportSessionID,
+            isImporting: $isImportingPastedImages
+        )
         .onAppear {
             syncSelectedModelState()
         }
