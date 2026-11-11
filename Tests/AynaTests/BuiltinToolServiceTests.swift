@@ -469,8 +469,10 @@
                 if pending.toolName == BuiltinToolService.ToolName.editFile { break }
             }
 
-            _ = try? await task.value
-            #expect(try String(contentsOf: original, encoding: .utf8) != "bye other")
+            // The path no longer points at the captured target after the read, so the edit
+            // must be rejected and neither file may change.
+            await #expect(throws: ToolExecutionError.self) { try await task.value }
+            #expect(try String(contentsOf: original, encoding: .utf8) == "hello original")
             #expect(try String(contentsOf: other, encoding: .utf8) == "hello other")
         }
 
