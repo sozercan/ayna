@@ -755,7 +755,8 @@ final class ConversationManager: ObservableObject {
         metadataOnlyConversationIds.remove(conversation.id)
         metadataSearchTextById.removeValue(forKey: conversation.id)
         // A conversation new to the manager was saved before this insert, so the durable-save
-        // observer skipped it; refresh its summary now that it is in the list.
+        // observer skipped it; record what is on disk and refresh its summary now.
+        durableDiskBaseline[conversation.id] = (conversation, false)
         conversationSummaryUpdateOperation(conversation)
         #if !os(watchOS)
             indexConversation(conversation)
@@ -1260,16 +1261,7 @@ final class ConversationManager: ObservableObject {
 
             conversations = reconciled
             metadataOnlyConversationIds = nextMetadataOnlyIds
-            let previousBaseline = durableDiskBaseline
-            durableDiskBaseline = metadataFromDisk.reduce(into: [:]) { baseline, metadata in
-                if let previous = previousBaseline[metadata.id], !previous.isMetadataOnly,
-                   previous.conversation.updatedAt == metadata.updatedAt
-                {
-                    baseline[metadata.id] = previous
-                } else {
-                    baseline[metadata.id] = (placeholderConversation(from: metadata), true)
-                }
-            }
+            rebuildDurableDiskBaseline(from: metadataFromDisk, keeping: reconciled)
             metadataSearchTextById = metadataFromDisk.reduce(into: [:]) { searchTextById, metadata in
                 guard nextMetadataOnlyIds.contains(metadata.id) else { return }
                 searchTextById[metadata.id] = metadata.searchableText
@@ -1497,6 +1489,29 @@ final class ConversationManager: ObservableObject {
     private func finishSearchIndexWarmup(version: UInt64) {
         guard searchIndexWarmupVersion == version else { return }
         searchIndexWarmupTask = nil
+    }
+
+    /// Resets the record of what is on disk from freshly loaded metadata. A full snapshot is
+    /// kept while its stored copy is unchanged; a row kept in memory but missing from the
+    /// metadata was saved while it loaded, so the baseline its save recorded is kept too
+    /// (only a completed save creates one).
+    private func rebuildDurableDiskBaseline(
+        from metadataFromDisk: [ConversationMetadata],
+        keeping reconciled: [Conversation]
+    ) {
+        let previousBaseline = durableDiskBaseline
+        durableDiskBaseline = metadataFromDisk.reduce(into: [:]) { baseline, metadata in
+            if let previous = previousBaseline[metadata.id], !previous.isMetadataOnly,
+               previous.conversation.updatedAt == metadata.updatedAt
+            {
+                baseline[metadata.id] = previous
+            } else {
+                baseline[metadata.id] = (placeholderConversation(from: metadata), true)
+            }
+        }
+        for conversation in reconciled where durableDiskBaseline[conversation.id] == nil {
+            durableDiskBaseline[conversation.id] = previousBaseline[conversation.id]
+        }
     }
 
     private func placeholderConversation(from metadata: ConversationMetadata) -> Conversation {
