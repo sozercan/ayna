@@ -168,6 +168,69 @@ struct ConversationSummaryStorageTests {
     }
 }
 
+private struct InMemoryUserMemoryStore: UserMemoryStoreAdapter {
+    func loadMemory() async throws -> UserMemoryStore {
+        UserMemoryStore()
+    }
+
+    func saveMemory(_: UserMemoryStore) async throws {}
+    func clearMemory() async throws {}
+}
+
+/// Holds a synchronous persistence operation until the test releases it.
+private final class BlockingGate: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var released = false
+    let entered = FlightTestSignal()
+
+    func hold() {
+        entered.signal()
+        condition.lock()
+        defer { condition.unlock() }
+        let deadline = Date().addingTimeInterval(10)
+        while !released, condition.wait(until: deadline) {}
+    }
+
+    func release() {
+        condition.lock()
+        released = true
+        condition.broadcast()
+        condition.unlock()
+    }
+}
+
+@Suite("Clear All Memory", .serialized)
+@MainActor
+struct ClearAllMemoryTests {
+    @Test(.timeLimit(.minutes(1)))
+    func `Saves during a clear do not bring summaries back`() async throws {
+        let gate = BlockingGate()
+        let summaryService = ConversationSummaryService(
+            summaryLoader: { RecentConversationsDigest() },
+            summarySaveOperation: { _ in },
+            summaryClearOperation: { gate.hold() },
+            existingConversationIdsLoader: nil
+        )
+        await summaryService.loadSummaries()
+        let provider = MemoryContextProvider(
+            memoryService: UserMemoryService(store: InMemoryUserMemoryStore()),
+            metadataService: SessionMetadataService.shared,
+            summaryService: summaryService,
+            factExtractor: MemoryFactExtractor(generate: { _, _ in "[]" }, existingFacts: { [] }, storeFact: { _ in })
+        )
+        provider.setMemoryEnabled(true)
+        defer { provider.setMemoryEnabled(false) }
+
+        let clear = Task { try await provider.clearAllMemory() }
+        await gate.entered.wait()
+        provider.updateConversationSummary(TestHelpers.sampleConversation(title: "Saved mid-clear"))
+        gate.release()
+        try await clear.value
+
+        #expect(summaryService.summaryCount == 0)
+    }
+}
+
 @Suite("Conversation attachments", .serialized)
 @MainActor
 struct ConversationAttachmentCleanupTests {
