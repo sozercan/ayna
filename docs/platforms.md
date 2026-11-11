@@ -50,6 +50,7 @@ This document details platform-specific capabilities, limitations, and implement
   - No attachments or image generation
   - Conversations and settings sync via iPhone (WatchConnectivity)
   - Simpler markdown rendering (`WatchMarkdownRenderer`)
+- **Complication**: `AynaComplication` (`WatchComplication/`), a WidgetKit launcher embedded in the Watch app. It shows the Ayna glyph and opens the app; it reads no app data, so it needs no App Group.
 - **Scheme**: `Ayna-watchOS`
 
 ## Build Commands
