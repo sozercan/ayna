@@ -281,7 +281,7 @@ struct IOSMessageComposer: View {
         HStack(spacing: Spacing.xxs) {
             Image(uiImage: image)
                 .resizable()
-                .aspectRatio(contentMode: .fill)
+                .scaledToFill()
                 .frame(width: 24, height: 24)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
             Text("Image \(index + 1)")
@@ -380,7 +380,7 @@ private struct IOSPastedImageThumbnail: View {
             if let image {
                 Image(uiImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .scaledToFill()
                     .clipShape(RoundedRectangle(cornerRadius: 4))
             } else {
                 Image(systemName: "photo")

@@ -422,7 +422,7 @@ struct MacMessageView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Image(nsImage: nsImage)
                                 .resizable()
-                                .aspectRatio(contentMode: .fit)
+                                .scaledToFit()
                                 .frame(maxWidth: 360)
                                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                 .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
@@ -454,7 +454,7 @@ struct MacMessageView: View {
             if let nsImage = cachedGeneratedImage {
                 Image(nsImage: nsImage)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .scaledToFit()
                     .frame(maxWidth: 420)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)

@@ -37,7 +37,7 @@ struct CitationBadgeView: View {
                         case let .success(image):
                             image
                                 .resizable()
-                                .aspectRatio(contentMode: .fit)
+                                .scaledToFit()
                                 .frame(width: size - Spacing.xxs, height: size - Spacing.xxs)
                                 .clipShape(Circle())
                         case .failure, .empty:
