@@ -76,6 +76,36 @@ struct WatchDurableSyncTests {
         #expect(inMemory?.messages.map(\.id) == stored.messages.map(\.id))
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    @MainActor
+    func `A conversation deleted while its history loads is not reported as loaded`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = TestHelpers.makeTestStore(directory: directory)
+        let stored = TestHelpers.sampleConversation(title: "Deleted mid-load")
+        try await store.save([stored])
+        let loadStarted = FlightTestSignal()
+        let releaseLoad = FlightTestSignal()
+        let manager = ConversationManager(
+            store: store,
+            saveDebounceDuration: .milliseconds(0),
+            conversationLoader: { id in
+                loadStarted.signal()
+                await releaseLoad.wait()
+                return try await store.loadConversation(id: id)
+            },
+            searchIndexWarmupEnabled: false
+        )
+        _ = await manager.loadingTask?.value
+        let placeholder = try #require(manager.conversations.first)
+
+        let edit = Task { await manager.loadFullHistoryBeforeEdit(stored.id) }
+        await loadStarted.wait()
+        _ = await manager.deleteConversation(placeholder)?.value
+        releaseLoad.signal()
+
+        #expect(await edit.value == false)
+    }
+
     @Test
     func `Metadata-only conversations stay in the manifest without a body`() throws {
         let newer = TestHelpers.sampleConversation(title: "Metadata only")

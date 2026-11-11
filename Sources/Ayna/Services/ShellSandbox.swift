@@ -455,7 +455,63 @@ struct ShellSandbox {
         }
     }
 
+    /// Read-only subcommands of allowlisted tools that can otherwise run project code (scripts,
+    /// hooks, build plugins). Anything else needs approval.
+    private static let readOnlySubcommands: [String: Set<String>] = [
+        "git": [
+            "status", "log", "diff", "show", "blame", "rev-parse", "ls-files", "ls-tree",
+            "describe", "shortlog", "grep", "cat-file", "--version", "version", "help"
+        ],
+        "npm": ["ls", "list", "view", "info", "outdated", "--version", "-v", "help"],
+        "yarn": ["list", "info", "why", "--version", "-v", "help"],
+        "pnpm": ["ls", "list", "why", "--version", "-v", "help"],
+        "swift": ["--version", "-version", "--help", "-help"],
+        "swiftc": ["--version", "-version", "--help", "-help"],
+        "xcodebuild": ["-version", "-showsdks", "-list", "-help", "-usage"]
+    ]
+
+    /// Whether an allowlisted command would run some other program or project code, which the
+    /// allowlist must not wave through (for example `env python3 -c ...` or `find -exec`).
+    private func runsOtherCode(_ component: String, command: String) -> Bool {
+        let tokens = component.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard let commandIndex = tokens.firstIndex(where: { $0 == command || $0.hasSuffix("/\(command)") }) else {
+            return true
+        }
+        let arguments = Array(tokens[(commandIndex + 1)...])
+
+        switch command {
+        case "env":
+            // env VAR=value ... COMMAND runs COMMAND; printing the environment is fine.
+            return arguments.contains { !$0.hasPrefix("-") && !$0.contains("=") }
+        case "find":
+            let executing: Set<String> = ["-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprintf", "-fls"]
+            return arguments.contains { executing.contains($0) }
+        case "rg":
+            return arguments.contains { $0 == "--pre" || $0.hasPrefix("--pre=") }
+        case "fd":
+            return arguments.contains { ["-x", "--exec", "-X", "--exec-batch"].contains($0) }
+        case "git":
+            // Global options that change configuration can point git at any program.
+            if arguments.contains(where: { $0 == "-c" || $0.hasPrefix("--config-env") || $0.hasPrefix("--exec-path") }) {
+                return true
+            }
+            let subcommand = arguments.first { !$0.hasPrefix("-") }
+            return subcommand.map { !(Self.readOnlySubcommands["git"]?.contains($0) ?? false) } ?? false
+        case "npm", "yarn", "pnpm", "swift", "swiftc":
+            guard let first = arguments.first else { return false }
+            return !(Self.readOnlySubcommands[command]?.contains(first) ?? false)
+        case "xcodebuild":
+            guard let first = arguments.first else { return true }
+            return !(Self.readOnlySubcommands[command]?.contains(first) ?? false)
+        default:
+            return false
+        }
+    }
+
     private func hasDangerousFlags(_ fullCommand: String, command: String) -> Bool {
+        if runsOtherCode(fullCommand, command: command) {
+            return true
+        }
         let lowercased = fullCommand.lowercased()
 
         // Dangerous flags for specific commands

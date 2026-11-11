@@ -70,33 +70,64 @@ struct MCPTool: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
-/// Resolves the names MCP tools are offered to the model under.
-enum MCPToolNaming {
-    /// Model-facing name for each tool. A tool keeps its own name unless that name is reserved
-    /// (served by Ayna) or shared with another tool; then it becomes `server__tool`, cleaned to
-    /// the `^[A-Za-z0-9_-]{1,64}$` form function-calling APIs accept.
-    static func exposedNames(for tools: [MCPTool], reserved: Set<String>) -> [UUID: String] {
-        let countsByName = tools.reduce(into: [String: Int]()) { $0[$1.name, default: 0] += 1 }
-        var used = reserved
+/// Names MCP tools are offered to the model under, bound for the whole session.
+///
+/// A tool keeps its own name unless that name is reserved (served by Ayna) or already taken by
+/// another server's tool; then it becomes `server__tool`, cleaned to the `^[A-Za-z0-9_-]{1,64}$`
+/// form function-calling APIs accept. Once an alias is bound to a server and tool it is never
+/// given to anything else, so a call made against an older tool list either reaches the same
+/// tool or fails, and never runs on a different server.
+struct MCPToolNaming {
+    private var aliasByKey: [String: String] = [:]
+    private var keyByAlias: [String: String] = [:]
+
+    static func key(server: String, tool: String) -> String {
+        "\(server)\u{0}\(tool)"
+    }
+
+    /// Model-facing name for each tool, by tool ID.
+    mutating func assign(_ tools: [MCPTool], reserved: Set<String>) -> [UUID: String] {
+        let ordered = tools.sorted { Self.key(server: $0.serverName, tool: $0.name) < Self.key(server: $1.serverName, tool: $1.name) }
         var result: [UUID: String] = [:]
-        // Unprefixed names first, so a clean name is never taken by another tool's alias.
-        for tool in tools where countsByName[tool.name] == 1 && !reserved.contains(tool.name) {
-            result[tool.id] = tool.name
-            used.insert(tool.name)
-        }
-        for tool in tools where result[tool.id] == nil {
-            let base = sanitized("\(tool.serverName)__\(tool.name)")
-            var candidate = base
-            var suffix = 2
-            while used.contains(candidate) {
-                let tail = "_\(suffix)"
-                candidate = String(base.prefix(64 - tail.count)) + tail
-                suffix += 1
+        var taken = reserved
+
+        // Keep every alias already bound to a tool that is still here.
+        for tool in ordered {
+            let key = Self.key(server: tool.serverName, tool: tool.name)
+            if let alias = aliasByKey[key], !taken.contains(alias) {
+                result[tool.id] = alias
+                taken.insert(alias)
             }
-            result[tool.id] = candidate
-            used.insert(candidate)
+        }
+
+        let unassigned = ordered.filter { result[$0.id] == nil }
+        let rawNameCounts = unassigned.reduce(into: [String: Int]()) { $0[$1.name, default: 0] += 1 }
+        for tool in unassigned {
+            let key = Self.key(server: tool.serverName, tool: tool.name)
+            let alias: String
+            if rawNameCounts[tool.name] == 1, isAvailable(tool.name, for: key, taken: taken) {
+                alias = tool.name
+            } else {
+                let base = Self.sanitized("\(tool.serverName)__\(tool.name)")
+                var candidate = base
+                var suffix = 2
+                while !isAvailable(candidate, for: key, taken: taken) {
+                    let tail = "_\(suffix)"
+                    candidate = String(base.prefix(64 - tail.count)) + tail
+                    suffix += 1
+                }
+                alias = candidate
+            }
+            result[tool.id] = alias
+            taken.insert(alias)
+            aliasByKey[key] = alias
+            keyByAlias[alias] = key
         }
         return result
+    }
+
+    private func isAvailable(_ alias: String, for key: String, taken: Set<String>) -> Bool {
+        !taken.contains(alias) && (keyByAlias[alias] == nil || keyByAlias[alias] == key)
     }
 
     private static func sanitized(_ name: String) -> String {

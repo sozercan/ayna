@@ -171,6 +171,79 @@ import Testing
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func `Denying a tool while its approval is pending stops it`() async throws {
+            let root = try makeRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let (service, permissionService) = makeService(root: root)
+
+            let write = Task { try await service.writeFile(path: "late.txt", content: "x", conversationId: UUID()) }
+            let pending = try #require(await waitForPending(permissionService))
+            service.toolPermissions["write_file"] = .denied
+            permissionService.approve(pending.id)
+
+            await #expect(throws: ToolExecutionError.self) { try await write.value }
+            #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("late.txt").path))
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `Remembering the edit pre-read does not approve the edit`() async throws {
+            // The temporary directory is under protected /var, so the pre-read asks too.
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("AynaPreRead-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let file = directory.appendingPathComponent("notes.txt")
+            try "hello".write(to: file, atomically: true, encoding: .utf8)
+            let (service, permissionService) = makeService(root: directory)
+
+            let edit = Task {
+                try await service.editFile(path: file.path, oldText: "hello", newText: "bye", conversationId: UUID())
+            }
+            let preRead = try #require(await waitForPending(permissionService))
+            #expect(preRead.description.hasPrefix("Read file before editing"))
+            permissionService.approve(preRead.id, rememberForSession: true)
+
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(2))
+            while permissionService.pendingApprovals.first?.id == preRead.id || permissionService.pendingApprovals.isEmpty,
+                  clock.now < deadline
+            {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            let editApproval = try #require(permissionService.pendingApprovals.first)
+            #expect(editApproval.diffPreview != nil)
+            permissionService.deny(editApproval.id)
+            await #expect(throws: ToolExecutionError.self) { try await edit.value }
+            #expect(try String(contentsOf: file, encoding: .utf8) == "hello")
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `A listing approval does not follow a retargeted symlink`() async throws {
+            let root = try makeRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let first = root.appendingPathComponent("first")
+            let second = root.appendingPathComponent("second")
+            try FileManager.default.createDirectory(at: first, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: second, withIntermediateDirectories: true)
+            let link = root.appendingPathComponent("link")
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: first)
+            let (service, permissionService) = makeService(root: root) { $0.setPermissionLevel(.askOnce, for: "list_directory") }
+            let conversationId = UUID()
+
+            let firstListing = Task { try await service.listDirectory(path: link.path, conversationId: conversationId) }
+            permissionService.approve(try #require(await waitForPending(permissionService)).id)
+            _ = try await firstListing.value
+
+            try FileManager.default.removeItem(at: link)
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: second)
+            let secondListing = Task { try await service.listDirectory(path: link.path, conversationId: conversationId) }
+
+            let pending = try #require(await waitForPending(permissionService))
+            #expect(pending.details.hasSuffix("/second"))
+            permissionService.deny(pending.id)
+            await #expect(throws: ToolExecutionError.self) { try await secondListing.value }
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func `Allow All approves every pending request in the conversation only`() async throws {
             let permissionService = PermissionService()
             let conversation = UUID()
@@ -203,15 +276,13 @@ struct MCPToolNamingTests {
 
     @Test
     func `Unique names are kept and only clashes get a server prefix`() {
+        var naming = MCPToolNaming()
         let unique = tool("lookup", server: "docs")
         let builtinClash = tool("read_file", server: "fs")
         let sharedA = tool("search", server: "alpha")
         let sharedB = tool("search", server: "beta server")
 
-        let names = MCPToolNaming.exposedNames(
-            for: [unique, builtinClash, sharedA, sharedB],
-            reserved: ["read_file", "web_search"]
-        )
+        let names = naming.assign([unique, builtinClash, sharedA, sharedB], reserved: ["read_file", "web_search"])
 
         #expect(names[unique.id] == "lookup")
         #expect(names[builtinClash.id] == "fs__read_file")
@@ -220,14 +291,31 @@ struct MCPToolNamingTests {
     }
 
     @Test
-    func `A prefixed alias never takes a name another tool already uses`() {
-        let taken = tool("fs__read_file", server: "other")
-        let clash = tool("read_file", server: "fs")
+    func `An alias never moves to another server`() {
+        var naming = MCPToolNaming()
+        let first = tool("read_file", server: "a b")
+        let second = tool("read_file", server: "a_b")
+        let both = naming.assign([first, second], reserved: ["read_file"])
+        #expect(both[first.id] == "a_b__read_file")
+        #expect(both[second.id] == "a_b__read_file_2")
 
-        let names = MCPToolNaming.exposedNames(for: [clash, taken], reserved: ["read_file"])
+        // The first server disconnects: the second keeps its alias instead of taking the first's.
+        let rediscovered = tool("read_file", server: "a_b")
+        let afterDisconnect = naming.assign([rediscovered], reserved: ["read_file"])
+        #expect(afterDisconnect[rediscovered.id] == "a_b__read_file_2")
+    }
 
-        #expect(names[taken.id] == "fs__read_file")
-        #expect(names[clash.id] == "fs__read_file_2")
+    @Test
+    func `A newcomer with a taken name is prefixed and the original keeps it`() {
+        var naming = MCPToolNaming()
+        let original = tool("search", server: "alpha")
+        _ = naming.assign([original], reserved: [])
+
+        let newcomer = tool("search", server: "beta")
+        let names = naming.assign([tool("search", server: "alpha"), newcomer], reserved: [])
+
+        #expect(names.values.contains("search"))
+        #expect(names[newcomer.id] == "beta__search")
     }
 }
 
