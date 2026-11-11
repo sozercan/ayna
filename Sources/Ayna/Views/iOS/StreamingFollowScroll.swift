@@ -30,6 +30,11 @@ struct StreamingFollowScroll: ViewModifier {
         content
             .onScrollPhaseChange { _, newPhase in
                 phase = newPhase
+                // Growth can leave the end without a geometry change after the drag starts,
+                // so a drag that begins away from the end stops following right away.
+                if newPhase == .interacting || newPhase == .decelerating, isAwayFromEnd {
+                    followsLatest = false
+                }
             }
             .onScrollGeometryChange(for: Bool.self, of: Self.isAtEnd) { _, isAtEnd in
                 isAwayFromEnd = !isAtEnd

@@ -1067,6 +1067,46 @@ struct ConversationManagerTests {
 
         manager.clearAllConversations()
     }
+
+    @Test
+    @MainActor
+    func `reload keeps a reply that is still streaming in`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: "test-streaming-reload-key", keychain: InMemoryKeychainStorage())
+        var conversation = Conversation(title: "Streaming")
+        conversation.addMessage(Message(role: .user, content: "Question"))
+        let reply = Message(role: .assistant, content: "")
+        conversation.addMessage(reply)
+        try await store.save(conversation)
+
+        let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
+        _ = await manager.loadingTask?.value
+        _ = try #require(await manager.ensureConversationLoaded(conversation.id))
+        // Let any save from loading settle, so the conversation is not dirty when streaming starts.
+        await manager.flushPendingSaves()
+        // Streaming chunks change memory only; the reply is saved when it finishes.
+        #expect(manager.appendToMessage(conversationId: conversation.id, messageId: reply.id, chunk: "Partial answer"))
+
+        await manager.reloadConversations()
+
+        let reloaded = try #require(manager.conversations.first { $0.id == conversation.id })
+        #expect(reloaded.messages.last?.content == "Partial answer")
+        #expect(manager.appendToMessage(conversationId: conversation.id, messageId: reply.id, chunk: " continues"))
+    }
+
+    @Test
+    @MainActor
+    func `reload keeps the new-chat selection`() async throws {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: "test-new-chat-reload-key", keychain: InMemoryKeychainStorage())
+        let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
+        _ = await manager.loadingTask?.value
+        manager.selectedConversationId = ConversationManager.newConversationId
+
+        await manager.reloadConversations()
+
+        #expect(manager.selectedConversationId == ConversationManager.newConversationId)
+    }
 }
 
 extension ConversationManagerTests {
