@@ -36,6 +36,7 @@ import Foundation
             case .allowed:
                 riskReason = nil
             }
+            let identity = Self.fileIdentity(of: directory)
             try await authorize(
                 tool: tool,
                 description: description,
@@ -43,7 +44,51 @@ import Foundation
                 riskReason: riskReason,
                 conversationId: conversationId
             )
+            // The path could have been swapped (for example for a symlink) while the approval
+            // card was open; only the directory that was checked may be read.
+            guard identity != nil,
+                  pathValidator.canonicalize(path) == directory,
+                  Self.fileIdentity(of: directory) == identity
+            else {
+                throw ToolExecutionError.invalidPath(path: path, reason: "The directory changed while waiting for approval")
+            }
             return directory
+        }
+
+        /// Device and inode of a file, which stay the same only while it is the same file.
+        private static func fileIdentity(of url: URL) -> [UInt64]? {
+            var info = stat()
+            guard lstat(url.path, &info) == 0 else { return nil }
+            return [UInt64(info.st_dev), UInt64(info.st_ino)]
+        }
+
+        /// Approves git metadata that lives outside the repository's work tree. A `.git` file
+        /// can point anywhere, such as a protected `~/.config` repository, and only the work
+        /// tree directory was checked so far.
+        private func authorizeGitMetadata(
+            _ layout: GitContextService.RepositoryLayout,
+            conversationId: UUID
+        ) async throws {
+            let rootComponents = layout.topLevel.pathComponents
+            for metadata in [layout.gitDirectory, layout.commonDirectory]
+                where !metadata.pathComponents.starts(with: rootComponents)
+            {
+                let riskReason = switch pathValidator.validate(url: metadata, operation: .read) {
+                case let .denied(reason):
+                    throw ToolExecutionError.invalidPath(path: metadata.path, reason: reason)
+                case let .requiresApproval(reason):
+                    "Git metadata outside the repository. \(reason)"
+                case .allowed:
+                    "Git metadata outside the repository"
+                }
+                try await authorize(
+                    tool: ToolName.gitContext,
+                    description: "Read git metadata",
+                    details: metadata.path,
+                    riskReason: riskReason,
+                    conversationId: conversationId
+                )
+            }
         }
 
         /// Branch, status, changed files, and recent commits for the repository containing `path`.
@@ -55,9 +100,17 @@ import Foundation
                 description: "Read git status",
                 conversationId: conversationId
             )
+            guard let layout = await GitContextService.repositoryLayout(at: directory) else {
+                try Task.checkCancellation()
+                return "Not a git repository: \(directory.path)"
+            }
+            try await authorizeGitMetadata(layout, conversationId: conversationId)
             let git = GitContextService()
             await git.loadContext(from: directory)
             try Task.checkCancellation()
+            if let failure = git.loadFailure {
+                throw ToolExecutionError.invalidPath(path: directory.path, reason: failure)
+            }
             guard var output = git.systemPromptContext() else {
                 return "Not a git repository: \(directory.path)"
             }
@@ -134,10 +187,12 @@ import Foundation
         /// Replaces the conversation's task list. Tasks keep their identity when their text is unchanged.
         func updateTasks(_ entries: [[String: Any]], conversationId: UUID) async throws -> String {
             guard isEnabled else { throw ToolExecutionError.serviceDisabled }
+            // The conversation is the approval target, so approving one list doesn't approve
+            // other conversations' lists of the same length.
             try await authorize(
                 tool: ToolName.updateTasks,
-                description: "Update task list",
-                details: "\(entries.count) tasks",
+                description: "Update task list (\(entries.count) tasks)",
+                details: "Conversation \(conversationId.uuidString)",
                 riskReason: nil,
                 conversationId: conversationId
             )

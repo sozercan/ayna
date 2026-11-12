@@ -14,6 +14,8 @@ struct HotkeyRecorderView: View {
     @State private var isRecording = false
     @State private var warning: String?
     @State private var monitor: Any?
+    /// Whether the live hotkey was paused for recording and must be restored.
+    @State private var suspendedHotkey = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xxs) {
@@ -49,6 +51,12 @@ struct HotkeyRecorderView: View {
     private func startRecording() {
         warning = nil
         isRecording = true
+        // While the live hotkey is registered, pressing it would open the floating panel
+        // instead of reaching this monitor, so pause it until recording ends.
+        if AppPreferences.attachFromAppEnabled {
+            GlobalHotkeyService.shared.unregister()
+            suspendedHotkey = true
+        }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let combination = HotkeyCombination(event: event)
             if combination.keyCode == 53, combination.modifiers == 0 { // Escape cancels
@@ -71,6 +79,10 @@ struct HotkeyRecorderView: View {
             NSEvent.removeMonitor(monitor)
         }
         monitor = nil
+        if suspendedHotkey {
+            suspendedHotkey = false
+            try? GlobalHotkeyService.shared.register(current)
+        }
     }
 
     private func apply(_ combination: HotkeyCombination) {
