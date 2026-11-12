@@ -86,7 +86,9 @@ struct SessionMetadata: Sendable {
 
     /// Gets the current app version from the bundle
     private static var currentAppVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
+            // The SwiftPM binary embeds Info.plist without expanding build settings.
+            .flatMap { $0.hasPrefix("$(") ? nil : $0 } ?? "1.0"
     }
 
     /// Formats the metadata for injection into the AI context.

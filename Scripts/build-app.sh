@@ -262,25 +262,26 @@ PLIST
 # Create PkgInfo
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
-# Copy app icon (.icon bundle for macOS 26+ Liquid Glass)
+# Compile the Liquid Glass app icon (.icon) and the asset catalog. actool writes Assets.car,
+# which holds the layered icon, plus ayna.icns for older icon lookups.
 ICON_SOURCE="$ROOT/Sources/Ayna/Resources/ayna.icon"
-if [[ -d "$ICON_SOURCE" ]]; then
-  echo "🎨 Copying app icon..."
-  cp -R "$ICON_SOURCE" "$APP_BUNDLE/Contents/Resources/ayna.icon"
-fi
-ICNS_PATH="$ROOT/Sources/Ayna/Resources/ayna.icns"
-if [[ -f "$ICNS_PATH" ]]; then
-  cp "$ICNS_PATH" "$APP_BUNDLE/Contents/Resources/ayna.icns"
-fi
-
-# Compile asset catalog if actool is available
 XCASSETS_PATH="$ROOT/Sources/Ayna/App/Assets.xcassets"
-if [[ -d "$XCASSETS_PATH" ]] && command -v actool &>/dev/null; then
-  echo "🎨 Compiling asset catalog..."
-  actool --compile "$APP_BUNDLE/Contents/Resources" \
-    --platform macosx \
-    --minimum-deployment-target 26.0 \
-    "$XCASSETS_PATH" 2>/dev/null || true
+echo "🎨 Compiling app icon and asset catalog..."
+ICON_PARTIAL_PLIST="$(mktemp -t ayna-actool)"
+if ! xcrun actool --compile "$APP_BUNDLE/Contents/Resources" \
+  --platform macosx \
+  --minimum-deployment-target 26.0 \
+  --app-icon ayna \
+  --output-partial-info-plist "$ICON_PARTIAL_PLIST" \
+  --output-format human-readable-text \
+  "$ICON_SOURCE" "$XCASSETS_PATH" >/dev/null; then
+  echo "ERROR: actool failed to compile the app icon" >&2
+  exit 1
+fi
+rm -f "$ICON_PARTIAL_PLIST"
+if [[ ! -f "$APP_BUNDLE/Contents/Resources/Assets.car" || ! -f "$APP_BUNDLE/Contents/Resources/ayna.icns" ]]; then
+  echo "ERROR: actool did not produce Assets.car and ayna.icns" >&2
+  exit 1
 fi
 
 # Embed Sparkle.framework

@@ -8,3 +8,8 @@ updates:
       actions-all:
         patterns:
         - "*"
+  # Keeps the committed Package.resolved (Sparkle) current.
+  - package-ecosystem: "swift"
+    directory: "/"
+    schedule:
+      interval: "weekly"
