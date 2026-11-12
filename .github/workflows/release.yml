@@ -37,15 +37,20 @@ jobs:
     # must be a plain release version before anything uses it. A manual run also publishes a
     # release and an appcast update, so it must name an existing tag and run from it.
     - name: Validate release tag
+      shell: bash
       env:
         INPUT_TAG: ${{ inputs.tag }}
       run: |
         if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-          TAG="$INPUT_TAG"
+          # Same fallback as the later tag-selection steps: a run started from a tag names it.
+          TAG="${INPUT_TAG:-$GITHUB_REF_NAME}"
         else
           TAG="$GITHUB_REF_NAME"
         fi
-        if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z]+([.][0-9A-Za-z]+)*)?$'; then
+        # Bash's =~ anchors ^ and $ to the whole value (grep would accept one matching line
+        # of a multiline input).
+        VERSION_PATTERN='^v[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z]+([.][0-9A-Za-z]+)*)?$'
+        if ! [[ "$TAG" =~ $VERSION_PATTERN ]]; then
           echo "Error: '$TAG' is not a release tag like v1.2.3 or v1.2.3-beta.1"
           exit 1
         fi
