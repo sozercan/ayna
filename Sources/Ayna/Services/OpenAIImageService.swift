@@ -102,6 +102,21 @@ final class OpenAIImageService: @unchecked Sendable {
         )
     }
 
+    /// Only GPT Image models accept `output_format` and `output_compression`.
+    static func supportsOutputOptions(model: String) -> Bool {
+        model.lowercased().hasPrefix("gpt-image")
+    }
+
+    /// Output fields for this model: the format, plus compression for lossy formats.
+    static func outputFields(model: String, config: ImageConfig) -> [(String, String)] {
+        guard supportsOutputOptions(model: model) else { return [] }
+        var fields = [("output_format", config.outputFormat)]
+        if config.outputFormat != "png" {
+            fields.append(("output_compression", String(min(100, max(0, config.outputCompression)))))
+        }
+        return fields
+    }
+
     /// One input image for the `/images/edits` endpoint.
     struct SourceImage: Sendable, Equatable {
         let data: Data
@@ -217,7 +232,7 @@ final class OpenAIImageService: @unchecked Sendable {
         }
 
         // Build request body
-        let body: [String: Any] = if usesAzureEndpoint {
+        var body: [String: Any] = if usesAzureEndpoint {
             [
                 "prompt": prompt,
                 "size": imageConfig.size,
@@ -234,6 +249,10 @@ final class OpenAIImageService: @unchecked Sendable {
                 "quality": imageConfig.quality,
                 "n": 1
             ]
+        }
+
+        for (name, value) in Self.outputFields(model: requestConfig.model, config: imageConfig) {
+            body[name] = name == "output_compression" ? (Int(value) ?? 100) as Any : value
         }
 
         do {
@@ -659,6 +678,13 @@ final class OpenAIImageService: @unchecked Sendable {
         body.append(Data("Content-Disposition: form-data; name=\"quality\"\r\n\r\n".utf8))
         body.append(Data(imageConfig.quality.utf8))
         body.append(Data("\r\n".utf8))
+
+        for (name, value) in Self.outputFields(model: requestConfig.model, config: imageConfig) {
+            body.append(Data("--\(boundary)\r\n".utf8))
+            body.append(Data("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".utf8))
+            body.append(Data(value.utf8))
+            body.append(Data("\r\n".utf8))
+        }
 
         // End boundary
         body.append(Data("--\(boundary)--\r\n".utf8))

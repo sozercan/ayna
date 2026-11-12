@@ -72,13 +72,25 @@ struct ImageEditContext: Equatable, Sendable {
                 guard origin == .attachments else { return [] }
                 throw AynaError.fileOperationFailed(operation: "load", path: reference.fileName)
             }
+            // A previous image may be JPEG or WebP when GPT Image output format was changed.
+            let mimeType = origin == .previousImage ? Self.sniffedImageMIMEType(data) ?? reference.mimeType : reference.mimeType
             sourceImages.append(OpenAIImageService.SourceImage(
                 data: data,
-                mimeType: reference.mimeType,
+                mimeType: mimeType,
                 fileName: reference.fileName
             ))
         }
         return sourceImages
+    }
+
+    static func sniffedImageMIMEType(_ data: Data) -> String? {
+        let bytes = [UInt8](data.prefix(12))
+        if bytes.starts(with: [0x89, 0x50, 0x4E, 0x47]) { return "image/png" }
+        if bytes.starts(with: [0xFF, 0xD8, 0xFF]) { return "image/jpeg" }
+        if bytes.count >= 12, bytes[0 ..< 4] == [0x52, 0x49, 0x46, 0x46], bytes[8 ..< 12] == [0x57, 0x45, 0x42, 0x50] {
+            return "image/webp"
+        }
+        return nil
     }
 
     private static func previousGeneratedImage(in conversation: Conversation) -> Message? {
