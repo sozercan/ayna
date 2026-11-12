@@ -33,8 +33,12 @@ import os.log
         /// Repository root path
         private var repoRoot: URL?
 
-        /// `-c` overrides that switch off every configured filter driver for this repository.
+        /// Environment entries that switch off every configured filter driver for this repository.
         private var filterOverrides: [String] = []
+
+        /// Why the last `loadContext` stopped without context, when it failed rather than
+        /// finding no repository.
+        private(set) var loadFailure: String?
 
         // MARK: - Types
 
@@ -80,6 +84,7 @@ import os.log
         /// Loads git context from a directory
         func loadContext(from directory: URL) async {
             filterOverrides = []
+            loadFailure = nil
             // Find git root
             repoRoot = await findGitRoot(from: directory)
 
@@ -90,11 +95,12 @@ import os.log
 
             // `git status` runs a modified tracked file's clean/process filter when it rehashes
             // it; those are commands from the repository's config, so they are switched off.
-            filterOverrides = await Self.filterDriverOverrides(in: root)
-            guard !Task.isCancelled else {
+            guard let overrides = await Self.filterDriverOverrides(in: root), !Task.isCancelled else {
                 reset()
+                loadFailure = "Couldn't read the repository's filter configuration, so git status was not run."
                 return
             }
+            filterOverrides = overrides
 
             // Load all git info in parallel
             async let branchTask = loadCurrentBranch(in: root)
@@ -327,18 +333,47 @@ import os.log
         nonisolated static let maximumOutputBytes = 1024 * 1024
 
         private func runGitCommand(_ arguments: [String], in directory: URL) async -> GitCommandResult {
-            await Self.runGit(filterOverrides + arguments, in: directory, timeout: Self.commandTimeout)
+            await Self.runGit(arguments, in: directory, timeout: Self.commandTimeout, environment: filterOverrides)
         }
 
-        /// Empty `clean`, `smudge` and `process` commands, and `required=false`, for every filter
-        /// driver configured for the repository at `root`. Reading config never runs code.
-        nonisolated static func filterDriverOverrides(in root: URL) async -> [String] {
+        /// Where a repository's work tree and metadata live, as absolute canonical paths.
+        struct RepositoryLayout: Equatable, Sendable {
+            let topLevel: URL
+            let gitDirectory: URL
+            let commonDirectory: URL
+        }
+
+        /// Reads the repository layout for `directory` without running repository code; nil when
+        /// it is not inside a work tree. A `.git` file can point the metadata anywhere.
+        nonisolated static func repositoryLayout(at directory: URL) async -> RepositoryLayout? {
+            let result = await runGit(
+                ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"],
+                in: directory,
+                timeout: commandTimeout
+            )
+            let lines = result.stdout.split(separator: "\n").map(String.init)
+            guard result.exitCode == 0, lines.count == 3 else { return nil }
+            let urls = lines.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardized }
+            return RepositoryLayout(topLevel: urls[0], gitDirectory: urls[1], commonDirectory: urls[2])
+        }
+
+        /// `GIT_CONFIG_*` environment entries with empty `clean`, `smudge` and `process`
+        /// commands, and `required=false`, for every filter driver configured for the repository
+        /// at `root`. Keys go in the environment rather than `-c key=value`, which would split a
+        /// driver name containing `=`. Reading config never runs code. Returns nil if the
+        /// configuration could not be read completely, so callers can stop instead of running
+        /// git without the overrides.
+        nonisolated static func filterDriverOverrides(in root: URL) async -> [String]? {
             let result = await runGit(
                 ["config", "--null", "--name-only", "--get-regexp", "^filter\\..+\\.(clean|smudge|process|required)$"],
                 in: root,
                 timeout: commandTimeout
             )
-            guard result.exitCode == 0 else { return [] }
+            // `git config --get-regexp` exits 1 with no output when nothing matches.
+            if result.exitCode == 1, result.stdout.isEmpty, result.stderr.isEmpty {
+                return []
+            }
+            guard result.exitCode == 0 else { return nil }
             var drivers: [String] = []
             for key in result.stdout.split(separator: "\0") {
                 let name = key.dropFirst("filter.".count)
@@ -348,8 +383,11 @@ import os.log
                     drivers.append(driver)
                 }
             }
-            return drivers.flatMap { driver in
-                ["clean=", "smudge=", "process=", "required=false"].flatMap { ["-c", "filter.\(driver).\($0)"] }
+            let entries = drivers.flatMap { driver in
+                [("clean", ""), ("smudge", ""), ("process", ""), ("required", "false")].map { ("filter.\(driver).\($0.0)", $0.1) }
+            }
+            return ["GIT_CONFIG_COUNT=\(entries.count)"] + entries.enumerated().flatMap { index, entry in
+                ["GIT_CONFIG_KEY_\(index)=\(entry.0)", "GIT_CONFIG_VALUE_\(index)=\(entry.1)"]
             }
         }
 
@@ -362,13 +400,15 @@ import os.log
         nonisolated static func runGit(
             _ arguments: [String],
             in directory: URL,
-            timeout: Duration
+            timeout: Duration,
+            environment: [String] = []
         ) async -> GitCommandResult {
             let words = [
                 "/usr/bin/env",
                 "GIT_CONFIG_NOSYSTEM=1",
                 "GIT_TERMINAL_PROMPT=0",
-                "GIT_OPTIONAL_LOCKS=0", // Read-only queries never take the index lock
+                "GIT_OPTIONAL_LOCKS=0" // Read-only queries never take the index lock
+            ] + environment + [
                 "/usr/bin/git",
                 "-c", "core.hooksPath=/dev/null",
                 "-c", "credential.helper=",
