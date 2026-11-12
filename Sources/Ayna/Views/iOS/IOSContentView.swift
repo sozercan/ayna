@@ -153,6 +153,7 @@ struct IOSNewChatView: View {
     @State private var isFileImporterPresented = false
     /// Whether the streaming first reply keeps its newest text in view (see StreamingFollowScroll).
     @State private var followsLatest = true
+    @State private var topVisibleMessageId: UUID?
     @State private var isAwayFromEnd = false
     @State private var isPhotoPickerPresented = false
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
@@ -243,10 +244,13 @@ struct IOSNewChatView: View {
                                 }
                             }
                         }
+                        .scrollTargetLayout()
                         .padding()
                     }
                     .accessibilityIdentifier(TestIdentifiers.ChatView.messagesList)
                     .defaultScrollAnchor(.bottom)
+                    // Tracks the top message so the reader's place survives the handoff.
+                    .scrollPosition(id: $topVisibleMessageId, anchor: .top)
                     .followsStreamingContent($followsLatest, isAwayFromEnd: $isAwayFromEnd)
                     .onChange(of: conversation.messages.count) {
                         updateDisplayableItems()
@@ -384,6 +388,11 @@ struct IOSNewChatView: View {
             // Configure ViewModel with actual environment object
             viewModel.configure(with: conversationManager)
             viewModel.onConversationCreated = { conversationId in
+                // The conversation view replaces this one; a reader who scrolled up keeps
+                // their place there instead of being pulled to the end.
+                if !followsLatest, let topVisibleMessageId {
+                    TranscriptReadingPosition.handOver(topVisibleMessageId, in: conversationId)
+                }
                 conversationManager.selectedConversationId = conversationId
             }
 
