@@ -29,6 +29,8 @@ struct IOSChatView: View {
     /// Whether streaming keeps the newest text in view. Only the user scrolling away turns it
     /// off; reaching the bottom again, the scroll button, or a new reply turns it back on.
     @State private var followsLatest = true
+    /// Restores a reading position handed over from the new-chat screen.
+    @State private var restoredPosition = ScrollPosition()
 
     /// Performance: Cached displayable items to avoid O(n) computation on every render
     @State private var cachedDisplayableItems: [ChatTranscriptItem] = []
@@ -113,6 +115,7 @@ struct IOSChatView: View {
                             }
                             .padding()
                         }
+                        .scrollPosition($restoredPosition)
                         .followsStreamingContent($followsLatest, isAwayFromEnd: $showScrollToBottom)
                         .accessibilityIdentifier(TestIdentifiers.ChatView.messagesList)
 
@@ -186,7 +189,7 @@ struct IOSChatView: View {
                         Task { @MainActor in
                             try? await Task.sleep(for: .milliseconds(100))
                             if let readingPosition {
-                                proxy.scrollTo(readingPosition, anchor: .top)
+                                restoredPosition.scrollTo(y: readingPosition)
                             } else if let lastId = conversation.messages.last?.id {
                                 proxy.scrollTo(lastId, anchor: .bottom)
                             }
