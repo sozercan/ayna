@@ -82,7 +82,10 @@ struct HotkeyRecorderView: View {
         monitor = nil
         if suspendedHotkey {
             suspendedHotkey = false
-            try? GlobalHotkeyService.shared.register(current)
+            // Turning Attach from App off also closes this view; keep the hotkey off then.
+            if AppPreferences.attachFromAppEnabled {
+                try? GlobalHotkeyService.shared.register(current)
+            }
         }
     }
 
