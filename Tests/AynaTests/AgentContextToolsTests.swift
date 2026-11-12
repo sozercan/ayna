@@ -140,6 +140,162 @@ import Testing
             #expect(output.contains("Current branch:"))
         }
 
+        private func git(_ arguments: [String], in directory: URL) async {
+            _ = await GitContextService.runGit(
+                ["-c", "user.name=t", "-c", "user.email=t@example.com"] + arguments,
+                in: directory,
+                timeout: .seconds(20)
+            )
+        }
+
+        private func waitForPending(_ permissionService: PermissionService, seconds: Int = 2) async -> PendingApproval? {
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(seconds))
+            while permissionService.pendingApprovals.isEmpty, clock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            return permissionService.pendingApprovals.first
+        }
+
+        /// A repository whose tracked notes.txt uses `driver` as its filter, with the driver's
+        /// clean and process commands writing `marker`. Only the mtime changes afterwards, so
+        /// status has to rehash the file through the filter.
+        private func makeFilteredRepository(root: URL, driver: String, marker: URL) async throws {
+            await git(["init"], in: root)
+            try "*.txt filter=\(driver)\n".write(to: root.appendingPathComponent(".gitattributes"), atomically: true, encoding: .utf8)
+            let file = root.appendingPathComponent("notes.txt")
+            try "one".write(to: file, atomically: true, encoding: .utf8)
+            await git(["add", "."], in: root)
+            await git(["commit", "-m", "first"], in: root)
+            for (key, value) in [("clean", "touch '\(marker.path)'; cat"), ("process", "touch '\(marker.path)'"), ("required", "true")] {
+                await git(["config", "filter.\(driver).\(key)", value], in: root)
+            }
+            try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-3600)], ofItemAtPath: file.path)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `A filter driver whose name contains = never runs`() async throws {
+            let root = try makeRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let marker = root.appendingPathComponent("filter-ran")
+            try await makeFilteredRepository(root: root, driver: "a=b", marker: marker)
+
+            let output = await makeService(root: root).executeToolCall(toolName: "git_context", arguments: [:], conversationId: UUID())
+
+            #expect(!FileManager.default.fileExists(atPath: marker.path))
+            #expect(output.contains("Current branch:"))
+        }
+
+        @Test(.timeLimit(.minutes(2)))
+        func `A filter scan that cannot finish stops git_context before status`() async throws {
+            let root = try makeRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let marker = root.appendingPathComponent("filter-ran")
+            try await makeFilteredRepository(root: root, driver: "evil", marker: marker)
+            // Enough filter keys that listing them passes the output limit.
+            let padding = String(repeating: "x", count: 60)
+            let extra = (0 ..< 16000).map { "[filter \"d\($0)\(padding)\"]\n\tclean = cat\n" }.joined()
+            let config = root.appendingPathComponent(".git/config")
+            let handle = try FileHandle(forWritingTo: config)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data(extra.utf8))
+            try handle.close()
+
+            let output = await makeService(root: root).executeToolCall(toolName: "git_context", arguments: [:], conversationId: UUID())
+
+            #expect(!FileManager.default.fileExists(atPath: marker.path))
+            #expect(output.contains("filter configuration"))
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `Git metadata outside the work tree asks before it is read`() async throws {
+            let root = try makeRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let work = root.appendingPathComponent("work")
+            let metadata = root.appendingPathComponent("elsewhere")
+            await git(["init", "--separate-git-dir", metadata.path, work.path], in: root)
+            await git(["commit", "--allow-empty", "-m", "hidden subject"], in: work)
+            let permissionService = PermissionService()
+            let service = BuiltinToolService(permissionService: permissionService)
+            var settings = AgentSettings.default
+            settings.projectRootPath = work.path
+            service.apply(settings)
+
+            let call = Task { await service.executeToolCall(toolName: "git_context", arguments: [:], conversationId: UUID()) }
+            let pending = try #require(await waitForPending(permissionService))
+            #expect(pending.details == metadata.resolvingSymlinksInPath().path)
+            permissionService.deny(pending.id)
+
+            #expect(await !call.value.contains("hidden subject"))
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `A directory swapped while approval is pending is not read`() async throws {
+            let root = try makeRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            // A `.env` path component makes the directory ask before it is read.
+            let checked = root.appendingPathComponent(".env/repo")
+            let other = root.appendingPathComponent("other")
+            for (directory, subject) in [(checked, "checked subject"), (other, "secret subject")] {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                await git(["init"], in: directory)
+                await git(["commit", "--allow-empty", "-m", subject], in: directory)
+            }
+            let permissionService = PermissionService()
+            let service = BuiltinToolService(permissionService: permissionService)
+            var settings = AgentSettings.default
+            settings.projectRootPath = root.path
+            service.apply(settings)
+
+            let call = Task {
+                await service.executeToolCall(toolName: "git_context", arguments: ["path": checked.path], conversationId: UUID())
+            }
+            let pending = try #require(await waitForPending(permissionService))
+            try FileManager.default.moveItem(at: checked, to: root.appendingPathComponent(".env/repo-old"))
+            try FileManager.default.createSymbolicLink(at: checked, withDestinationURL: other)
+            permissionService.approve(pending.id)
+
+            let output = await call.value
+            #expect(!output.contains("secret subject"))
+            #expect(output.contains("changed while waiting"))
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func `update_tasks approvals belong to one conversation`() async throws {
+            let permissionService = PermissionService()
+            let service = BuiltinToolService(permissionService: permissionService)
+            var settings = AgentSettings.default
+            settings.setPermissionLevel(.askOnce, for: "update_tasks")
+            service.apply(settings)
+            let first = UUID()
+            let second = UUID()
+            func tasks(_ count: Int) -> [String: Any] {
+                ["tasks": (1 ... count).map { ["content": "Task \($0)", "status": "pending"] }]
+            }
+            defer {
+                ConversationTaskManager.shared.replaceTasks([], forConversation: first)
+                ConversationTaskManager.shared.replaceTasks([], forConversation: second)
+            }
+
+            let approved = Task { await service.executeToolCall(toolName: "update_tasks", arguments: tasks(2), conversationId: first) }
+            permissionService.approve(try #require(await waitForPending(permissionService)).id)
+            _ = await approved.value
+
+            // Another conversation with a list of the same length still asks.
+            let other = Task { await service.executeToolCall(toolName: "update_tasks", arguments: tasks(2), conversationId: second) }
+            let otherPending = await waitForPending(permissionService)
+            #expect(otherPending != nil)
+            if let otherPending { permissionService.deny(otherPending.id) }
+            _ = await other.value
+
+            // The approved conversation can grow its list without asking again.
+            let grown = Task { await service.executeToolCall(toolName: "update_tasks", arguments: tasks(3), conversationId: first) }
+            let grownPending = await waitForPending(permissionService, seconds: 1)
+            #expect(grownPending == nil)
+            if let grownPending { permissionService.deny(grownPending.id) }
+            #expect(await grown.value.contains("3 tasks"))
+        }
+
         @Test(.timeLimit(.minutes(1)))
         func `A signed commit's verifier never runs`() async throws {
             let root = try makeRoot()
