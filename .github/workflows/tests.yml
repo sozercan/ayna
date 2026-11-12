@@ -15,6 +15,7 @@ on:
       - 'Tests/**'
       - 'Scripts/**'
       - 'AynaMobile.xcodeproj/**'
+      - 'WatchComplication/**'
       - '.github/workflows/tests.yml'
   pull_request:
     branches: [ main ]
@@ -26,6 +27,7 @@ on:
       - 'Tests/**'
       - 'Scripts/**'
       - 'AynaMobile.xcodeproj/**'
+      - 'WatchComplication/**'
       - '.github/workflows/tests.yml'
   workflow_dispatch:
 
