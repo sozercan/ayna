@@ -461,6 +461,12 @@ struct ChatReasoningEffortSelectionTests {
         let off = ModelReasoningConfiguration(activation: .explicitlyDisabled)
 
         #expect(selection.configuration(selecting: nil, from: off) == .automatic)
+        #expect(
+            selection.configuration(
+                selecting: nil,
+                from: ModelReasoningConfiguration(activation: .enabled, effort: .high)
+            ) == .automatic
+        )
         #expect(selection.selectedIndex(for: .automatic) == nil)
     }
 

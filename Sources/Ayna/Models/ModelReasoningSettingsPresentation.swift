@@ -254,7 +254,7 @@ struct ChatReasoningSettingsPresentation: Equatable, Sendable {
 /// Stops offered by the thinking-effort slider in the model selector.
 ///
 /// The slider replaces the old activation picker:
-/// - no selection keeps Automatic (the model's default behavior);
+/// - no selection (the slider's "Auto" stop) is Automatic, the model's default;
 /// - an effort stop sends that effort, opting custom endpoints (Azure, proxies,
 ///   deployment aliases) into reasoning because Automatic only targets
 ///   verified first-party endpoints;
@@ -318,10 +318,9 @@ struct ChatReasoningEffortSelection: Equatable, Sendable {
         var updated = configuration
         switch stop {
         case nil:
+            // "Auto": the model's default behavior, undoing any opt-in or Off.
             updated.effort = nil
-            if updated.activation == .explicitlyDisabled {
-                updated.activation = .automatic
-            }
+            updated.activation = .automatic
         case .off:
             updated.activation = .explicitlyDisabled
             updated.effort = nil

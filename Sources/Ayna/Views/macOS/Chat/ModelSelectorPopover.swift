@@ -19,6 +19,8 @@
 
         @ObservedObject private var aiService = AIService.shared
 
+        private static let selectionIconWidth: CGFloat = 16
+
         /// Whether multi-model selection is enabled in preferences
         private var multiModelEnabled: Bool {
             AppPreferences.multiModelSelectionEnabled
@@ -77,16 +79,17 @@
             ForEach(aiService.usableModels, id: \.self) { model in
                 if model == reasoningHostModel {
                     VStack(alignment: .leading, spacing: 0) {
-                        modelRow(for: model, showsEffortBadge: true)
+                        modelRow(for: model, hostsReasoning: true)
                         ChatReasoningPanel(
                             configuration: $reasoningConfiguration,
                             selectedModels: selectedModels,
                             primaryModel: selectedModel,
                             identifier: reasoningIdentifier
                         )
-                        .padding(.horizontal, Spacing.sm)
-                        .padding(.top, Spacing.xs)
-                        .padding(.bottom, Spacing.sm)
+                        .padding(.leading, Spacing.sm + Self.selectionIconWidth + Spacing.sm)
+                        .padding(.trailing, Spacing.md)
+                        .padding(.top, Spacing.xxs)
+                        .padding(.bottom, Spacing.md)
                     }
                     .background(
                         RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm)
@@ -111,8 +114,8 @@
             return aiService.usableModels.first { selectedModels.contains($0) }
         }
 
-        private func modelRow(for model: String, showsEffortBadge: Bool = false) -> some View {
-            let isSelected = selectedModels.contains(model) || showsEffortBadge
+        private func modelRow(for model: String, hostsReasoning: Bool = false) -> some View {
+            let isSelected = selectedModels.contains(model) || hostsReasoning
             let modelCapability = aiService.getModelCapability(model)
             let isCapabilityMismatch: Bool = {
                 guard let selectedType = selectedCapabilityType else { return false }
@@ -122,7 +125,7 @@
             let isDisabled = multiModelEnabled && !isSelected && isCapabilityMismatch
 
             return Button(action: { onToggleModel(model) }) {
-                HStack {
+                HStack(spacing: Spacing.sm) {
                     // Checkbox/radio icon
                     selectionIcon(isSelected: isSelected)
 
@@ -131,12 +134,6 @@
                         .font(Typography.modelName)
 
                     Spacer()
-
-                    if showsEffortBadge, let effortBadge = reasoningConfiguration.thinkingEffortBadge {
-                        Text(effortBadge)
-                            .font(Typography.captionBold)
-                            .foregroundStyle(Theme.accent)
-                    }
 
                     // Capability badge for image gen models
                     if modelCapability == .imageGeneration {
@@ -149,7 +146,7 @@
                 .padding(.horizontal, Spacing.sm)
                 .background(
                     RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm)
-                        .fill(isSelected && !showsEffortBadge ? Theme.selection : Color.clear)
+                        .fill(isSelected && !hostsReasoning ? Theme.selection : Color.clear)
                 )
             }
             .buttonStyle(.plain)
@@ -163,10 +160,12 @@
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                     .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
                     .font(.system(size: Typography.Size.body))
+                    .frame(width: Self.selectionIconWidth)
             } else {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
                     .font(.system(size: Typography.Size.body))
+                    .frame(width: Self.selectionIconWidth)
             }
         }
 

@@ -476,7 +476,8 @@
                                 primaryModel: primaryModel,
                                 identifier: reasoningIdentifier
                             )
-                            .padding(.bottom, Spacing.xs)
+                            .padding(.top, -Spacing.xs)
+                            .padding(.bottom, Spacing.xxs)
                         }
                     }
                 } header: {
@@ -531,14 +532,6 @@
                         .foregroundStyle(Theme.textPrimary)
 
                     Spacer()
-
-                    if model == reasoningHostModel,
-                       let effortBadge = reasoningConfiguration?.wrappedValue.thinkingEffortBadge
-                    {
-                        Text(effortBadge)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Theme.accent)
-                    }
 
                     // Show capability badge for image gen models
                     if modelCapability == .imageGeneration {

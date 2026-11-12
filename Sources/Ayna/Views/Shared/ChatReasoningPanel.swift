@@ -78,31 +78,30 @@ import SwiftUI
             ).hasAdvancedControls
         }
 
-        private var defaultConfiguration: ModelReasoningConfiguration {
-            presentation.normalizedConfiguration(.automatic)
+        /// Slider stops: "Auto" (the model default) followed by the selection's stops.
+        private var stopLabels: [String] {
+            ["Auto"] + selection.stops.map(\.displayName)
         }
 
-        private var isAtDefault: Bool {
-            configuration == defaultConfiguration
-        }
-
-        private var valueLabel: String {
-            configuration.thinkingEffortBadge ?? "Model default"
+        private var selectedStopIndex: Int {
+            selection.selectedIndex(for: configuration).map { $0 + 1 } ?? 0
         }
 
         var body: some View {
             if presentation.isAvailable {
-                VStack(alignment: .leading, spacing: Spacing.sm) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    labelRow
+
                     if selection.stops.isEmpty {
-                        Text("Thinking effort isn't adjustable for this model.")
+                        Text("Effort isn't adjustable for this model.")
                             .font(Typography.caption)
                             .foregroundStyle(Theme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
                         ReasoningEffortStepSlider(
-                            stepCount: selection.stops.count,
+                            stepCount: stopLabels.count,
                             selection: stopIndexBinding,
-                            valueLabel: valueLabel
+                            valueLabel: stopLabels[selectedStopIndex]
                         )
                         .accessibilityIdentifier("\(identifier).effort")
                     }
@@ -110,11 +109,7 @@ import SwiftUI
                     if models.count > 1 {
                         Text("Applies to all \(models.count) selected models.")
                             .font(Typography.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-
-                    if hasAdvancedControls || !isAtDefault {
-                        footer
+                            .foregroundStyle(Theme.textTertiary)
                     }
 
                     if showsAdvanced, hasAdvancedControls, let context = singleModelContext {
@@ -126,6 +121,7 @@ import SwiftUI
                             endpoint: context.endpoint,
                             identifierPrefix: identifier
                         )
+                        .padding(.top, Spacing.xs)
                         .transition(.opacity)
                     }
                 }
@@ -138,8 +134,17 @@ import SwiftUI
             }
         }
 
-        private var footer: some View {
-            HStack(spacing: Spacing.sm) {
+        private var labelRow: some View {
+            HStack(spacing: Spacing.xs) {
+                Text("Thinking")
+                    .foregroundStyle(Theme.textSecondary)
+                Text(selection.stops.isEmpty ? "Auto" : stopLabels[selectedStopIndex])
+                    .foregroundStyle(selectedStopIndex == 0 ? Theme.textPrimary : Theme.accent)
+                    .contentTransition(.numericText())
+                    .animation(Motion.springSnappy, value: selectedStopIndex)
+
+                Spacer(minLength: Spacing.sm)
+
                 if hasAdvancedControls {
                     Button {
                         withAnimation(Motion.springSnappy) {
@@ -152,45 +157,28 @@ import SwiftUI
                                 .font(.system(size: Typography.Size.xs, weight: .semibold))
                                 .rotationEffect(.degrees(showsAdvanced ? 90 : 0))
                         }
+                        .foregroundStyle(Theme.textSecondary)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(showsAdvanced ? "Hide thinking options" : "Show thinking options")
                     .accessibilityIdentifier("\(identifier).advanced")
                 }
-
-                Spacer(minLength: Spacing.sm)
-
-                if !isAtDefault {
-                    Button {
-                        withAnimation(Motion.springSnappy) {
-                            configuration = defaultConfiguration
-                        }
-                    } label: {
-                        Label("Default", systemImage: "arrow.counterclockwise")
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Reset to model default")
-                    .accessibilityLabel("Reset thinking to model default")
-                    .accessibilityIdentifier("\(identifier).reset")
-                }
             }
-            .font(Typography.caption)
-            .foregroundStyle(Theme.textSecondary)
+            .font(Typography.captionBold)
         }
 
         private var stopIndexBinding: Binding<Int?> {
             Binding(
                 get: {
-                    selection.selectedIndex(for: configuration)
+                    selectedStopIndex
                 },
                 set: { newValue in
                     let stops = selection.stops
-                    configuration = selection.configuration(
-                        selecting: newValue.flatMap { stops.indices.contains($0) ? stops[$0] : nil },
-                        from: configuration
-                    )
+                    let stop: ChatReasoningEffortSelection.Stop? = newValue.flatMap { index in
+                        stops.indices.contains(index - 1) ? stops[index - 1] : nil
+                    }
+                    configuration = selection.configuration(selecting: stop, from: configuration)
                 }
             )
         }
@@ -203,67 +191,64 @@ import SwiftUI
         }
     }
 
-    /// Capsule slider that snaps to discrete effort stops.
-    ///
-    /// A `nil` selection means "model default": the track is shown unfilled with
-    /// no thumb, and any tap or drag picks the nearest stop.
+    /// Slim stepped slider that snaps to discrete thinking-effort stops.
     private struct ReasoningEffortStepSlider: View {
         let stepCount: Int
         @Binding var selection: Int?
         let valueLabel: String
 
-        private var trackHeight: CGFloat {
-            #if os(iOS)
-                36
-            #else
-                30
-            #endif
-        }
-
-        private let dotSize: CGFloat = 5
-        private let thumbInset: CGFloat = 3
+        #if os(iOS)
+            private let hitHeight: CGFloat = 32
+            private let thumbSize: CGFloat = 22
+        #else
+            private let hitHeight: CGFloat = 22
+            private let thumbSize: CGFloat = 16
+        #endif
+        private let trackHeight: CGFloat = 4
+        private let tickSize: CGFloat = 4
 
         var body: some View {
             GeometryReader { proxy in
-                let width = proxy.size.width
-                let radius = trackHeight / 2
-                let usableWidth = max(width - trackHeight, 1)
+                let inset = thumbSize / 2
+                let usableWidth = max(proxy.size.width - thumbSize, 1)
                 let lastIndex = max(stepCount - 1, 1)
+                let current = selection ?? 0
                 let xPosition = { (index: Int) -> CGFloat in
-                    radius + usableWidth * CGFloat(index) / CGFloat(lastIndex)
+                    inset + usableWidth * CGFloat(index) / CGFloat(lastIndex)
                 }
+                let midY = hitHeight / 2
 
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(Color.secondary.opacity(0.18))
+                        .fill(Color.secondary.opacity(0.25))
+                        .frame(height: trackHeight)
+                        .padding(.horizontal, inset)
 
-                    if let selection {
-                        Capsule()
-                            .fill(Theme.accent)
-                            .frame(width: xPosition(selection) + radius)
-                    }
+                    Capsule()
+                        .fill(Theme.accent)
+                        .frame(width: max(xPosition(current) - inset, 0), height: trackHeight)
+                        .offset(x: inset)
 
                     ForEach(0 ..< stepCount, id: \.self) { index in
                         Circle()
-                            .fill(dotColor(for: index))
-                            .frame(width: dotSize, height: dotSize)
-                            .position(x: xPosition(index), y: radius)
+                            .fill(index <= current ? Theme.accent : Color.secondary.opacity(0.5))
+                            .frame(width: tickSize, height: tickSize)
+                            .position(x: xPosition(index), y: midY)
                     }
 
-                    if let selection {
-                        Circle()
-                            .fill(Color.white)
-                            .shadow(color: Theme.shadow.opacity(0.6), radius: 2, y: 1)
-                            .frame(width: trackHeight - thumbInset * 2, height: trackHeight - thumbInset * 2)
-                            .position(x: xPosition(selection), y: radius)
-                    }
+                    Circle()
+                        .fill(Color.white)
+                        .overlay(Circle().strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5))
+                        .shadow(color: Color.black.opacity(0.25), radius: 2, y: 1)
+                        .frame(width: thumbSize, height: thumbSize)
+                        .position(x: xPosition(current), y: midY)
                 }
-                .frame(width: width, height: trackHeight)
-                .contentShape(Capsule())
+                .frame(width: proxy.size.width, height: hitHeight)
+                .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
-                            let fraction = (value.location.x - radius) / usableWidth
+                            let fraction = (value.location.x - inset) / usableWidth
                             let index = min(max(Int((fraction * CGFloat(lastIndex)).rounded()), 0), stepCount - 1)
                             if selection != index {
                                 withAnimation(Motion.springSnappy) {
@@ -273,32 +258,22 @@ import SwiftUI
                         }
                 )
             }
-            .frame(height: trackHeight)
+            .frame(height: hitHeight)
             .sensoryFeedback(.selection, trigger: selection)
             .accessibilityElement()
             .accessibilityLabel("Thinking effort")
             .accessibilityValue(valueLabel)
             .accessibilityAdjustableAction { direction in
+                let current = selection ?? 0
                 switch direction {
                 case .increment:
-                    selection = min((selection ?? -1) + 1, stepCount - 1)
+                    selection = min(current + 1, stepCount - 1)
                 case .decrement:
-                    if let selection, selection > 0 {
-                        self.selection = selection - 1
-                    } else {
-                        self.selection = nil
-                    }
+                    selection = max(current - 1, 0)
                 @unknown default:
                     break
                 }
             }
-        }
-
-        private func dotColor(for index: Int) -> Color {
-            if let selection, index <= selection {
-                return Color.white.opacity(0.7)
-            }
-            return Theme.textSecondary.opacity(0.6)
         }
     }
 #endif
