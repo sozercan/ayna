@@ -397,4 +397,62 @@ struct ModelReasoningSettingsPresentationTests {
     }
 }
 
+@Suite("Chat reasoning effort selection")
+struct ChatReasoningEffortSelectionTests {
+    private func context(_ model: String, endpoint: String?) -> ChatReasoningModelContext {
+        ChatReasoningModelContext(
+            model: model,
+            provider: .openai,
+            endpointType: .chatCompletions,
+            endpoint: endpoint
+        )
+    }
+
+    @Test
+    func `official endpoint offers efforts without opt-in`() {
+        let selection = ChatReasoningEffortSelection(
+            models: [context("gpt-5.6-sol", endpoint: nil)],
+            configuration: .automatic
+        )
+
+        #expect(selection.options == [.none, .low, .medium, .high, .xhigh, .max])
+        #expect(!selection.requiresOptIn)
+        #expect(selection.configuration(selecting: .high, from: .automatic).activation == .automatic)
+    }
+
+    @Test
+    func `custom endpoint offers known efforts and opts in on selection`() {
+        let models = [context("gpt-5.6-sol", endpoint: "https://example.openai.azure.com/")]
+        let selection = ChatReasoningEffortSelection(models: models, configuration: .automatic)
+
+        #expect(selection.options == [.none, .low, .medium, .high, .xhigh, .max])
+        #expect(selection.requiresOptIn)
+
+        let updated = selection.configuration(selecting: .high, from: .automatic)
+        #expect(updated.activation == .enabled)
+        #expect(updated.effort == .high)
+
+        let followUp = ChatReasoningEffortSelection(models: models, configuration: updated)
+        #expect(followUp.options == selection.options)
+        #expect(!followUp.requiresOptIn)
+    }
+
+    @Test
+    func `clearing effort does not opt in`() {
+        let selection = ChatReasoningEffortSelection(
+            models: [context("gpt-5.6-sol", endpoint: "https://example.openai.azure.com/")],
+            configuration: .automatic
+        )
+
+        #expect(selection.configuration(selecting: nil, from: .automatic) == .automatic)
+    }
+
+    @Test
+    func `badge reflects effort and off state`() {
+        #expect(ModelReasoningConfiguration.automatic.thinkingEffortBadge == nil)
+        #expect(ModelReasoningConfiguration(effort: .high).thinkingEffortBadge == "High")
+        #expect(ModelReasoningConfiguration(activation: .explicitlyDisabled).thinkingEffortBadge == "Off")
+    }
+}
+
 // swiftlint:enable identifier_name

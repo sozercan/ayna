@@ -1,478 +1,483 @@
 #if os(iOS)
 //
-//  IOSContentView.swift
-//  ayna
+    //  IOSContentView.swift
+    //  ayna
 //
-//  Created on 11/22/25.
+    //  Created on 11/22/25.
 //
 
-import os.log
-import PhotosUI
-import SwiftUI
-import UniformTypeIdentifiers
+    import os.log
+    import PhotosUI
+    import SwiftUI
+    import UniformTypeIdentifiers
 
-struct IOSContentView: View {
-    @EnvironmentObject var conversationManager: ConversationManager
-    @ObservedObject private var deepLinkManager = DeepLinkManager.shared
-    @State private var columnVisibility = NavigationSplitViewVisibility.all
-    @State private var presentedAddModelRequest: AddModelRequest?
-    @State private var dismissingAddModelRequestID: UUID?
+    struct IOSContentView: View {
+        @EnvironmentObject var conversationManager: ConversationManager
+        @ObservedObject private var deepLinkManager = DeepLinkManager.shared
+        @State private var columnVisibility = NavigationSplitViewVisibility.all
+        @State private var presentedAddModelRequest: AddModelRequest?
+        @State private var dismissingAddModelRequestID: UUID?
 
-    var body: some View {
-        ZStack {
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                IOSSidebarView(columnVisibility: $columnVisibility)
-            } detail: {
-                if let selectedId = conversationManager.selectedConversationId,
-                   selectedId != ConversationManager.newConversationId
-                {
-                    IOSChatView(conversationId: selectedId)
-                        .id(selectedId)
-                } else {
-                    IOSNewChatView()
-                        .id(conversationManager.selectedConversationId)
-                }
-            }
-            .navigationSplitViewStyle(.balanced)
-
-            // Deep link error banner overlay
-            if let errorMessage = deepLinkManager.errorMessage {
-                VStack {
-                    ErrorBannerView(
-                        message: errorMessage,
-                        recoverySuggestion: deepLinkManager.errorRecoverySuggestion,
-                        onDismiss: { deepLinkManager.dismissError() }
-                    )
-                    Spacer()
-                }
-                .padding(.top, 8)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .animation(.easeInOut(duration: 0.3), value: deepLinkManager.errorMessage)
-            }
-        }
-        // Add model confirmation alert (iOS style)
-        .alert(
-            "Add Model",
-            isPresented: .init(
-                get: { presentedAddModelRequest != nil },
-                set: { newValue in
-                    guard !newValue else { return }
-                    if let requestID = dismissingAddModelRequestID {
-                        completeAddModelDismissal(requestID)
-                    } else if let request = presentedAddModelRequest {
-                        dismissingAddModelRequestID = request.id
-                        presentedAddModelRequest = nil
-                        deepLinkManager.cancelAddModel(expectedRequestID: request.id)
-                        completeAddModelDismissal(request.id)
+        var body: some View {
+            ZStack {
+                NavigationSplitView(columnVisibility: $columnVisibility) {
+                    IOSSidebarView(columnVisibility: $columnVisibility)
+                } detail: {
+                    if let selectedId = conversationManager.selectedConversationId,
+                       selectedId != ConversationManager.newConversationId
+                    {
+                        IOSChatView(conversationId: selectedId)
+                            .id(selectedId)
+                    } else {
+                        IOSNewChatView()
+                            .id(conversationManager.selectedConversationId)
                     }
                 }
-            ),
-            presenting: presentedAddModelRequest
-        ) { request in
-            Button("Cancel", role: .cancel) {
-                finishPresentedAddModel(request, shouldConfirm: false)
-            }
-            Button("Add") {
-                finishPresentedAddModel(request, shouldConfirm: true)
-            }
-        } message: { request in
-            Text("Add model '\(request.name)' (\(request.displayProvider))?\n\nOnly add models from sources you trust.")
-        }
-        .onAppear {
-            if presentedAddModelRequest == nil {
-                presentedAddModelRequest = deepLinkManager.pendingAddModel
-            }
-        }
-        // Process pending chat after add-model alert is dismissed (unified flow)
-        .onChange(of: deepLinkManager.pendingAddModel) { oldValue, newValue in
-            updatePresentedAddModel(from: oldValue, to: newValue)
-            guard oldValue != nil, newValue == nil else { return }
+                .navigationSplitViewStyle(.balanced)
 
-            if let chatRequest = deepLinkManager.consumeNextReadyChat() {
-                _ = conversationManager.startConversation(
-                    model: chatRequest.model,
-                    prompt: chatRequest.prompt,
-                    systemPrompt: chatRequest.systemPrompt
-                )
+                // Deep link error banner overlay
+                if let errorMessage = deepLinkManager.errorMessage {
+                    VStack {
+                        ErrorBannerView(
+                            message: errorMessage,
+                            recoverySuggestion: deepLinkManager.errorRecoverySuggestion,
+                            onDismiss: { deepLinkManager.dismissError() }
+                        )
+                        Spacer()
+                    }
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .animation(.easeInOut(duration: 0.3), value: deepLinkManager.errorMessage)
+                }
+            }
+            // Add model confirmation alert (iOS style)
+            .alert(
+                "Add Model",
+                isPresented: .init(
+                    get: { presentedAddModelRequest != nil },
+                    set: { newValue in
+                        guard !newValue else { return }
+                        if let requestID = dismissingAddModelRequestID {
+                            completeAddModelDismissal(requestID)
+                        } else if let request = presentedAddModelRequest {
+                            dismissingAddModelRequestID = request.id
+                            presentedAddModelRequest = nil
+                            deepLinkManager.cancelAddModel(expectedRequestID: request.id)
+                            completeAddModelDismissal(request.id)
+                        }
+                    }
+                ),
+                presenting: presentedAddModelRequest
+            ) { request in
+                Button("Cancel", role: .cancel) {
+                    finishPresentedAddModel(request, shouldConfirm: false)
+                }
+                Button("Add") {
+                    finishPresentedAddModel(request, shouldConfirm: true)
+                }
+            } message: { request in
+                Text("Add model '\(request.name)' (\(request.displayProvider))?\n\nOnly add models from sources you trust.")
+            }
+            .onAppear {
+                if presentedAddModelRequest == nil {
+                    presentedAddModelRequest = deepLinkManager.pendingAddModel
+                }
+            }
+            // Process pending chat after add-model alert is dismissed (unified flow)
+            .onChange(of: deepLinkManager.pendingAddModel) { oldValue, newValue in
+                updatePresentedAddModel(from: oldValue, to: newValue)
+                guard oldValue != nil, newValue == nil else { return }
+
+                if let chatRequest = deepLinkManager.consumeNextReadyChat() {
+                    _ = conversationManager.startConversation(
+                        model: chatRequest.model,
+                        prompt: chatRequest.prompt,
+                        systemPrompt: chatRequest.systemPrompt
+                    )
+                }
             }
         }
-    }
 
-    private func finishPresentedAddModel(_ request: AddModelRequest, shouldConfirm: Bool) {
-        guard dismissingAddModelRequestID == nil,
-              presentedAddModelRequest?.id == request.id
-        else { return }
+        private func finishPresentedAddModel(_ request: AddModelRequest, shouldConfirm: Bool) {
+            guard dismissingAddModelRequestID == nil,
+                  presentedAddModelRequest?.id == request.id
+            else { return }
 
-        dismissingAddModelRequestID = request.id
-        presentedAddModelRequest = nil
-        if shouldConfirm {
-            deepLinkManager.confirmAddModel(expectedRequestID: request.id)
-        } else {
-            deepLinkManager.cancelAddModel(expectedRequestID: request.id)
-        }
-    }
-
-    private func updatePresentedAddModel(from oldValue: AddModelRequest?, to newValue: AddModelRequest?) {
-        if newValue == nil,
-           dismissingAddModelRequestID == nil,
-           presentedAddModelRequest?.id == oldValue?.id
-        {
-            dismissingAddModelRequestID = oldValue?.id
+            dismissingAddModelRequestID = request.id
             presentedAddModelRequest = nil
-        } else if newValue != nil,
-                  dismissingAddModelRequestID == nil,
-                  presentedAddModelRequest == nil
-        {
-            presentedAddModelRequest = newValue
+            if shouldConfirm {
+                deepLinkManager.confirmAddModel(expectedRequestID: request.id)
+            } else {
+                deepLinkManager.cancelAddModel(expectedRequestID: request.id)
+            }
         }
-    }
 
-    private func completeAddModelDismissal(_ requestID: UUID) {
-        guard dismissingAddModelRequestID == requestID else { return }
-        presentPendingAddModelAfterDismissal(requestID)
-    }
+        private func updatePresentedAddModel(from oldValue: AddModelRequest?, to newValue: AddModelRequest?) {
+            if newValue == nil,
+               dismissingAddModelRequestID == nil,
+               presentedAddModelRequest?.id == oldValue?.id
+            {
+                dismissingAddModelRequestID = oldValue?.id
+                presentedAddModelRequest = nil
+            } else if newValue != nil,
+                      dismissingAddModelRequestID == nil,
+                      presentedAddModelRequest == nil
+            {
+                presentedAddModelRequest = newValue
+            }
+        }
 
-    private func presentPendingAddModelAfterDismissal(_ requestID: UUID) {
-        Task { @MainActor in
-            await Task.yield()
+        private func completeAddModelDismissal(_ requestID: UUID) {
             guard dismissingAddModelRequestID == requestID else { return }
-            dismissingAddModelRequestID = nil
-            if presentedAddModelRequest == nil {
-                presentedAddModelRequest = deepLinkManager.pendingAddModel
+            presentPendingAddModelAfterDismissal(requestID)
+        }
+
+        private func presentPendingAddModelAfterDismissal(_ requestID: UUID) {
+            Task { @MainActor in
+                await Task.yield()
+                guard dismissingAddModelRequestID == requestID else { return }
+                dismissingAddModelRequestID = nil
+                if presentedAddModelRequest == nil {
+                    presentedAddModelRequest = deepLinkManager.pendingAddModel
+                }
             }
         }
     }
-}
 
-struct IOSNewChatView: View {
-    @EnvironmentObject var conversationManager: ConversationManager
-    @ObservedObject private var aiService = AIService.shared
-    @StateObject private var viewModel = IOSChatViewModel.placeholder()
+    struct IOSNewChatView: View {
+        @EnvironmentObject var conversationManager: ConversationManager
+        @ObservedObject private var aiService = AIService.shared
+        @StateObject private var viewModel = IOSChatViewModel.placeholder()
 
-    @State private var isFileImporterPresented = false
-    @State private var isPhotoPickerPresented = false
-    @State private var selectedPhotoItems: [PhotosPickerItem] = []
-    @State private var showSettings = false
-    @State private var showModelSelector = false
+        @State private var isFileImporterPresented = false
+        @State private var isPhotoPickerPresented = false
+        @State private var selectedPhotoItems: [PhotosPickerItem] = []
+        @State private var showSettings = false
+        @State private var showModelSelector = false
 
-    /// Cached displayable items to properly handle multi-model responses
-    @State private var cachedDisplayableItems: [ChatTranscriptItem] = []
+        /// Cached displayable items to properly handle multi-model responses
+        @State private var cachedDisplayableItems: [ChatTranscriptItem] = []
 
-    /// Get the pending conversation from the environment's conversation manager
-    private var pendingConversation: Conversation? {
-        guard let id = viewModel.conversationId else { return nil }
-        return conversationManager.conversations.first { $0.id == id }
-    }
-
-    /// Updates cached displayable items. Call when messages change or isGenerating changes.
-    private func updateDisplayableItems() {
-        guard let conversation = pendingConversation else {
-            cachedDisplayableItems = []
-            return
+        /// Get the pending conversation from the environment's conversation manager
+        private var pendingConversation: Conversation? {
+            guard let id = viewModel.conversationId else { return nil }
+            return conversationManager.conversations.first { $0.id == id }
         }
 
-        cachedDisplayableItems = ChatTranscriptPlan(
-            conversation: conversation,
-            isGenerating: viewModel.isGenerating
-        ).items
-    }
+        /// Updates cached displayable items. Call when messages change or isGenerating changes.
+        private func updateDisplayableItems() {
+            guard let conversation = pendingConversation else {
+                cachedDisplayableItems = []
+                return
+            }
 
-    var body: some View {
-        if aiService.usableModels.isEmpty {
-            onboardingView
-        } else {
-            chatInterface
+            cachedDisplayableItems = ChatTranscriptPlan(
+                conversation: conversation,
+                isGenerating: viewModel.isGenerating
+            ).items
         }
-    }
 
-    private var chatInterface: some View {
-        VStack(spacing: 0) {
-            if let conversation = pendingConversation {
-                // Show messages while generating (before navigating away)
-                ScrollViewReader { proxy in
-                    ScrollView(.vertical, showsIndicators: true) {
-                        LazyVStack(spacing: 12) {
-                            ForEach(cachedDisplayableItems) { item in
-                                switch item {
-                                case let .message(transcriptMessage):
-                                    let message = transcriptMessage.message
-                                    IOSMessageView(
-                                        message: message,
-                                        displayKind: transcriptMessage.displayKind,
-                                        isGenerating: viewModel.isGenerating
-                                            && message.id == conversation.messages.last?.id,
-                                        onRetry: message.role == .assistant ? {
-                                            viewModel.retryMessage(beforeMessage: message)
-                                        } : nil,
-                                        onSwitchModel: message.role == .assistant ? { newModel in
-                                            viewModel.switchModelAndRetry(beforeMessage: message, newModel: newModel)
-                                        } : nil,
-                                        onEdit: message.role == .user ? { newContent in
-                                            let edited = conversationManager.editMessage(
-                                                in: conversation,
-                                                messageId: message.id,
-                                                newContent: newContent
-                                            )
-                                            if edited {
-                                                viewModel.resendAfterEdit()
-                                            }
-                                        } : nil,
-                                        availableModels: aiService.usableModels
-                                    )
-                                    .id(message.id)
-                                    .accessibilityIdentifier(TestIdentifiers.ChatView.messageRow(for: message.id))
-                                case let .responseGroup(group):
-                                    IOSMultiModelResponseView(
-                                        responseGroupId: group.id,
-                                        responses: group.messages,
-                                        conversation: conversation,
-                                        onSelectResponse: { messageId in
-                                            HapticEngine.selection()
-                                            conversationManager.selectResponse(
-                                                in: conversation,
-                                                groupId: group.id,
-                                                messageId: messageId
-                                            )
-                                        },
-                                        onRetry: { message in
-                                            viewModel.retryMessage(beforeMessage: message)
-                                        },
-                                        defaultCandidateId: group.defaultCandidateId
-                                    )
-                                    .id(item.id)
+        var body: some View {
+            if aiService.usableModels.isEmpty {
+                onboardingView
+            } else {
+                chatInterface
+            }
+        }
+
+        private var chatInterface: some View {
+            VStack(spacing: 0) {
+                if let conversation = pendingConversation {
+                    // Show messages while generating (before navigating away)
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical, showsIndicators: true) {
+                            LazyVStack(spacing: 12) {
+                                ForEach(cachedDisplayableItems) { item in
+                                    switch item {
+                                    case let .message(transcriptMessage):
+                                        let message = transcriptMessage.message
+                                        IOSMessageView(
+                                            message: message,
+                                            displayKind: transcriptMessage.displayKind,
+                                            isGenerating: viewModel.isGenerating
+                                                && message.id == conversation.messages.last?.id,
+                                            onRetry: message.role == .assistant ? {
+                                                viewModel.retryMessage(beforeMessage: message)
+                                            } : nil,
+                                            onSwitchModel: message.role == .assistant ? { newModel in
+                                                viewModel.switchModelAndRetry(beforeMessage: message, newModel: newModel)
+                                            } : nil,
+                                            onEdit: message.role == .user ? { newContent in
+                                                let edited = conversationManager.editMessage(
+                                                    in: conversation,
+                                                    messageId: message.id,
+                                                    newContent: newContent
+                                                )
+                                                if edited {
+                                                    viewModel.resendAfterEdit()
+                                                }
+                                            } : nil,
+                                            availableModels: aiService.usableModels
+                                        )
+                                        .id(message.id)
+                                        .accessibilityIdentifier(TestIdentifiers.ChatView.messageRow(for: message.id))
+                                    case let .responseGroup(group):
+                                        IOSMultiModelResponseView(
+                                            responseGroupId: group.id,
+                                            responses: group.messages,
+                                            conversation: conversation,
+                                            onSelectResponse: { messageId in
+                                                HapticEngine.selection()
+                                                conversationManager.selectResponse(
+                                                    in: conversation,
+                                                    groupId: group.id,
+                                                    messageId: messageId
+                                                )
+                                            },
+                                            onRetry: { message in
+                                                viewModel.retryMessage(beforeMessage: message)
+                                            },
+                                            defaultCandidateId: group.defaultCandidateId
+                                        )
+                                        .id(item.id)
+                                    }
                                 }
                             }
+                            .padding()
                         }
-                        .padding()
-                    }
-                    .accessibilityIdentifier(TestIdentifiers.ChatView.messagesList)
-                    .defaultScrollAnchor(.bottom)
-                    .onChange(of: conversation.messages.count) {
-                        updateDisplayableItems()
-                        scrollToBottom(proxy: proxy, conversation: conversation)
-                    }
+                        .accessibilityIdentifier(TestIdentifiers.ChatView.messagesList)
+                        .defaultScrollAnchor(.bottom)
+                        .onChange(of: conversation.messages.count) {
+                            updateDisplayableItems()
+                            scrollToBottom(proxy: proxy, conversation: conversation)
+                        }
                         .onChange(of: conversation.updatedAt) {
                             // Message content, tool metadata, citations, and response status can change
                             // without changing the message count. Refresh copied display items for all.
                             updateDisplayableItems()
                         }
-                    .onChange(of: conversation.messages.last?.content) {
+                        .onChange(of: conversation.messages.last?.content) {
                             updateDisplayableItems()
-                        if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
-                            proxy.scrollTo(lastId, anchor: .bottom)
+                            if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
+                                proxy.scrollTo(lastId, anchor: .bottom)
+                            }
+                        }
+                        .onChange(of: conversation.messages.last?.reasoning) {
+                            updateDisplayableItems()
+                            if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
+                                proxy.scrollTo(lastId, anchor: .bottom)
+                            }
+                        }
+                        .onChange(of: viewModel.isGenerating) { _, _ in
+                            updateDisplayableItems()
+                        }
+                        .onAppear {
+                            updateDisplayableItems()
                         }
                     }
-                    .onChange(of: conversation.messages.last?.reasoning) {
-                        updateDisplayableItems()
-                        if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
-                            proxy.scrollTo(lastId, anchor: .bottom)
-                        }
-                    }
-                    .onChange(of: viewModel.isGenerating) { _, _ in
-                        updateDisplayableItems()
-                    }
-                    .onAppear {
-                        updateDisplayableItems()
-                    }
+                } else {
+                    // Empty state - welcome screen
+                    welcomeView
                 }
-            } else {
-                // Empty state - welcome screen
-                welcomeView
-            }
 
-            IOSMessageComposer(
-                messageText: $viewModel.messageText,
-                isGenerating: $viewModel.isGenerating,
-                errorMessage: $viewModel.errorMessage,
-                attachedFiles: $viewModel.attachedFiles,
-                attachedImages: $viewModel.attachedImages,
-                reasoningConfiguration: Binding(
-                    get: { viewModel.reasoningConfiguration },
-                    set: { viewModel.updateReasoningConfiguration($0) }
-                ),
-                selectedModels: viewModel.selectedModels,
-                primaryModel: viewModel.selectedModel,
-                errorRecoverySuggestion: viewModel.errorRecoverySuggestion,
-                onRetry: viewModel.failedMessage != nil ? { viewModel.retryFailedMessage() } : nil,
-                showAttachmentButton: true,
-                identifierPrefix: "newchat.composer",
-                onSend: { viewModel.sendMessage() },
-                onCancel: { viewModel.cancelGeneration() },
-                onDismissError: { viewModel.dismissError() },
-                onFileAttachmentRequested: { isFileImporterPresented = true },
-                onPhotoAttachmentRequested: { isPhotoPickerPresented = true }
-            )
-        }
-        .navigationTitle("New Chat")
-        .navigationBarTitleDisplayMode(.inline)
-        .fileImporter(
-            isPresented: $isFileImporterPresented,
-            allowedContentTypes: [.item],
-            allowsMultipleSelection: true
-        ) { result in
-            viewModel.handleFileImport(result)
-        }
-        .photosPicker(
-            isPresented: $isPhotoPickerPresented,
-            selection: $selectedPhotoItems,
-            maxSelectionCount: 5,
-            matching: .images
-        )
-        .onChange(of: selectedPhotoItems) { _, newItems in
-            Task {
-                await viewModel.handlePhotoSelection(newItems)
-                selectedPhotoItems = []
+                IOSMessageComposer(
+                    messageText: $viewModel.messageText,
+                    isGenerating: $viewModel.isGenerating,
+                    errorMessage: $viewModel.errorMessage,
+                    attachedFiles: $viewModel.attachedFiles,
+                    attachedImages: $viewModel.attachedImages,
+                    errorRecoverySuggestion: viewModel.errorRecoverySuggestion,
+                    onRetry: viewModel.failedMessage != nil ? { viewModel.retryFailedMessage() } : nil,
+                    showAttachmentButton: true,
+                    identifierPrefix: "newchat.composer",
+                    onSend: { viewModel.sendMessage() },
+                    onCancel: { viewModel.cancelGeneration() },
+                    onDismissError: { viewModel.dismissError() },
+                    onFileAttachmentRequested: { isFileImporterPresented = true },
+                    onPhotoAttachmentRequested: { isPhotoPickerPresented = true }
+                )
             }
-        }
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Button(action: { showModelSelector = true }) {
-                    VStack(spacing: 0) {
-                        Text("New Chat")
-                            .font(.headline)
-                        HStack(spacing: 4) {
-                            if viewModel.selectedModels.count > 1 {
-                                Image(systemName: "square.stack.3d.up.fill")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.blue)
-                                Text("\(viewModel.selectedModels.count) models")
-                                    .font(.caption)
-                                    .foregroundStyle(.blue)
-                            } else {
-                                Text(viewModel.selectedModel)
-                                    .font(.caption)
+            .navigationTitle("New Chat")
+            .navigationBarTitleDisplayMode(.inline)
+            .fileImporter(
+                isPresented: $isFileImporterPresented,
+                allowedContentTypes: [.item],
+                allowsMultipleSelection: true
+            ) { result in
+                viewModel.handleFileImport(result)
+            }
+            .photosPicker(
+                isPresented: $isPhotoPickerPresented,
+                selection: $selectedPhotoItems,
+                maxSelectionCount: 5,
+                matching: .images
+            )
+            .onChange(of: selectedPhotoItems) { _, newItems in
+                Task {
+                    await viewModel.handlePhotoSelection(newItems)
+                    selectedPhotoItems = []
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Button(action: { showModelSelector = true }) {
+                        VStack(spacing: 0) {
+                            Text("New Chat")
+                                .font(.headline)
+                            HStack(spacing: 4) {
+                                if viewModel.selectedModels.count > 1 {
+                                    Image(systemName: "square.stack.3d.up.fill")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.blue)
+                                    Text("\(viewModel.selectedModels.count) models")
+                                        .font(.caption)
+                                        .foregroundStyle(.blue)
+                                } else {
+                                    Text(viewModel.selectedModel)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                if let effortBadge = viewModel.reasoningConfiguration.thinkingEffortBadge {
+                                    Text(effortBadge)
+                                        .font(.caption)
+                                        .foregroundStyle(Theme.accent)
+                                }
+                                Image(systemName: "chevron.down")
+                                    .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
-                            Image(systemName: "chevron.down")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
                         }
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier(TestIdentifiers.ChatView.modelSelector)
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier(TestIdentifiers.ChatView.modelSelector)
             }
-        }
-        .sheet(isPresented: $showModelSelector) {
-            NavigationStack {
-                IOSMultiModelSelector(
-                    selectedModels: $viewModel.selectedModels,
-                    availableModels: aiService.usableModels,
-                    maxSelection: 4
-                )
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") {
-                            showModelSelector = false
-                            // Update primary model if needed
-                            if let first = viewModel.selectedModels.first, viewModel.selectedModels.count == 1 {
-                                viewModel.selectedModel = first
-                                aiService.selectedModel = first
+            .sheet(isPresented: $showModelSelector) {
+                NavigationStack {
+                    IOSMultiModelSelector(
+                        selectedModels: $viewModel.selectedModels,
+                        availableModels: aiService.usableModels,
+                        maxSelection: 4,
+                        primaryModel: viewModel.selectedModel,
+                        reasoningConfiguration: Binding(
+                            get: { viewModel.reasoningConfiguration },
+                            set: { viewModel.updateReasoningConfiguration($0) }
+                        ),
+                        reasoningIdentifier: "newchat.modelSelector.reasoning"
+                    )
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") {
+                                showModelSelector = false
+                                // Update primary model if needed
+                                if let first = viewModel.selectedModels.first, viewModel.selectedModels.count == 1 {
+                                    viewModel.selectedModel = first
+                                    aiService.selectedModel = first
+                                }
                             }
                         }
                     }
                 }
+                .presentationDetents([.medium])
             }
-            .presentationDetents([.medium])
-        }
-        .onAppear {
-            // Configure ViewModel with actual environment object
-            viewModel.configure(with: conversationManager)
-            viewModel.onConversationCreated = { conversationId in
-                conversationManager.selectedConversationId = conversationId
+            .onAppear {
+                // Configure ViewModel with actual environment object
+                viewModel.configure(with: conversationManager)
+                viewModel.onConversationCreated = { conversationId in
+                    conversationManager.selectedConversationId = conversationId
+                }
+
+                // Reset state when this view appears (new chat requested)
+                viewModel.resetForNewChat()
+
+                DiagnosticsLogger.log(
+                    .chatView,
+                    level: .info,
+                    message: "📱 IOSNewChatView appeared"
+                )
             }
-
-            // Reset state when this view appears (new chat requested)
-            viewModel.resetForNewChat()
-
-            DiagnosticsLogger.log(
-                .chatView,
-                level: .info,
-                message: "📱 IOSNewChatView appeared"
-            )
-        }
-        .onDisappear {
+            .onDisappear {
                 viewModel.cancelOwnedOperations()
+            }
+        }
+
+        // MARK: - Onboarding View
+
+        private var onboardingView: some View {
+            VStack(spacing: 24) {
+                Spacer()
+
+                Image(systemName: "sparkles")
+                    .font(.system(size: 60))
+                    .foregroundStyle(.blue.gradient)
+
+                VStack(spacing: 8) {
+                    Text("No Models Available")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+
+                    Text("Please add a model in Settings to start chatting.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                Button {
+                    showSettings = true
+                } label: {
+                    Text("Add Model")
+                        .font(.headline)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.borderedProminent)
+
+                Spacer()
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .sheet(isPresented: $showSettings) {
+                NavigationStack {
+                    IOSSettingsView()
+                }
+            }
+        }
+
+        // MARK: - Welcome View
+
+        private var welcomeView: some View {
+            VStack(spacing: 24) {
+                Spacer()
+
+                Image(systemName: "sparkles")
+                    .font(.system(size: 60))
+                    .foregroundStyle(.blue.gradient)
+
+                VStack(spacing: 8) {
+                    Text("How can I help you?")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+
+                    Text("Type a message below to start chatting")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityIdentifier(TestIdentifiers.ChatView.emptyState)
+        }
+
+        // MARK: - Private Methods
+
+        private func scrollToBottom(proxy: ScrollViewProxy, conversation: Conversation) {
+            if let lastId = conversation.messages.last?.id {
+                withAnimation {
+                    proxy.scrollTo(lastId, anchor: .bottom)
+                }
+            }
         }
     }
-
-    // MARK: - Onboarding View
-
-    private var onboardingView: some View {
-        VStack(spacing: 24) {
-            Spacer()
-
-            Image(systemName: "sparkles")
-                .font(.system(size: 60))
-                .foregroundStyle(.blue.gradient)
-
-            VStack(spacing: 8) {
-                Text("No Models Available")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-
-                Text("Please add a model in Settings to start chatting.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            Button {
-                showSettings = true
-            } label: {
-                Text("Add Model")
-                    .font(.headline)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-            }
-            .buttonStyle(.borderedProminent)
-
-            Spacer()
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .sheet(isPresented: $showSettings) {
-            NavigationStack {
-                IOSSettingsView()
-            }
-        }
-    }
-
-    // MARK: - Welcome View
-
-    private var welcomeView: some View {
-        VStack(spacing: 24) {
-            Spacer()
-
-            Image(systemName: "sparkles")
-                .font(.system(size: 60))
-                .foregroundStyle(.blue.gradient)
-
-            VStack(spacing: 8) {
-                Text("How can I help you?")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-
-                Text("Type a message below to start chatting")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityIdentifier(TestIdentifiers.ChatView.emptyState)
-    }
-
-    // MARK: - Private Methods
-
-    private func scrollToBottom(proxy: ScrollViewProxy, conversation: Conversation) {
-        if let lastId = conversation.messages.last?.id {
-            withAnimation {
-                proxy.scrollTo(lastId, anchor: .bottom)
-            }
-        }
-    }
-}
 #endif

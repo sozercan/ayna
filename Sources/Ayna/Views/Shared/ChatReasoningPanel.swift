@@ -1,21 +1,29 @@
 import SwiftUI
 
 #if !os(watchOS)
-    /// Compact conversation-level thinking-effort control shown in the chat composer.
+    /// Conversation-level thinking-effort controls embedded in the model selector.
     ///
-    /// The popover leads with a stepped effort slider; provider-specific knobs stay
-    /// behind the header disclosure so the common case is a single drag.
-    struct ChatReasoningControl: View {
+    /// Leads with a stepped effort slider; provider-specific knobs stay behind the
+    /// header disclosure so the common case is a single drag.
+    struct ChatReasoningPanel: View {
         @Binding var configuration: ModelReasoningConfiguration
         let selectedModels: Set<String>
-        let primaryModel: String
+        var primaryModel = ""
         let identifier: String
 
         @ObservedObject private var aiService = AIService.shared
-        @State private var isPresented = false
         @State private var showsAdvanced = false
 
-        private var models: [String] {
+        /// Whether the panel has anything to show for the given selection.
+        static func isAvailable(selectedModels: Set<String>, primaryModel: String = "") -> Bool {
+            let models = normalizedModels(selectedModels: selectedModels, primaryModel: primaryModel)
+            return ChatReasoningSettingsPresentation(
+                models: contexts(for: models, aiService: AIService.shared),
+                configuration: .automatic
+            ).isAvailable
+        }
+
+        private static func normalizedModels(selectedModels: Set<String>, primaryModel: String) -> [String] {
             let normalized = selectedModels
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
@@ -27,22 +35,35 @@ import SwiftUI
             return primary.isEmpty ? [] : [primary]
         }
 
+        private static func contexts(for models: [String], aiService: AIService) -> [ChatReasoningModelContext] {
+            models.map { model in
+                ChatReasoningModelContext(
+                    model: model,
+                    provider: aiService.modelProviders[model] ?? aiService.provider,
+                    endpointType: aiService.modelEndpointTypes[model] ?? .chatCompletions,
+                    endpoint: aiService.modelEndpoints[model]
+                )
+            }
+        }
+
+        private var models: [String] {
+            Self.normalizedModels(selectedModels: selectedModels, primaryModel: primaryModel)
+        }
+
+        private var modelContexts: [ChatReasoningModelContext] {
+            Self.contexts(for: models, aiService: aiService)
+        }
+
         private var presentation: ChatReasoningSettingsPresentation {
-            ChatReasoningSettingsPresentation(
-                models: models.map { model in
-                    ChatReasoningModelContext(
-                        model: model,
-                        provider: provider(for: model),
-                        endpointType: endpointType(for: model),
-                        endpoint: aiService.modelEndpoints[model]
-                    )
-                },
-                configuration: configuration
-            )
+            ChatReasoningSettingsPresentation(models: modelContexts, configuration: configuration)
+        }
+
+        private var effortSelection: ChatReasoningEffortSelection {
+            ChatReasoningEffortSelection(models: modelContexts, configuration: configuration)
         }
 
         private var effortOptions: [ReasoningEffort] {
-            presentation.effortOptions
+            effortSelection.options
         }
 
         private var defaultConfiguration: ModelReasoningConfiguration {
@@ -53,64 +74,38 @@ import SwiftUI
             configuration == defaultConfiguration
         }
 
-        private var controlMinimumHeight: CGFloat {
-            #if os(iOS)
-                44
-            #else
-                34
-            #endif
-        }
-
-        private var triggerLabel: String {
-            if configuration.activation == .explicitlyDisabled {
-                return "Thinking off"
-            }
-            return configuration.effort?.displayName ?? "Thinking effort"
-        }
-
         private var levelLabel: String {
-            if configuration.activation == .explicitlyDisabled {
-                return "Off"
-            }
-            return configuration.effort?.displayName ?? "Default"
+            configuration.thinkingEffortBadge ?? "Default"
         }
 
         private var modelTitle: String {
             models.count == 1 ? models[0] : "\(models.count) models"
         }
 
-        private var accessibilityLabel: String {
-            models.count > 1 ? "Thinking effort for \(models.count) models" : "Thinking effort"
-        }
-
         var body: some View {
             if presentation.isAvailable {
-                Button {
-                    isPresented.toggle()
-                } label: {
-                    HStack(spacing: Spacing.xs) {
-                        Text(triggerLabel)
-                            .font(Typography.modelName)
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: Typography.Size.xs, weight: .semibold))
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    header
+
+                    if effortOptions.isEmpty {
+                        Text(emptyEffortDescription)
+                            .font(Typography.caption)
                             .foregroundStyle(Theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        ReasoningEffortStepSlider(
+                            stepCount: effortOptions.count,
+                            selection: effortIndexBinding,
+                            valueLabel: levelLabel
+                        )
+                        .accessibilityIdentifier("\(identifier).effort")
                     }
-                    .foregroundStyle(isAtDefault ? Theme.textSecondary : Theme.textPrimary)
-                    .padding(.horizontal, Spacing.md)
-                    .frame(minHeight: controlMinimumHeight)
-                    .background(Theme.backgroundTertiary.opacity(0.8), in: Capsule())
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(accessibilityLabel)
-                .accessibilityValue(levelLabel)
-                .accessibilityIdentifier(identifier)
-                .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-                    popoverContent
-                    #if os(iOS)
-                        .presentationCompactAdaptation(.popover)
-                    #endif
+
+                    if showsAdvanced {
+                        advancedControls
+                            .padding(.top, Spacing.xs)
+                            .transition(.opacity)
+                    }
                 }
                 .onAppear {
                     normalizeConfiguration()
@@ -119,34 +114,6 @@ import SwiftUI
                     normalizeConfiguration()
                 }
             }
-        }
-
-        private var popoverContent: some View {
-            VStack(alignment: .leading, spacing: Spacing.lg) {
-                header
-
-                if effortOptions.isEmpty {
-                    Text(emptyEffortDescription)
-                        .font(Typography.caption)
-                        .foregroundStyle(Theme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    ReasoningEffortStepSlider(
-                        stepCount: effortOptions.count,
-                        selection: effortIndexBinding,
-                        valueLabel: levelLabel
-                    )
-                    .accessibilityIdentifier("\(identifier).effort")
-                }
-
-                if showsAdvanced {
-                    Divider()
-                    advancedControls
-                        .transition(.opacity)
-                }
-            }
-            .padding(Spacing.lg)
-            .frame(width: 320)
         }
 
         private var header: some View {
@@ -244,7 +211,10 @@ import SwiftUI
                     configuration.effort.flatMap { effortOptions.firstIndex(of: $0) }
                 },
                 set: { newValue in
-                    configuration.effort = newValue.map { effortOptions[$0] }
+                    configuration = effortSelection.configuration(
+                        selecting: newValue.map { effortOptions[$0] },
+                        from: configuration
+                    )
                 }
             )
         }

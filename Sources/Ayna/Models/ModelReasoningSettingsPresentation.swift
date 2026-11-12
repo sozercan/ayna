@@ -250,3 +250,55 @@ struct ChatReasoningSettingsPresentation: Equatable, Sendable {
         return normalized
     }
 }
+
+/// Effort stops offered by the composer's thinking-effort slider.
+///
+/// Automatic mode only sends reasoning parameters to verified first-party
+/// endpoints. For custom endpoints (Azure, proxies, deployment aliases) the
+/// slider still offers the efforts that an explicit "On" would allow, and
+/// picking one opts the conversation in.
+struct ChatReasoningEffortSelection: Equatable, Sendable {
+    let options: [ReasoningEffort]
+    /// True when choosing an effort must also switch activation to `.enabled`.
+    let requiresOptIn: Bool
+
+    init(models: [ChatReasoningModelContext], configuration: ModelReasoningConfiguration) {
+        let current = ChatReasoningSettingsPresentation(models: models, configuration: configuration)
+        guard current.isAvailable,
+              current.effortOptions.isEmpty,
+              configuration.activation == .automatic
+        else {
+            options = current.effortOptions
+            requiresOptIn = false
+            return
+        }
+
+        var enabled = configuration
+        enabled.activation = .enabled
+        options = ChatReasoningSettingsPresentation(models: models, configuration: enabled).effortOptions
+        requiresOptIn = !options.isEmpty
+    }
+
+    func configuration(
+        selecting effort: ReasoningEffort?,
+        from configuration: ModelReasoningConfiguration
+    ) -> ModelReasoningConfiguration {
+        var updated = configuration
+        updated.effort = effort
+        if effort != nil, requiresOptIn {
+            updated.activation = .enabled
+        }
+        return updated
+    }
+}
+
+extension ModelReasoningConfiguration {
+    /// Short label for the model selector, or `nil` when the conversation uses
+    /// the model's default thinking behavior.
+    var thinkingEffortBadge: String? {
+        if activation == .explicitlyDisabled {
+            return "Off"
+        }
+        return effort?.displayName
+    }
+}
