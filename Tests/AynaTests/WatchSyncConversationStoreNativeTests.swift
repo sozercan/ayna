@@ -50,6 +50,37 @@
         }
 
         @Test
+        func `Streaming updates stay in memory until the next persisting change`() throws {
+            let fixture = makeFixture()
+            let conversation = makeConversation(messages: [makeMessage(role: .user, content: "Prompt")])
+            fixture.store.applySyncSnapshot(snapshot(revision: 1, conversations: [conversation]))
+            var draft = conversation
+            draft.messages.append(makeMessage(role: .assistant, content: "Par", model: conversation.model))
+            fixture.store.syncDraft(draft)
+            // While streaming, the conversation is already the current one.
+            _ = fixture.store.conversation(for: conversation.id)
+
+            draft.messages[draft.messages.count - 1].content = "Partial reply"
+            #expect(fixture.store.replaceConversation(draft, persist: false))
+
+            #expect(fixture.store.conversation(for: conversation.id)?.messages.last?.content == "Partial reply")
+            let beforePersisting = WatchConversationStore(
+                userDefaults: fixture.defaults,
+                persistenceKey: fixture.key,
+                mutationEnqueuer: { _ in }
+            )
+            #expect(beforePersisting.conversation(for: conversation.id)?.messages.last?.content == "Par")
+
+            #expect(fixture.store.replaceConversation(draft))
+            let reloaded = WatchConversationStore(
+                userDefaults: fixture.defaults,
+                persistenceKey: fixture.key,
+                mutationEnqueuer: { _ in }
+            )
+            #expect(reloaded.conversation(for: conversation.id)?.messages.last?.content == "Partial reply")
+        }
+
+        @Test
         func `Restart discards an empty assistant draft placeholder`() throws {
             let fixture = makeFixture()
             let conversation = makeConversation(messages: [makeMessage(role: .user, content: "Prompt")])

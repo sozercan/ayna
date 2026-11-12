@@ -1108,7 +1108,8 @@ enum WatchLiveModelPolicy {
             _ messageId: UUID,
             in conversationId: UUID,
             content: String? = nil,
-            reasoning: String? = nil
+            reasoning: String? = nil,
+            persist: Bool = true
         ) -> Bool {
             guard content != nil || reasoning != nil else { return true }
             guard var conversation = conversationStore.conversation(for: conversationId),
@@ -1122,7 +1123,7 @@ enum WatchLiveModelPolicy {
             if let reasoning {
                 conversation.messages[messageIndex].reasoning = reasoning
             }
-            return conversationStore.replaceConversation(conversation)
+            return conversationStore.replaceConversation(conversation, persist: persist)
         }
 
         private func publishPendingResponse(
@@ -1133,11 +1134,14 @@ enum WatchLiveModelPolicy {
             if !pendingContent.isEmpty {
                 streamingContent = pendingContent
             }
+            // Streaming ticks (every 100 ms) stay in memory; re-encoding the whole store into
+            // UserDefaults each time was the Watch's main streaming cost.
             updateAssistantMessage(
                 assistantMessageId,
                 in: conversationId,
                 content: pendingContent.isEmpty ? nil : pendingContent,
-                reasoning: pendingReasoning.isEmpty ? nil : pendingReasoning
+                reasoning: pendingReasoning.isEmpty ? nil : pendingReasoning,
+                persist: false
             )
             lastUIUpdateTime = updateTime
         }

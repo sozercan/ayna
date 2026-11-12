@@ -597,7 +597,7 @@
 
         /// Persists a full local draft overlay without creating a transport mutation.
         @discardableResult
-        func syncDraft(_ conversation: WatchConversation) -> Bool {
+        func syncDraft(_ conversation: WatchConversation, persist: Bool = true) -> Bool {
             guard let committed = committedConversation(for: conversation.id),
                   !hasPendingDelete(for: conversation.id)
             else {
@@ -624,7 +624,9 @@
                 ownedMessageIDs: ownedMessageIDs,
                 deferredMutationFields: existingDraft?.deferredMutationFields
             )
-            guard persistOrRestore(previousState) else { return false }
+            if persist {
+                guard persistOrRestore(previousState) else { return false }
+            }
             rebuildPublishedConversations()
             return true
         }
@@ -707,9 +709,11 @@
 
         /// Treats direct replacement as an in-progress local draft.
         @discardableResult
-        func replaceConversation(_ conversation: WatchConversation, persist _: Bool = true) -> Bool {
+        /// `persist: false` keeps the change in memory (for streaming updates); the next persisting
+        /// change, such as finishing the draft, writes it.
+        func replaceConversation(_ conversation: WatchConversation, persist: Bool = true) -> Bool {
             guard committedConversation(for: conversation.id) != nil else { return false }
-            return syncDraft(conversation)
+            return syncDraft(conversation, persist: persist)
         }
 
         /// Treats streaming content changes as draft-only state.
