@@ -46,6 +46,24 @@ struct StreamingFollowScroll: ViewModifier {
     }
 }
 
+/// Hands the reader's place from the new-chat transcript to the conversation view that
+/// replaces it when the first reply finishes, so a reader who scrolled up stays put.
+@MainActor
+enum TranscriptReadingPosition {
+    private static var pending: (conversationId: UUID, messageId: UUID)?
+
+    static func handOver(_ messageId: UUID, in conversationId: UUID) {
+        pending = (conversationId, messageId)
+    }
+
+    /// The message to show at the top, once, if this conversation was handed a position.
+    static func take(for conversationId: UUID) -> UUID? {
+        guard let handoff = pending, handoff.conversationId == conversationId else { return nil }
+        pending = nil
+        return handoff.messageId
+    }
+}
+
 extension View {
     func followsStreamingContent(_ followsLatest: Binding<Bool>, isAwayFromEnd: Binding<Bool>) -> some View {
         modifier(StreamingFollowScroll(followsLatest: followsLatest, isAwayFromEnd: isAwayFromEnd))

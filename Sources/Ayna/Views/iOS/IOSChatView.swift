@@ -178,9 +178,15 @@ struct IOSChatView: View {
                             metadata: ["conversationId": conversationId.uuidString]
                         )
                         updateDisplayableItems()
+                        let readingPosition = TranscriptReadingPosition.take(for: conversationId)
+                        if readingPosition != nil {
+                            followsLatest = false
+                        }
                         Task { @MainActor in
                             try? await Task.sleep(for: .milliseconds(100))
-                            if let lastId = conversation.messages.last?.id {
+                            if let readingPosition {
+                                proxy.scrollTo(readingPosition, anchor: .top)
+                            } else if let lastId = conversation.messages.last?.id {
                                 proxy.scrollTo(lastId, anchor: .bottom)
                             }
                         }

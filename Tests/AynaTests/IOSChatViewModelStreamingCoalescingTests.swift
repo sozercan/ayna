@@ -30,6 +30,17 @@ import Testing
         }
 
         @Test
+        func `a reading position is handed to its own conversation once`() {
+            let conversation = UUID()
+            let message = UUID()
+            TranscriptReadingPosition.handOver(message, in: conversation)
+
+            #expect(TranscriptReadingPosition.take(for: UUID()) == nil)
+            #expect(TranscriptReadingPosition.take(for: conversation) == message)
+            #expect(TranscriptReadingPosition.take(for: conversation) == nil)
+        }
+
+        @Test
         func `isGenerating tells the manager which conversation a reply is streaming into`() throws {
             let manager = try ConversationManager(store: TestHelpers.makeTestStore(directory: TestHelpers.makeTemporaryDirectory()))
             let first = UUID()
