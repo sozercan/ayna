@@ -562,7 +562,7 @@ struct ShellSandboxTests {
         var blocked = 0
 
         let start = Date()
-        for _ in 0..<iterations {
+        for _ in 0 ..< iterations {
             for testCase in cases {
                 let result = sut.validate(testCase.command)
                 switch (result, testCase.expected) {

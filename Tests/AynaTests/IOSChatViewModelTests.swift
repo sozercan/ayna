@@ -874,7 +874,6 @@
                 searchIndexWarmupEnabled: false
             )
         }
-
     }
 
     @Suite("iOS Chat View Model Regression Tests", .tags(.viewModel), .serialized)
@@ -1015,7 +1014,6 @@
             #expect(manager.conversations.count == 1)
             viewModel.cancelOwnedOperations()
         }
-
     }
 
     @MainActor
@@ -1180,12 +1178,12 @@
             messages: [Message],
             models: [String],
             temperature: Double?,
-            onChunk: @escaping @Sendable (String, String) -> Void,
-            onModelComplete: @escaping @Sendable (String) -> Void,
+            onChunk _: @escaping @Sendable (String, String) -> Void,
+            onModelComplete _: @escaping @Sendable (String) -> Void,
             onAllComplete: @escaping @Sendable () -> Void,
             onError: @escaping @Sendable (String, Error) -> Void,
-            onPendingToolCall: (@Sendable (String, String, String, [String: Any]) -> Void)?,
-            onReasoning: (@Sendable (String, String) -> Void)?
+            onPendingToolCall _: (@Sendable (String, String, String, [String: Any]) -> Void)?,
+            onReasoning _: (@Sendable (String, String) -> Void)?
         ) -> AITextBatchRequest {
             requests.append(messages)
             requestModels.append(models)
@@ -1360,13 +1358,13 @@
 
         override func sendToMultipleModels(
             messages: [Message],
-            models: [String],
+            models _: [String],
             temperature: Double?,
-            onChunk: @escaping @Sendable (String, String) -> Void,
-            onModelComplete: @escaping @Sendable (String) -> Void,
-            onAllComplete: @escaping @Sendable () -> Void,
-            onError: @escaping @Sendable (String, Error) -> Void,
-            onPendingToolCall: (@Sendable (String, String, String, [String: Any]) -> Void)?,
+            onChunk _: @escaping @Sendable (String, String) -> Void,
+            onModelComplete _: @escaping @Sendable (String) -> Void,
+            onAllComplete _: @escaping @Sendable () -> Void,
+            onError _: @escaping @Sendable (String, Error) -> Void,
+            onPendingToolCall _: (@Sendable (String, String, String, [String: Any]) -> Void)?,
             onReasoning: (@Sendable (String, String) -> Void)?
         ) -> AITextBatchRequest {
             reasoningCallbacks.append(onReasoning)

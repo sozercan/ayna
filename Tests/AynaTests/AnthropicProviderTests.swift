@@ -405,7 +405,7 @@ struct AnthropicProviderTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
-    func `a reply cut off at max_tokens says so and the default limit is 16000`() async throws {
+    func `a reply cut off at max_tokens says so and the default limit is 16000`() async {
         let provider = makeProvider()
         let config = makeConfig(model: "claude-opus-5-5")
         let sentMaxTokens = FlightTestBox<Int?>(nil)

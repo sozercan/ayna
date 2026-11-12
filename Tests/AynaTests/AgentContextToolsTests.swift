@@ -300,7 +300,7 @@ import Testing
             }
 
             let approved = Task { await service.executeToolCall(toolName: "update_tasks", arguments: tasks(2), conversationId: first) }
-            permissionService.approve(try #require(await waitForPending(permissionService)).id)
+            try permissionService.approve(#require(await waitForPending(permissionService)).id)
             _ = await approved.value
 
             // Another conversation with a list of the same length still asks.
@@ -578,7 +578,7 @@ import Testing
         }
 
         @Test
-        func `Older saved strings parse to the key that was recorded`() throws {
+        func `Older saved strings parse to the key that was recorded`() {
             #expect(HotkeyCombination(storage: "⌘⇧Space") == .default)
             #expect(HotkeyCombination(storage: "cmd+shift+space") == .default)
             let combination = HotkeyCombination(keyCode: UInt32(kVK_ANSI_K), modifiers: UInt32(controlKey | optionKey))
@@ -594,7 +594,7 @@ import Testing
         }
 
         @Test
-        func `The saved shortcut keeps its key code whatever the layout shows`() throws {
+        func `The saved shortcut keeps its key code whatever the layout shows`() {
             // On a German layout the key in the US "Z" position types "y".
             let combination = HotkeyCombination(keyCode: UInt32(kVK_ANSI_Z), modifiers: UInt32(controlKey | optionKey))
             let german = combination.displayString(layoutCharacter: { $0 == UInt32(kVK_ANSI_Z) ? "Y" : nil })

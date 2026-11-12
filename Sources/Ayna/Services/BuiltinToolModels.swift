@@ -135,8 +135,8 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
     }
 }
 
-extension ToolExecutionError {
-    fileprivate static func outputSection(stdout: String, stderr: String) -> String {
+private extension ToolExecutionError {
+    static func outputSection(stdout: String, stderr: String) -> String {
         var section = ""
         if !stdout.isEmpty {
             section += "\nstdout:\n\(stdout)"

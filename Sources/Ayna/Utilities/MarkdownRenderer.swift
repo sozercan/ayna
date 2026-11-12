@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 import Foundation
 import SwiftUI
 
@@ -287,15 +288,15 @@ enum MarkdownRenderer {
 
     private nonisolated static func headingLevel(for line: String) -> Int? {
         let level = line.prefix { $0 == "#" }.count
-        guard level > 0 && level <= 6 && line.count > level else { return nil }
+        guard level > 0, level <= 6, line.count > level else { return nil }
         guard line[line.index(line.startIndex, offsetBy: level)] == " " else { return nil }
         return level
     }
 
     private nonisolated static func isHorizontalRule(_ line: String) -> Bool {
         if line.count < 3 { return false }
-        guard line.trimmingCharacters(in: Self.horizontalRuleCharacters).isEmpty
-            && line.replacingOccurrences(of: " ", with: "").count >= 3
+        guard line.trimmingCharacters(in: horizontalRuleCharacters).isEmpty,
+              line.replacingOccurrences(of: " ", with: "").count >= 3
         else { return false }
         let nonSpace = line.filter { $0 != " " }
         guard let ruleChar = nonSpace.first, nonSpace.allSatisfy({ $0 == ruleChar }) else { return false }
@@ -357,11 +358,10 @@ enum MarkdownRenderer {
             } else if let match = firstMatch(using: Self.orderedListRegex, in: line),
                       let fullRange = Range(match.range, in: line)
             {
-                let startNumber: Int?
-                if let numberRange = Range(match.range(at: 1), in: line) {
-                    startNumber = Int(String(line[numberRange]))
+                let startNumber: Int? = if let numberRange = Range(match.range(at: 1), in: line) {
+                    Int(String(line[numberRange]))
                 } else {
-                    startNumber = nil
+                    nil
                 }
                 return ParsedListItem(
                     text: String(line[fullRange.upperBound...]),
@@ -466,7 +466,7 @@ enum MarkdownRenderer {
     #endif
 
     private nonisolated static func makeInlineAttributedString(from markdown: String) -> AttributedString {
-        return (try? AttributedString(markdown: markdown, options: Self.inlineMarkdownOptions))
+        (try? AttributedString(markdown: markdown, options: inlineMarkdownOptions))
             ?? AttributedString(markdown)
     }
 }

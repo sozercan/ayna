@@ -251,13 +251,11 @@ public enum Theme {
     }
 
     // MARK: - Provider-Specific Colors
-
 }
 
 // MARK: - Convenience Extensions
 
-public extension Color {
-}
+public extension Color {}
 
 // MARK: - Status Color Helper for MCPServerStatus
 

@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 #if os(macOS)
 //
 //  MacMessageView.swift
@@ -345,31 +346,31 @@ struct MacMessageView: View {
         let bubbleStyle = isCurrentUser ? userBubbleGradient : recipientBubbleGradient
 
         return VStack(alignment: .leading, spacing: Spacing.md) {
-                bubbleContent
-            }
-            .frame(maxWidth: Spacing.Component.bubbleMaxWidth, alignment: .leading)
-            .foregroundStyle(Theme.userBubbleText)
-            .padding(.leading, isCurrentUser ? Spacing.bubblePaddingH : Spacing.contentPadding)
-            .padding(.trailing, isCurrentUser ? Spacing.contentPadding : Spacing.bubblePaddingH)
-            .padding(.vertical, Spacing.bubblePaddingV)
-            .background(
-                MessageBubbleShape(isFromCurrentUser: isCurrentUser)
-                    .fill(bubbleStyle)
-            )
-            .overlay(
-                MessageBubbleShape(isFromCurrentUser: isCurrentUser)
-                    .stroke(Theme.border, lineWidth: Spacing.Border.standard)
-            )
-            .shadow(color: Theme.shadow, radius: Spacing.Shadow.radiusStandard, x: 0, y: Spacing.Shadow.offsetYElevated)
-            .environment(\.colorScheme, .dark)
-            .tint(.white)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(Text(verbatim: accessibilityText))
-            .accessibilityIdentifier("chat.message.\(message.id.uuidString)")
+            bubbleContent
+        }
+        .frame(maxWidth: Spacing.Component.bubbleMaxWidth, alignment: .leading)
+        .foregroundStyle(Theme.userBubbleText)
+        .padding(.leading, isCurrentUser ? Spacing.bubblePaddingH : Spacing.contentPadding)
+        .padding(.trailing, isCurrentUser ? Spacing.contentPadding : Spacing.bubblePaddingH)
+        .padding(.vertical, Spacing.bubblePaddingV)
+        .background(
+            MessageBubbleShape(isFromCurrentUser: isCurrentUser)
+                .fill(bubbleStyle)
+        )
+        .overlay(
+            MessageBubbleShape(isFromCurrentUser: isCurrentUser)
+                .stroke(Theme.border, lineWidth: Spacing.Border.standard)
+        )
+        .shadow(color: Theme.shadow, radius: Spacing.Shadow.radiusStandard, x: 0, y: Spacing.Shadow.offsetYElevated)
+        .environment(\.colorScheme, .dark)
+        .tint(.white)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(verbatim: accessibilityText))
+        .accessibilityIdentifier("chat.message.\(message.id.uuidString)")
     }
 
     @MainActor
-    private func editingBubbleContainer(isCurrentUser: Bool) -> some View {
+    private func editingBubbleContainer(isCurrentUser _: Bool) -> some View {
         VStack(alignment: .trailing, spacing: Spacing.sm) {
             TextEditor(text: $editText)
                 .font(Typography.body)

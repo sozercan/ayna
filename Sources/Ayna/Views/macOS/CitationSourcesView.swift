@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 #if os(macOS)
 //
 //  CitationSourcesView.swift
@@ -75,9 +76,9 @@ struct CitationBadgeView: View {
     private func openURL() {
         guard let url = URL(string: citation.url) else { return }
         #if os(macOS)
-            NSWorkspace.shared.open(url)
+        NSWorkspace.shared.open(url)
         #elseif os(iOS)
-            UIApplication.shared.open(url)
+        UIApplication.shared.open(url)
         #endif
     }
 }
@@ -195,9 +196,9 @@ struct CitationSourceRow: View {
     private func openURL() {
         guard let url = URL(string: citation.url) else { return }
         #if os(macOS)
-            NSWorkspace.shared.open(url)
+        NSWorkspace.shared.open(url)
         #elseif os(iOS)
-            UIApplication.shared.open(url)
+        UIApplication.shared.open(url)
         #endif
     }
 
@@ -228,47 +229,47 @@ struct InlineCitationBadgesView: View {
 // MARK: - Previews
 
 #if DEBUG
-    struct CitationSourcesView_Previews: PreviewProvider {
-        static var sampleCitations: [CitationReference] = [
-            CitationReference(
-                number: 1,
-                title: "Apple Developer Documentation",
-                url: "https://developer.apple.com/documentation",
-                favicon: "https://www.apple.com/favicon.ico"
-            ),
-            CitationReference(
-                number: 2,
-                title: "Swift.org - The Swift Programming Language",
-                url: "https://swift.org",
-                favicon: "https://swift.org/favicon.ico"
-            ),
-            CitationReference(
-                number: 3,
-                title: "GitHub - SwiftUI Examples",
-                url: "https://github.com/swiftui-examples",
-                favicon: nil
-            )
-        ]
+struct CitationSourcesView_Previews: PreviewProvider {
+    static var sampleCitations: [CitationReference] = [
+        CitationReference(
+            number: 1,
+            title: "Apple Developer Documentation",
+            url: "https://developer.apple.com/documentation",
+            favicon: "https://www.apple.com/favicon.ico"
+        ),
+        CitationReference(
+            number: 2,
+            title: "Swift.org - The Swift Programming Language",
+            url: "https://swift.org",
+            favicon: "https://swift.org/favicon.ico"
+        ),
+        CitationReference(
+            number: 3,
+            title: "GitHub - SwiftUI Examples",
+            url: "https://github.com/swiftui-examples",
+            favicon: nil
+        )
+    ]
 
-        static var previews: some View {
-            VStack(spacing: 20) {
-                // Individual badges
-                HStack {
-                    ForEach(sampleCitations, id: \.number) { citation in
-                        CitationBadgeView(citation: citation)
-                    }
+    static var previews: some View {
+        VStack(spacing: 20) {
+            // Individual badges
+            HStack {
+                ForEach(sampleCitations, id: \.number) { citation in
+                    CitationBadgeView(citation: citation)
                 }
-
-                // Inline badges row
-                InlineCitationBadgesView(citations: sampleCitations)
-
-                // Full footer
-                CitationSourcesFooter(citations: sampleCitations)
             }
-            .padding()
-            .background(Color.gray.opacity(0.3))
-            .preferredColorScheme(.dark)
+
+            // Inline badges row
+            InlineCitationBadgesView(citations: sampleCitations)
+
+            // Full footer
+            CitationSourcesFooter(citations: sampleCitations)
         }
+        .padding()
+        .background(Color.gray.opacity(0.3))
+        .preferredColorScheme(.dark)
     }
+}
 #endif
 #endif

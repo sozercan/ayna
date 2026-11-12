@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 #if os(macOS)
 //
 //  ChatInputArea.swift

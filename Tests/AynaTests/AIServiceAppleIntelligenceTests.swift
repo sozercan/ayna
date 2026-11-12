@@ -533,7 +533,7 @@ import Testing
         }
 
         @Test("Apple context budgeting never splits parallel tool outputs")
-        func appleContextBudgetingNeverSplitsParallelToolOutputs() async throws {
+        func appleContextBudgetingNeverSplitsParallelToolOutputs() async {
             let appleService = FlightTestAppleIntelligenceService()
             appleService.contextSize = 220
             let service = AIService(appleIntelligenceService: appleService)

@@ -8,7 +8,7 @@ import XCTest
 /// on compact size classes. This is tracked as a known iOS 26 issue.
 final class IOSSmokeUITests: IOSUITestCase {
     /// Track whether navigation works (checked once in setUp)
-    nonisolated(unsafe) private static var navigationWorks: Bool?
+    private nonisolated(unsafe) static var navigationWorks: Bool?
 
     override func setUpWithError() throws {
         try super.setUpWithError()

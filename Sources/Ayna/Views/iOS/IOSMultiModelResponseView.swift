@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 #if os(iOS)
 //
 //  IOSMultiModelResponseView.swift
@@ -546,68 +547,68 @@ struct IOSMultiModelSelector: View {
 // MARK: - Previews
 
 #if DEBUG
-    struct IOSMultiModelResponseView_Previews: PreviewProvider {
-        static var previews: some View {
-            IOSMultiModelPreviewWrapper()
+struct IOSMultiModelResponseView_Previews: PreviewProvider {
+    static var previews: some View {
+        IOSMultiModelPreviewWrapper()
+    }
+
+    struct IOSMultiModelPreviewWrapper: View {
+        var body: some View {
+            let groupId = UUID()
+            let responses = [
+                Message(
+                    role: .assistant,
+                    content: "This is a response from GPT-4o.",
+                    model: "gpt-4o",
+                    responseGroupId: groupId
+                ),
+                Message(
+                    role: .assistant,
+                    content: "Claude's response here.",
+                    model: "claude-3.5-sonnet",
+                    responseGroupId: groupId
+                )
+            ]
+
+            var conversation = Conversation()
+            conversation.responseGroups = [
+                ResponseGroup(
+                    id: groupId,
+                    userMessageId: UUID(),
+                    responses: [
+                        ResponseGroup.ResponseEntry(id: responses[0].id, modelName: "gpt-4o", status: .completed),
+                        ResponseGroup.ResponseEntry(id: responses[1].id, modelName: "claude-3.5-sonnet", status: .completed)
+                    ]
+                )
+            ]
+
+            return IOSMultiModelResponseView(
+                responseGroupId: groupId,
+                responses: responses,
+                conversation: conversation
+            )
         }
+    }
+}
 
-        struct IOSMultiModelPreviewWrapper: View {
-            var body: some View {
-                let groupId = UUID()
-                let responses = [
-                    Message(
-                        role: .assistant,
-                        content: "This is a response from GPT-4o.",
-                        model: "gpt-4o",
-                        responseGroupId: groupId
-                    ),
-                    Message(
-                        role: .assistant,
-                        content: "Claude's response here.",
-                        model: "claude-3.5-sonnet",
-                        responseGroupId: groupId
-                    )
-                ]
+struct IOSMultiModelSelector_Previews: PreviewProvider {
+    static var previews: some View {
+        PreviewWrapper()
+    }
 
-                var conversation = Conversation()
-                conversation.responseGroups = [
-                    ResponseGroup(
-                        id: groupId,
-                        userMessageId: UUID(),
-                        responses: [
-                            ResponseGroup.ResponseEntry(id: responses[0].id, modelName: "gpt-4o", status: .completed),
-                            ResponseGroup.ResponseEntry(id: responses[1].id, modelName: "claude-3.5-sonnet", status: .completed)
-                        ]
-                    )
-                ]
+    struct PreviewWrapper: View {
+        @State private var selectedModels: Set<String> = ["gpt-4o"]
 
-                return IOSMultiModelResponseView(
-                    responseGroupId: groupId,
-                    responses: responses,
-                    conversation: conversation
+        var body: some View {
+            NavigationStack {
+                IOSMultiModelSelector(
+                    selectedModels: $selectedModels,
+                    availableModels: ["gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet"],
+                    maxSelection: 4
                 )
             }
         }
     }
-
-    struct IOSMultiModelSelector_Previews: PreviewProvider {
-        static var previews: some View {
-            PreviewWrapper()
-        }
-
-        struct PreviewWrapper: View {
-            @State private var selectedModels: Set<String> = ["gpt-4o"]
-
-            var body: some View {
-                NavigationStack {
-                    IOSMultiModelSelector(
-                        selectedModels: $selectedModels,
-                        availableModels: ["gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet"],
-                        maxSelection: 4
-                    )
-                }
-            }
-        }
-    }
+}
 #endif
 #endif

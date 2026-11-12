@@ -792,7 +792,7 @@ class AIService: ObservableObject {
     private func customEndpoint(for modelName: String?) -> (endpoint: String, model: String)? {
         guard let normalizedName = normalizedModelName(modelName),
               let endpoint = modelEndpoints[normalizedName]?
-              .trimmingCharacters(in: .whitespacesAndNewlines),
+                  .trimmingCharacters(in: .whitespacesAndNewlines),
               !endpoint.isEmpty
         else {
             return nil
@@ -5088,11 +5088,11 @@ extension AIService {
     /// - Returns: True if this is a built-in tool we handle, false if it should be routed to MCP
     func isBuiltInTool(_ toolName: String) -> Bool {
         #if os(watchOS)
-            return toolName == WebSearchCoordinator.toolName || WebFetchService.isWebFetchTool(toolName)
+            toolName == WebSearchCoordinator.toolName || WebFetchService.isWebFetchTool(toolName)
         #elseif os(macOS)
-            return toolName == WebSearchCoordinator.toolName || BuiltinToolService.isBuiltinTool(toolName) || WebFetchService.isWebFetchTool(toolName)
+            toolName == WebSearchCoordinator.toolName || BuiltinToolService.isBuiltinTool(toolName) || WebFetchService.isWebFetchTool(toolName)
         #else
-            return toolName == WebSearchCoordinator.toolName || WebFetchService.isWebFetchTool(toolName)
+            toolName == WebSearchCoordinator.toolName || WebFetchService.isWebFetchTool(toolName)
         #endif
     }
 

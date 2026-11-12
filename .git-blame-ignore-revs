@@ -1,0 +1,3 @@
+# Bulk formatting commits; use with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+# style: apply SwiftFormat
+ab428980565043179b165d510d710555fc44d445

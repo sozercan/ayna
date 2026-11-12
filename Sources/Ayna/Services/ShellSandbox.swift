@@ -490,7 +490,7 @@ struct ShellSandbox {
             // env VAR=value ... COMMAND runs COMMAND; printing the environment is fine.
             return arguments.contains { !$0.hasPrefix("-") && !$0.contains("=") }
         case "find":
-            let executing: Set<String> = ["-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprintf", "-fls"]
+            let executing: Set = ["-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprintf", "-fls"]
             return arguments.contains { executing.contains($0) }
         case "rg":
             return arguments.contains { $0 == "--pre" || $0.hasPrefix("--pre=") }

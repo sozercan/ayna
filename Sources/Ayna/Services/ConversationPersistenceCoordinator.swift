@@ -1079,8 +1079,8 @@ final class ConversationPersistenceCoordinator {
                 guard let self else { return .superseded }
                 attemptErrorBox?.error = error
                 let rollback: Conversation? = if let currentIntent = self.dirty[id],
-                                                  currentIntent.token == token,
-                                                  case .deleted = currentIntent.desired
+                                                 currentIntent.token == token,
+                                                 case .deleted = currentIntent.desired
                 {
                     currentIntent.rollback
                 } else {

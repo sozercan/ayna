@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 #if os(iOS)
 //
 //  AynaIOSApp.swift
@@ -9,7 +10,7 @@
 import os
 import SwiftUI
 #if canImport(WatchConnectivity)
-    import WatchConnectivity
+import WatchConnectivity
 #endif
 
 /// Activity type for Handoff from Apple Watch

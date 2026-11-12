@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 #if os(macOS)
 //
 //  MacSettingsView.swift
@@ -1017,8 +1018,7 @@ struct APISettingsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: Spacing.contentPadding) {
                         // API Endpoint Type Selection (not applicable for Apple Intelligence or Anthropic)
-                        if aiService.provider != .appleIntelligence, aiService.provider != .anthropic
-                        {
+                        if aiService.provider != .appleIntelligence, aiService.provider != .anthropic {
                             VStack(alignment: .leading, spacing: Spacing.md) {
                                 Text("API Endpoint")
                                     .font(Typography.headline)
@@ -1406,8 +1406,7 @@ struct APISettingsView: View {
                         }
 
                         // Status Section
-                        if aiService.provider != .appleIntelligence, aiService.provider != .anthropic
-                        {
+                        if aiService.provider != .appleIntelligence, aiService.provider != .anthropic {
                             VStack(alignment: .leading, spacing: Spacing.lg) {
                                 Text("Validation Status")
                                     .font(Typography.headline)

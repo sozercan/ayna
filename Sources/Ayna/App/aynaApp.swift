@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 #if os(macOS)
 //
 //  aynaApp.swift
@@ -395,7 +396,7 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func waitForReadyConversationManager() async -> ConversationManager? {
-        for _ in 0..<100 {
+        for _ in 0 ..< 100 {
             if let manager = Self.conversationManager {
                 await manager.loadingTask?.value
                 return manager

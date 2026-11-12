@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 #if os(macOS)
 //
 //  MacChatView+ImageGeneration.swift
@@ -390,7 +391,7 @@ extension MacChatView {
                   $0.id == responseGroupId
               }),
               let entryIndex = conversationManager.conversations[conversationIndex].responseGroups[groupIndex]
-              .responses.firstIndex(where: { $0.id == messageId })
+                  .responses.firstIndex(where: { $0.id == messageId })
         else {
             return
         }
@@ -493,9 +494,9 @@ extension MacChatView {
 
                     // Update response group status
                     if let convIndex = conversationManager.conversations.firstIndex(where: {
-                        $0.id == conversationId
-                    }),
-                        var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
+                           $0.id == conversationId
+                       }),
+                       var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
                     {
                         group.updateStatus(for: messageId, status: .completed)
                         conversationManager.conversations[convIndex].updateResponseGroup(group)
@@ -525,9 +526,9 @@ extension MacChatView {
 
                     // Update response group status to failed
                     if let convIndex = conversationManager.conversations.firstIndex(where: {
-                        $0.id == conversationId
-                    }),
-                        var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
+                           $0.id == conversationId
+                       }),
+                       var group = conversationManager.conversations[convIndex].getResponseGroup(responseGroupId)
                     {
                         group.updateStatus(for: messageId, status: .failed)
                         conversationManager.conversations[convIndex].updateResponseGroup(group)

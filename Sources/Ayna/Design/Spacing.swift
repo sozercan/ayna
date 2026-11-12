@@ -189,7 +189,6 @@ public enum Spacing {
 
         /// Thick border: 2pt
         public static let thick: CGFloat = 2
-
     }
 
     // MARK: - Shadow Specs

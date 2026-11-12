@@ -6,8 +6,8 @@
 //  Persisted via AppPreferences.
 //
 
-import Foundation
 import Combine
+import Foundation
 
 /// Settings for native agentic tools (macOS only)
 struct AgentSettings: Codable, Sendable {

@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 #if os(iOS)
 //
 //  IOSCitationSourcesView.swift
@@ -214,45 +215,45 @@ struct IOSInlineCitationBadgesView: View {
 // MARK: - Previews
 
 #if DEBUG
-    struct IOSCitationSourcesView_Previews: PreviewProvider {
-        static var sampleCitations: [CitationReference] = [
-            CitationReference(
-                number: 1,
-                title: "Apple Developer Documentation",
-                url: "https://developer.apple.com/documentation",
-                favicon: "https://www.apple.com/favicon.ico"
-            ),
-            CitationReference(
-                number: 2,
-                title: "Swift.org - The Swift Programming Language",
-                url: "https://swift.org",
-                favicon: "https://swift.org/favicon.ico"
-            ),
-            CitationReference(
-                number: 3,
-                title: "GitHub - SwiftUI Examples",
-                url: "https://github.com/swiftui-examples",
-                favicon: nil
-            )
-        ]
+struct IOSCitationSourcesView_Previews: PreviewProvider {
+    static var sampleCitations: [CitationReference] = [
+        CitationReference(
+            number: 1,
+            title: "Apple Developer Documentation",
+            url: "https://developer.apple.com/documentation",
+            favicon: "https://www.apple.com/favicon.ico"
+        ),
+        CitationReference(
+            number: 2,
+            title: "Swift.org - The Swift Programming Language",
+            url: "https://swift.org",
+            favicon: "https://swift.org/favicon.ico"
+        ),
+        CitationReference(
+            number: 3,
+            title: "GitHub - SwiftUI Examples",
+            url: "https://github.com/swiftui-examples",
+            favicon: nil
+        )
+    ]
 
-        static var previews: some View {
-            VStack(spacing: 20) {
-                // Individual badges
-                HStack {
-                    ForEach(sampleCitations, id: \.number) { citation in
-                        IOSCitationBadgeView(citation: citation)
-                    }
+    static var previews: some View {
+        VStack(spacing: 20) {
+            // Individual badges
+            HStack {
+                ForEach(sampleCitations, id: \.number) { citation in
+                    IOSCitationBadgeView(citation: citation)
                 }
-
-                // Inline badges row
-                IOSInlineCitationBadgesView(citations: sampleCitations)
-
-                // Full footer
-                IOSCitationSourcesFooter(citations: sampleCitations)
             }
-            .padding()
+
+            // Inline badges row
+            IOSInlineCitationBadgesView(citations: sampleCitations)
+
+            // Full footer
+            IOSCitationSourcesFooter(citations: sampleCitations)
         }
+        .padding()
     }
+}
 #endif
 #endif

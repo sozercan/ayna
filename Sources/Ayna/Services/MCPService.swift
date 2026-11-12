@@ -1,3 +1,4 @@
+// swiftformat:options --ifdef no-indent
 //
 //  MCPService.swift
 //  ayna
@@ -12,7 +13,7 @@ import Foundation
 import os
 
 #if compiler(>=6.0)
-    #warning("MCPService uses @unchecked Sendable - thread safety ensured manually via Task { @MainActor } and [weak self]")
+#warning("MCPService uses @unchecked Sendable - thread safety ensured manually via Task { @MainActor } and [weak self]")
 #endif
 
 protocol MCPServicing: AnyObject, Sendable {
@@ -102,7 +103,7 @@ private final class PendingMCPRequestStore: @unchecked Sendable {
                 timeoutTask: nil,
                 writeState: .queued
             )
-    }
+        }
 
         let timeoutSeconds = self.timeoutSeconds
         let timeoutTask = Task.detached { [weak self] in
@@ -110,7 +111,7 @@ private final class PendingMCPRequestStore: @unchecked Sendable {
                 try await Task.sleep(for: .seconds(timeoutSeconds))
             } catch {
                 return
-        }
+            }
 
             guard let action = self?.timeoutRequest(id: id) else { return }
             timeoutHandler(action)
@@ -530,9 +531,9 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             NSHomeDirectory() + "/.nvm/versions/node/*/bin"
         ]
         environment["PATH"] = (commonPaths + [environment["PATH"] ?? ""]).joined(separator: ":")
-            for (key, value) in serverConfig.env {
-                environment[key] = value
-            }
+        for (key, value) in serverConfig.env {
+            environment[key] = value
+        }
         process.environment = environment
         process.standardInput = inputPipe
         process.standardOutput = outputPipe
@@ -564,27 +565,27 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 self.processDidExit(lifecycle, exitCode: exitCode)
             } else {
                 _ = lifecycle.finalize()
-        }
+            }
         }
 
         let serverName = serverConfig.name
         outputPipe.fileHandleForReading.readabilityHandler = { @Sendable [weak self] handle in
-                let data = handle.availableData
+            let data = handle.availableData
             guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
             self?.handleOutput(output, transportID: lifecycle.id)
         }
 
         errorPipe.fileHandleForReading.readabilityHandler = { @Sendable [weak self] handle in
-                let data = handle.availableData
+            let data = handle.availableData
             guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return }
 
-                    DiagnosticsLogger.log(
-                        .mcpService,
-                        level: .info,
-                        message: "MCP server stderr",
-                        metadata: ["server": serverName, "output": output]
-                    )
-                    if output.lowercased().contains("error") || output.lowercased().contains("failed") {
+            DiagnosticsLogger.log(
+                .mcpService,
+                level: .info,
+                message: "MCP server stderr",
+                metadata: ["server": serverName, "output": output]
+            )
+            if output.lowercased().contains("error") || output.lowercased().contains("failed") {
                 Task { @MainActor [weak self] in
                     guard let self, self.isActiveTransport(lifecycle.id) else { return }
                     self.lastError = output
@@ -624,7 +625,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
 
     func disconnect() {
         _ = disconnect(transportID: nil)
-        }
+    }
 
     @discardableResult
     private func disconnect(transportID: UUID?) -> Bool {
@@ -633,7 +634,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                   transportID == nil || current.id == transportID
             else {
                 return nil
-        }
+            }
 
             current.markManualDisconnect()
             current.lease.invalidate()
@@ -783,15 +784,15 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             requestId += 1
             return requestId
         }
-            let request = MCPRequest(id: id, method: method, params: params)
+        let request = MCPRequest(id: id, method: method, params: params)
         let requestData: Data
-            do {
+        do {
             var data = try JSONEncoder().encode(request)
             data.append(0x0A)
             requestData = data
         } catch {
             throw MCPServiceError.encodingFailed
-                }
+        }
 
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -823,10 +824,10 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                         beforeWrite: beforeWrite,
                         completionHandler: { [weak self] action in
                             self?.handleRequestCompletion(action)
-                }
+                        }
                     )
+                }
             }
-        }
         } onCancel: {
             cancelRequest(id: id)
         }
@@ -916,7 +917,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             ],
             lifecycle: lifecycle
         )
-        }
+    }
 
     private func sendNotification(
         method: String,
@@ -1230,21 +1231,21 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         let task = Task { [weak self, lifecycle] in
             do {
                 try await Task.sleep(for: .seconds(5))
-            while !Task.isCancelled {
+                while !Task.isCancelled {
                     guard let self, self.isActiveTransport(lifecycle.id) else { return }
                     if !lifecycle.process.isRunning {
                         let exitCode = lifecycle.process.processIdentifier > 0
                             ? lifecycle.process.terminationStatus
                             : nil
                         self.processDidExit(lifecycle, exitCode: exitCode)
-                    return
-                }
+                        return
+                    }
                     try await Task.sleep(for: .seconds(5))
-            }
+                }
             } catch {
                 // Cancellation is the expected shutdown path.
+            }
         }
-    }
 
         withLock {
             healthCheckTask?.task.cancel()
@@ -1265,7 +1266,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                 healthCheckTask = nil
             }
             return true
-    }
+        }
         pendingRequests.failAll(for: lifecycle.id, error: MCPServiceError.notConnected)
         guard wasActive else { return }
 
@@ -1298,7 +1299,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         terminateProcess(lifecycle, gracePeriod: gracePeriod) { _ in
             _ = lifecycle.finalize()
         }
-        }
+    }
 
     private static func terminateProcess(
         _ lifecycle: MCPProcessLifecycle,

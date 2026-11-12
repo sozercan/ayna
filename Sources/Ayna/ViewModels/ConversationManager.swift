@@ -9,12 +9,12 @@
 // swiftlint:disable file_length
 
 import Combine
-#if !os(watchOS)
-    import CoreSpotlight
-#endif
 import Foundation
 import OSLog
 import SwiftUI
+#if !os(watchOS)
+    import CoreSpotlight
+#endif
 #if !os(watchOS)
     import UniformTypeIdentifiers
 #endif
@@ -457,14 +457,13 @@ final class ConversationManager: ObservableObject {
         if registersSynchronously {
             let effectiveAllowsRecreation = persistenceRecreationAuthorizationIds.contains(conversation.id)
             let requiresImmediateSave = persistenceImmediateSaveIds.contains(conversation.id)
-            let registeredReceipt: PersistenceReceipt<ConversationSaveResult>?
-            if requiresImmediateSave {
-                registeredReceipt = persistenceCoordinator.registerImmediateSave(
+            let registeredReceipt: PersistenceReceipt<ConversationSaveResult>? = if requiresImmediateSave {
+                persistenceCoordinator.registerImmediateSave(
                     conversation,
                     allowsRecreation: effectiveAllowsRecreation
                 )
             } else {
-                registeredReceipt = persistenceCoordinator.enqueueSave(
+                persistenceCoordinator.enqueueSave(
                     conversation,
                     allowsRecreation: effectiveAllowsRecreation
                 )
@@ -1861,8 +1860,8 @@ final class ConversationManager: ObservableObject {
         }.map(\.id))
     }
 
+    /// Clearing coordinates storage, attachments, summaries, and Spotlight rollback.
     @discardableResult
-    // Clearing coordinates storage, attachments, summaries, and Spotlight rollback.
     func clearAllConversations() -> Task<Void, Never> { // swiftlint:disable:this function_body_length
         persistenceErrorMessage = nil
         let previousClearTask = clearConversationsTask
@@ -3249,7 +3248,7 @@ final class ConversationManager: ObservableObject {
                 indexingDebounceTasks.removeValue(forKey: conversationId)
                 guard spotlightIndexGeneration == generation,
                       let latestConversation = getConversationIndex(for: conversationId)
-                      .map({ conversations[$0] })
+                          .map({ conversations[$0] })
                 else {
                     return
                 }
