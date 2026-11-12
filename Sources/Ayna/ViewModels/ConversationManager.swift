@@ -152,6 +152,9 @@ final class ConversationManager: ObservableObject {
     private let spotlightCleanupOperation: @Sendable () async throws -> Void
     private let spotlightBatchIndexOperation: @Sendable ([Conversation], Bool) async throws -> Void
     private let spotlightDeleteOperation: @Sendable (UUID) async throws -> Void
+    private let attachmentDeleteOperation: @MainActor @Sendable ([String]) -> Void
+    // Attachment paths recorded in metadata, for conversations whose messages are not loaded.
+    private var metadataAttachmentPathsById: [UUID: [String]] = [:]
     private let spotlightIndexingEnabled: Bool
     // Performance: Spotlight indexing debounce (3 seconds per conversation)
     private var indexingDebounceTasks: [UUID: Task<Void, Never>] = [:]
@@ -240,6 +243,7 @@ final class ConversationManager: ObservableObject {
         spotlightCleanupOperation: (@Sendable () async throws -> Void)? = nil,
         spotlightBatchIndexOperation: (@Sendable ([Conversation], Bool) async throws -> Void)? = nil,
         spotlightDeleteOperation: (@Sendable (UUID) async throws -> Void)? = nil,
+        attachmentDeleteOperation: (@MainActor @Sendable ([String]) -> Void)? = nil,
         saveOperation: (@Sendable (Conversation) async throws -> Void)? = nil,
         deleteOperation: (@Sendable (UUID) async throws -> Void)? = nil,
         clearOperation: (@Sendable () throws -> Void)? = nil,
@@ -408,6 +412,7 @@ final class ConversationManager: ObservableObject {
             self.spotlightBatchIndexOperation = spotlightBatchIndexOperation ?? { _, _ in }
             self.spotlightDeleteOperation = spotlightDeleteOperation ?? { _ in }
         #endif
+        self.attachmentDeleteOperation = Self.resolvedAttachmentDeleteOperation(attachmentDeleteOperation)
         persistenceCoordinator = ConversationPersistenceCoordinator(
             store: effectiveStore,
             debounceDuration: saveDebounceDuration,
@@ -417,6 +422,10 @@ final class ConversationManager: ObservableObject {
         )
         persistenceCoordinator.observeDurableSnapshotChanges { [weak self] in
             self?.durableConversationRevision &+= 1
+        }
+        // Summaries follow what is on disk, so every durable save refreshes one.
+        persistenceCoordinator.observeDurableSaves { [weak self] conversation in
+            self?.conversationDidPersist(conversation)
         }
         if startsLoadingImmediately {
             loadingTask = Task {
@@ -746,6 +755,8 @@ final class ConversationManager: ObservableObject {
         }
         metadataOnlyConversationIds.remove(conversation.id)
         metadataSearchTextById.removeValue(forKey: conversation.id)
+        // A conversation new to the manager was saved before this insert, so the durable-save
+        // observer skipped it; refresh its summary now that it is in the list.
         conversationSummaryUpdateOperation(conversation)
         #if !os(watchOS)
             indexConversation(conversation)
@@ -850,9 +861,11 @@ final class ConversationManager: ObservableObject {
         let deletionReconciliationVersion = nextReconciliationVersion()
         latestManagerDeletionVersionById[conversationID] = deletionReconciliationVersion
         if let index = getConversationIndex(for: conversationID) {
+            attachmentDeleteOperation(ownedAttachmentPaths(of: conversations[index]))
             conversations.remove(at: index)
             updateCacheForRemoval(id: conversationID, at: index)
         }
+        metadataAttachmentPathsById.removeValue(forKey: conversationID)
         metadataOnlyConversationIds.remove(conversationID)
         metadataSearchTextById.removeValue(forKey: conversationID)
         durableDiskBaseline.removeValue(forKey: conversationID)
@@ -866,6 +879,37 @@ final class ConversationManager: ObservableObject {
                 deletionReconciliationVersion: deletionReconciliationVersion
             )
         #endif
+    }
+
+    private static func resolvedAttachmentDeleteOperation(
+        _ injected: (@MainActor @Sendable ([String]) -> Void)?
+    ) -> @MainActor @Sendable ([String]) -> Void {
+        if let injected {
+            return injected
+        }
+        if RuntimeEnvironment.isRunningUnitTests {
+            return { _ in }
+        }
+        return { paths in
+            for path in paths {
+                AttachmentStorage.shared.delete(path: path)
+            }
+        }
+    }
+
+    /// A save that lands after its conversation was deleted or cleared must not restore the
+    /// conversation's summary.
+    private func conversationDidPersist(_ conversation: Conversation) {
+        guard getConversationIndex(for: conversation.id) != nil else { return }
+        conversationSummaryUpdateOperation(conversation)
+    }
+
+    /// Files a conversation owns: from its messages, or from metadata when they aren't loaded.
+    private func ownedAttachmentPaths(of conversation: Conversation) -> [String] {
+        if metadataOnlyConversationIds.contains(conversation.id) || conversation.metadataPreview != nil {
+            return metadataAttachmentPathsById[conversation.id] ?? conversation.attachmentPaths
+        }
+        return conversation.attachmentPaths
     }
 
     func settlePersistence(for conversationID: UUID) async -> ConversationDurabilityResult {
@@ -1226,6 +1270,10 @@ final class ConversationManager: ObservableObject {
             metadataSearchTextById = metadataFromDisk.reduce(into: [:]) { searchTextById, metadata in
                 guard nextMetadataOnlyIds.contains(metadata.id) else { return }
                 searchTextById[metadata.id] = metadata.searchableText
+            }
+            metadataAttachmentPathsById = metadataFromDisk.reduce(into: [:]) { pathsById, metadata in
+                guard let paths = metadata.attachmentPaths, !paths.isEmpty else { return }
+                pathsById[metadata.id] = paths
             }
 
             // If selected conversation no longer exists, clear selection
@@ -1613,6 +1661,22 @@ final class ConversationManager: ObservableObject {
 
     func isMetadataOnlyConversation(_ conversationId: UUID) -> Bool {
         metadataOnlyConversationIds.contains(conversationId)
+    }
+
+    /// The most recent conversations with their full message history, for summary backfill.
+    func recentConversationsWithHistory(limit: Int) async -> [Conversation] {
+        _ = await loadingTask?.value
+        let recentIds = conversations
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .prefix(limit)
+            .map(\.id)
+        var result: [Conversation] = []
+        for id in recentIds {
+            if let conversation = await ensureConversationLoaded(id), !conversation.messages.isEmpty {
+                result.append(conversation)
+            }
+        }
+        return result
     }
 
     /// Loads a metadata-backed conversation's full message history if needed.
@@ -2444,6 +2508,7 @@ final class ConversationManager: ObservableObject {
         let wasSelected = selectedConversationId == id
         let wasMetadataOnly = metadataOnlyConversationIds.contains(id)
         let rollbackSearchText = metadataSearchTextById[id]
+        let attachmentPaths = ownedAttachmentPaths(of: current)
         let rollbackSnapshot = resolvingInterruptedImageGeneration(in: current)
         let deletionReconciliationVersion = nextReconciliationVersion()
         latestManagerDeletionVersionById[id] = deletionReconciliationVersion
@@ -2473,6 +2538,8 @@ final class ConversationManager: ObservableObject {
             case .deleted:
                 self.finishDestructivePersistenceOperation()
                 self.durableDiskBaseline.removeValue(forKey: id)
+                self.metadataAttachmentPathsById.removeValue(forKey: id)
+                self.attachmentDeleteOperation(attachmentPaths)
                 #if !os(watchOS)
                     self.deindexConversation(
                         id: id,

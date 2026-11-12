@@ -43,6 +43,11 @@ struct AynaIOSApp: App {
             ConversationManager()
         }
         _conversationManager = StateObject(wrappedValue: manager)
+        if !UITestEnvironment.isEnabled {
+            Task { @MainActor in
+                MemoryContextProvider.shared.attachConversationSource(manager)
+            }
+        }
     }
 
     var body: some Scene {

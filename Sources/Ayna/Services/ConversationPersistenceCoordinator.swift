@@ -278,6 +278,7 @@ final class ConversationPersistenceCoordinator {
     private let store: any ConversationStoreAdapter
     private let debounceDuration: Duration
     private var durableSnapshotObserver: (@MainActor @Sendable () -> Void)?
+    private var durableSaveObserver: (@MainActor @Sendable (Conversation) -> Void)?
 
     private var snapshot: [UUID: Conversation] = [:]
     private var storageSnapshot: [UUID: Conversation] = [:]
@@ -337,6 +338,13 @@ final class ConversationPersistenceCoordinator {
         _ observer: @escaping @MainActor @Sendable () -> Void
     ) {
         durableSnapshotObserver = observer
+    }
+
+    /// Called with each conversation once it is written to disk.
+    func observeDurableSaves(
+        _ observer: @escaping @MainActor @Sendable (Conversation) -> Void
+    ) {
+        durableSaveObserver = observer
     }
 
     func durableConversations() -> [Conversation] {
@@ -647,6 +655,7 @@ final class ConversationPersistenceCoordinator {
                 guard let self else { return .superseded }
                 self.storageSnapshot[id] = conversation
                 self.recordDurableSnapshotChange()
+                self.durableSaveObserver?(conversation)
                 return self.finishProposedSave(conversation, token: token, error: nil)
             } catch {
                 guard let self else { return .superseded }
@@ -1109,6 +1118,7 @@ final class ConversationPersistenceCoordinator {
                 guard let self else { return .superseded }
                 self.storageSnapshot[id] = conversation
                 self.recordDurableSnapshotChange()
+                self.durableSaveObserver?(conversation)
                 return self.finishSave(id: id, token: token, error: nil)
             } catch {
                 guard let self else { return .superseded }

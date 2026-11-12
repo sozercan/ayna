@@ -81,6 +81,8 @@ final class ConversationSummaryService {
         Set<UUID>?
     ) async throws -> RecentConversationsDigest
     private let survivingConversationIdsLoader: @Sendable () async throws -> Set<UUID>
+    /// IDs of stored conversations, used at load to drop summaries of deleted ones.
+    private let existingConversationIdsLoader: (@Sendable () async throws -> Set<UUID>)?
     private let persistenceQueue = OrderedAsyncOperationQueue()
     private var storageGeneration: UInt64 = 0
     private var conversationClearGeneration: UInt64 = 0
@@ -89,10 +91,16 @@ final class ConversationSummaryService {
     @ObservationIgnored private nonisolated(unsafe) var saveTask: Task<Void, Never>?
     private let saveDebounceDuration: Duration = .seconds(2)
 
-    /// Conversations pending summarization (debounced)
-    private var pendingSummarization: Set<UUID> = []
-    @ObservationIgnored private nonisolated(unsafe) var summarizationTask: Task<Void, Never>?
-    private let summarizationDebounce: Duration = .seconds(300) // 5 minutes
+    /// Changes made before the stored digest loaded. They are replayed onto it once it does,
+    /// instead of replacing it, which used to drop every stored summary.
+    private enum PendingChange {
+        case upsert(ConversationSummary)
+        case remove(UUID)
+    }
+
+    private var changesBeforeLoad: [PendingChange] = []
+    /// The load in progress, so concurrent callers share one load instead of racing.
+    @ObservationIgnored private var inFlightLoad: Task<Void, Never>?
 
     /// Token budget for summaries context (approximate)
     static let defaultTokenBudget = 500
@@ -106,7 +114,8 @@ final class ConversationSummaryService {
             RecentConversationsDigest,
             String
         ) async throws -> RecentConversationsDigest)? = nil,
-        survivingConversationIdsLoader: (@Sendable () async throws -> Set<UUID>)? = nil
+        survivingConversationIdsLoader: (@Sendable () async throws -> Set<UUID>)? = nil,
+        existingConversationIdsLoader: (@Sendable () async throws -> Set<UUID>)? = nil
     ) {
         self.store = store
         let resolvedLoader = summaryLoader ?? { try await store.loadSummaries() }
@@ -139,17 +148,36 @@ final class ConversationSummaryService {
         self.survivingConversationIdsLoader = survivingConversationIdsLoader ?? {
             try await Set(EncryptedConversationStore.shared.loadConversationMetadata().map(\.id))
         }
+        if let existingConversationIdsLoader {
+            self.existingConversationIdsLoader = existingConversationIdsLoader
+        } else if RuntimeEnvironment.isRunningUnitTests {
+            self.existingConversationIdsLoader = nil
+        } else {
+            self.existingConversationIdsLoader = {
+                try await Set(EncryptedConversationStore.shared.loadConversationMetadata().map(\.id))
+            }
+        }
     }
 
     deinit {
         saveTask?.cancel()
-        summarizationTask?.cancel()
     }
 
     // MARK: - Loading
 
-    /// Loads summaries from encrypted storage.
+    /// Loads summaries from encrypted storage. Concurrent calls share one load.
     func loadSummaries() async {
+        if let inFlightLoad {
+            await inFlightLoad.value
+            return
+        }
+        let load = Task { await self.performLoad() }
+        inFlightLoad = load
+        await load.value
+        inFlightLoad = nil
+    }
+
+    private func performLoad() async {
         guard !isConversationClearInProgress else {
             isLoaded = true
             return
@@ -172,11 +200,27 @@ final class ConversationSummaryService {
         }
         let generation = storageGeneration
         do {
-            let loadedDigest = try await summaryLoader()
+            var loadedDigest = try await summaryLoader()
+            // Summaries of conversations deleted while memory was off (or elsewhere) are dropped.
+            let survivingIds = try? await existingConversationIdsLoader?()
             guard storageGeneration == generation, !isConversationClearInProgress else { return }
+            let storedCount = loadedDigest.summaries.count
+            if let survivingIds {
+                for summary in loadedDigest.summaries where !survivingIds.contains(summary.id) {
+                    loadedDigest.removeSummary(for: summary.id)
+                }
+            }
+            let changes = changesBeforeLoad
+            changesBeforeLoad.removeAll()
+            for change in changes {
+                Self.apply(change, to: &loadedDigest)
+            }
             digest = loadedDigest
             storedDigestWasDeferredForPendingCleanup = false
             isLoaded = true
+            if !changes.isEmpty || loadedDigest.summaries.count != storedCount {
+                scheduleSave()
+            }
 
             DiagnosticsLogger.log(
                 .conversationManager,
@@ -186,14 +230,14 @@ final class ConversationSummaryService {
             )
         } catch {
             guard storageGeneration == generation, !isConversationClearInProgress else { return }
+            // Stay unloaded and keep the queued changes: declaring an empty digest loaded would
+            // let the next save erase the stored summaries. A later load replays the queue.
             DiagnosticsLogger.log(
                 .conversationManager,
                 level: .error,
                 message: "❌ Failed to load conversation summaries",
                 metadata: ["error": error.localizedDescription]
             )
-            digest = RecentConversationsDigest()
-            isLoaded = true
         }
     }
 
@@ -209,9 +253,7 @@ final class ConversationSummaryService {
         )
         saveTask?.cancel()
         saveTask = nil
-        summarizationTask?.cancel()
-        summarizationTask = nil
-        pendingSummarization.removeAll()
+        changesBeforeLoad.removeAll()
         digest = RecentConversationsDigest()
         isLoaded = true
         return snapshot
@@ -314,60 +356,45 @@ final class ConversationSummaryService {
 
     /// Updates the digest with a new summary.
     func updateSummary(for conversation: Conversation) {
-        storageGeneration &+= 1
-        let summary = generateSummary(for: conversation)
-        digest.upsertSummary(summary)
-        scheduleSave()
+        // A conversation with no user message yet has nothing worth recalling.
+        guard conversation.messages.contains(where: { $0.role == .user }) else { return }
+        record(.upsert(generateSummary(for: conversation)))
     }
 
     /// Removes a summary when a conversation is deleted.
     func removeSummary(for conversationId: UUID) {
+        record(.remove(conversationId))
+    }
+
+    /// Applies a change now; saves it, or replays it onto the stored digest once that loads.
+    private func record(_ change: PendingChange) {
+        Self.apply(change, to: &digest)
+        guard isLoaded else {
+            changesBeforeLoad.append(change)
+            return
+        }
         storageGeneration &+= 1
-        digest.removeSummary(for: conversationId)
         scheduleSave()
     }
 
-    /// Marks a conversation as needing summarization (debounced).
-    func markNeedsSummary(_ conversationId: UUID) {
-        pendingSummarization.insert(conversationId)
-        scheduleSummarization()
-    }
-
-    /// Processes pending summarizations.
-    private func scheduleSummarization() {
-        summarizationTask?.cancel()
-        summarizationTask = Task { [weak self] in
-            do {
-                try await Task.sleep(for: self?.summarizationDebounce ?? .seconds(300))
-            } catch {
-                return // Cancelled
-            }
-
-            await self?.processPendingSummarizations()
+    private static func apply(_ change: PendingChange, to digest: inout RecentConversationsDigest) {
+        switch change {
+        case let .upsert(summary): digest.upsertSummary(summary)
+        case let .remove(id): digest.removeSummary(for: id)
         }
-    }
-
-    private func processPendingSummarizations() async {
-        // This would need access to ConversationManager
-        // For now, summaries are generated on-demand when conversations change
-        pendingSummarization.removeAll()
     }
 
     // MARK: - Backfill
 
     /// Backfills summaries for existing conversations when memory is first enabled.
     func backfillSummaries(from conversations: [Conversation], limit: Int = 10) {
-        storageGeneration &+= 1
         let recent = conversations
             .sorted { $0.updatedAt > $1.updatedAt }
             .prefix(limit)
 
         for conversation in recent {
-            let summary = generateSummary(for: conversation)
-            digest.upsertSummary(summary)
+            record(.upsert(generateSummary(for: conversation)))
         }
-
-        scheduleSave()
 
         DiagnosticsLogger.log(
             .conversationManager,
@@ -467,8 +494,13 @@ final class ConversationSummaryService {
         await activeSaveTask?.value
     }
 
-    /// Forces an immediate save.
+    /// Forces an immediate save, once the stored digest has loaded; saving before that would
+    /// overwrite the stored summaries with only the changes queued so far.
     func saveImmediately() async {
+        if let inFlightLoad {
+            await inFlightLoad.value
+        }
+        guard isLoaded else { return }
         await cancelPendingSave()
         await saveNow()
     }
@@ -497,10 +529,7 @@ final class ConversationSummaryService {
         saveTask = nil
         activeSaveTask?.cancel()
 
-        let activeSummarizationTask = summarizationTask
-        summarizationTask = nil
-        activeSummarizationTask?.cancel()
-        pendingSummarization.removeAll()
+        changesBeforeLoad.removeAll()
 
         if !preservingCurrentDigest {
             digest = RecentConversationsDigest()
@@ -509,7 +538,6 @@ final class ConversationSummaryService {
 
         if let cleanupToken {
             await activeSaveTask?.value
-            await activeSummarizationTask?.value
 
             let digestAtCleanup = preservingCurrentDigest
                 ? digest
@@ -584,7 +612,6 @@ final class ConversationSummaryService {
         }
 
         await activeSaveTask?.value
-        await activeSummarizationTask?.value
         await clearTask.value
 
         if let error = errorBox.error {

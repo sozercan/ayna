@@ -17,9 +17,21 @@ final class MemoryContextProvider {
     private let memoryService: UserMemoryService
     private let metadataService: SessionMetadataService
     private let summaryService: ConversationSummaryService
+    private let factExtractor: MemoryFactExtractor
 
     /// Task for loading memory data (tracked to avoid fire-and-forget)
     @ObservationIgnored private nonisolated(unsafe) var loadTask: Task<Void, Never>?
+
+    /// Source of full conversations for summary backfill; attached by the app.
+    @ObservationIgnored private weak var conversationSource: ConversationManager?
+
+    /// Summaries kept for recent conversations (the backfill target).
+    static let backfillLimit = 10
+
+    /// Advances on "Clear All Memory", so backfill that started before it applies nothing.
+    private var memoryClearGeneration: UInt64 = 0
+    /// Clears in progress; while any runs, saves neither update summaries nor schedule extraction.
+    private var activeMemoryClears = 0
 
     /// Whether memory features are enabled globally
     private(set) var isMemoryEnabled: Bool = false {
@@ -30,6 +42,7 @@ final class MemoryContextProvider {
             } else {
                 loadTask?.cancel()
                 loadTask = nil
+                factExtractor.cancelAll()
             }
         }
     }
@@ -56,16 +69,21 @@ final class MemoryContextProvider {
     /// Sets whether auto extraction is enabled
     func setAutoExtractionEnabled(_ enabled: Bool) {
         isAutoExtractionEnabled = enabled
+        if !enabled {
+            factExtractor.cancelAll()
+        }
     }
 
     init(
         memoryService: UserMemoryService = .shared,
         metadataService: SessionMetadataService = .shared,
-        summaryService: ConversationSummaryService = .shared
+        summaryService: ConversationSummaryService = .shared,
+        factExtractor: MemoryFactExtractor = .shared
     ) {
         self.memoryService = memoryService
         self.metadataService = metadataService
         self.summaryService = summaryService
+        self.factExtractor = factExtractor
 
         // Register defaults
         AppPreferences.storage.register(defaults: [
@@ -113,6 +131,32 @@ final class MemoryContextProvider {
 
         await memoryLoad
         await summaryLoad
+        await backfillSummariesIfNeeded()
+    }
+
+    /// Lets summary backfill read recent conversations, then backfills if memory is ready.
+    func attachConversationSource(_ manager: ConversationManager) {
+        conversationSource = manager
+        Task { await self.backfillSummariesIfNeeded() }
+    }
+
+    /// Summarizes recent conversations that have no summary yet, e.g. right after memory is
+    /// turned on or for conversations from before summaries were saved reliably.
+    func backfillSummariesIfNeeded() async {
+        guard isMemoryEnabled, summaryService.isLoaded,
+              summaryService.summaryCount < Self.backfillLimit,
+              let conversationSource
+        else {
+            return
+        }
+        let generation = memoryClearGeneration
+        let loaded = await conversationSource.recentConversationsWithHistory(limit: Self.backfillLimit)
+        guard memoryClearGeneration == generation else { return }
+        // Conversations deleted (or cleared) while their history loaded must not regain summaries.
+        let currentIds = Set(conversationSource.conversations.map(\.id))
+        let recent = loaded.filter { currentIds.contains($0.id) }
+        guard isMemoryEnabled, !recent.isEmpty else { return }
+        summaryService.backfillSummaries(from: recent, limit: Self.backfillLimit)
     }
 
     /// Saves all memory data immediately.
@@ -201,20 +245,37 @@ final class MemoryContextProvider {
         return memoryService.processCommand(command)
     }
 
-    /// Updates conversation summary when a conversation changes.
+    /// Updates conversation summary when a conversation changes, and schedules automatic fact
+    /// extraction for it when that is turned on.
     func updateConversationSummary(_ conversation: Conversation) {
-        guard isMemoryEnabled else { return }
+        guard isMemoryEnabled, activeMemoryClears == 0 else { return }
         summaryService.updateSummary(for: conversation)
+        if isAutoExtractionEnabled {
+            factExtractor.conversationDidSave(conversation)
+        }
     }
 
-    /// Removes summary when a conversation is deleted.
+    /// Removes summary when a conversation is deleted, and drops any pending fact extraction
+    /// for it so deleted messages are never sent or stored.
     func removeConversationSummary(for conversationId: UUID) {
+        factExtractor.cancel(conversationId: conversationId)
         guard isMemoryEnabled else { return }
         summaryService.removeSummary(for: conversationId)
     }
 
+    /// Clears stored facts and summaries, after stopping any extraction that could refill them.
+    func clearAllMemory() async throws {
+        memoryClearGeneration &+= 1
+        activeMemoryClears += 1
+        defer { activeMemoryClears -= 1 }
+        factExtractor.cancelAll()
+        await memoryService.clearAllFacts()
+        try await summaryService.clearAllSummaries()
+    }
+
     func invalidateConversationSummariesForClear() -> ConversationSummaryClearSnapshot {
-        summaryService.invalidateForConversationClear()
+        factExtractor.cancelAll()
+        return summaryService.invalidateForConversationClear()
     }
 
     func restoreConversationSummariesAfterFailedClear(_ snapshot: ConversationSummaryClearSnapshot) async throws {
@@ -227,12 +288,6 @@ final class MemoryContextProvider {
             completingConversationClear: true,
             cleanupToken: cleanupToken
         )
-    }
-
-    /// Backfills summaries for existing conversations.
-    func backfillSummaries(from conversations: [Conversation]) {
-        guard isMemoryEnabled else { return }
-        summaryService.backfillSummaries(from: conversations)
     }
 
     // MARK: - Accessors

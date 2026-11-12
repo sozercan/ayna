@@ -224,11 +224,11 @@
                     set: { memoryProvider.setAutoExtractionEnabled($0) }
                 ))
                 .disabled(!memoryProvider.isMemoryEnabled)
-                .help("Automatically detect and store facts from conversations (opt-in)")
+                .help("After a conversation goes quiet, save lasting facts about you from what you wrote")
             } header: {
                 Text("Privacy")
             } footer: {
-                Text("Session metadata includes device type, timezone, and app version. No personal data is collected.")
+                Text("Session metadata includes device type, timezone, and app version. Automatic fact extraction uses Apple Intelligence on this device when available, otherwise the conversation's model; extracted facts are marked as inferred and can be edited or deleted.")
             }
         }
 
@@ -291,9 +291,8 @@
 
         private func clearAllMemory() {
             Task {
-                await memoryService.clearAllFacts()
                 do {
-                    try await summaryService.clearAllSummaries()
+                    try await memoryProvider.clearAllMemory()
                 } catch {
                     clearErrorMessage = "Stored facts were cleared, but conversation summaries could not be deleted. \(error.localizedDescription)"
                 }

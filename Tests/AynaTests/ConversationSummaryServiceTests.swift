@@ -179,6 +179,7 @@ struct ConversationSummaryServiceTests {
         let persistenceProbe = SummaryPersistenceProbe()
         let service = ConversationSummaryService(
             store: store,
+            summaryLoader: { RecentConversationsDigest() },
             summarySaveOperation: { digest in
                 await saveGate.wait()
                 persistenceProbe.save(digest)
@@ -187,6 +188,8 @@ struct ConversationSummaryServiceTests {
                 persistenceProbe.clear()
             }
         )
+        // Immediate saves wait for the stored digest, so load it first.
+        await service.loadSummaries()
         service.updateSummary(for: TestHelpers.sampleConversation(title: "Must Stay Cleared"))
 
         let saveTask = Task { @MainActor in
