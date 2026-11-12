@@ -2280,6 +2280,9 @@ class AIService: ObservableObject {
         )
     }
 
+    /// UI-test messages starting with this get a long streamed reply.
+    static let uiTestLongStreamPrefix = "[long-stream]"
+
     // swiftlint:disable:next function_parameter_count
     private func simulateUITestResponse(
         messages: [Message],
@@ -2326,6 +2329,20 @@ class AIService: ObservableObject {
         }
 
         let response = "UI Test Response: \(userContent)"
+
+        // A long, slow stream for checking scrolling behavior while a reply grows.
+        if stream, userContent.hasPrefix(Self.uiTestLongStreamPrefix) {
+            let task = Task { @MainActor in
+                for line in 1 ... 150 {
+                    try? await Task.sleep(for: .milliseconds(80))
+                    guard !Task.isCancelled else { return }
+                    callbacks.onChunk("Line \(line) of a long streamed reply.\n\n")
+                }
+                callbacks.onComplete()
+            }
+            requestHandle.install(task)
+            return
+        }
 
         if stream {
             let task = Task { @MainActor in

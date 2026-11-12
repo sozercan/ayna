@@ -85,15 +85,6 @@ public enum Spacing {
         #endif
     }
 
-    /// Spacing between sections
-    public static var sectionSpacing: CGFloat {
-        #if os(watchOS)
-            16
-        #else
-            24
-        #endif
-    }
-
     /// Minimum touch target size (accessibility)
     public static var minTouchTarget: CGFloat {
         #if os(watchOS)
@@ -164,27 +155,6 @@ public enum Spacing {
             #endif
         }
 
-        /// Toolbar button size
-        public static let toolbarButton: CGFloat = 28
-
-        /// Composer minimum height
-        public static var composerMinHeight: CGFloat {
-            #if os(watchOS)
-                28
-            #else
-                44
-            #endif
-        }
-
-        /// Composer maximum height
-        public static var composerMaxHeight: CGFloat {
-            #if os(watchOS)
-                80
-            #else
-                220
-            #endif
-        }
-
         /// Sidebar width (macOS)
         public static let sidebarMinWidth: CGFloat = 260
         public static let sidebarIdealWidth: CGFloat = 280
@@ -220,8 +190,6 @@ public enum Spacing {
         /// Thick border: 2pt
         public static let thick: CGFloat = 2
 
-        /// Focus ring: 3pt
-        public static let focusRing: CGFloat = 3
     }
 
     // MARK: - Shadow Specs
@@ -232,9 +200,6 @@ public enum Spacing {
 
         /// Standard shadow radius
         public static let radiusStandard: CGFloat = 8
-
-        /// Elevated shadow radius
-        public static let radiusElevated: CGFloat = 16
 
         /// Standard shadow Y offset
         public static let offsetY: CGFloat = 2

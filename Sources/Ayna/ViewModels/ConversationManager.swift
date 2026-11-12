@@ -108,6 +108,8 @@ final class ConversationManager: ObservableObject {
     // coordinator only knows this session's saves, so Watch publication fills in the rest
     // from here. `isMetadataOnly` entries carry no message history.
     private var durableDiskBaseline: [UUID: (conversation: Conversation, isMetadataOnly: Bool)] = [:]
+    /// Conversations with a reply in progress, which a refresh must not replace.
+    private var generatingConversationIds: Set<UUID> = []
     private var fullConversationLoadTasks: [UUID: Task<Conversation?, Never>] = [:]
     private var fullConversationLoadTaskVersions: [UUID: UInt64] = [:]
     private var nextFullConversationLoadTaskVersion: UInt64 = 0
@@ -756,7 +758,8 @@ final class ConversationManager: ObservableObject {
         metadataOnlyConversationIds.remove(conversation.id)
         metadataSearchTextById.removeValue(forKey: conversation.id)
         // A conversation new to the manager was saved before this insert, so the durable-save
-        // observer skipped it; refresh its summary now that it is in the list.
+        // observer skipped it; record what is on disk and refresh its summary now.
+        durableDiskBaseline[conversation.id] = (conversation, false)
         conversationSummaryUpdateOperation(conversation)
         #if !os(watchOS)
             indexConversation(conversation)
@@ -901,6 +904,8 @@ final class ConversationManager: ObservableObject {
     /// conversation's summary.
     private func conversationDidPersist(_ conversation: Conversation) {
         guard getConversationIndex(for: conversation.id) != nil else { return }
+        // What is on disk now, so a reload can tell saved changes from unsaved ones.
+        durableDiskBaseline[conversation.id] = (conversation, metadataOnlyConversationIds.contains(conversation.id))
         conversationSummaryUpdateOperation(conversation)
     }
 
@@ -1113,7 +1118,8 @@ final class ConversationManager: ObservableObject {
     // Loading reconciles legacy, metadata-only, and durable snapshots in one transaction.
     // swiftlint:disable:next function_body_length
     private func loadConversations(
-        allowingActiveClearGeneration allowedClearGeneration: UInt64? = nil
+        allowingActiveClearGeneration allowedClearGeneration: UInt64? = nil,
+        preservingUnsavedChanges: Bool = false
     ) async {
         let spotlightIndexWasCleared = await completePendingPrivacyCleanupIfNeeded()
         cancelAllFullConversationLoads()
@@ -1171,6 +1177,7 @@ final class ConversationManager: ObservableObject {
             let protectedPersistenceIds = dirtyIds
                 .union(persistingAtLoadStart)
                 .union(persistedDuringLoadIds)
+                .union(preservingUnsavedChanges ? unsavedStoredConversationIds(in: metadataFromDisk) : [])
             let deletingIds = persistenceState.deletingIds
                 .union(managerDeletionTasks.keys)
                 .union(deletingAtLoadStart)
@@ -1257,16 +1264,7 @@ final class ConversationManager: ObservableObject {
 
             conversations = reconciled
             metadataOnlyConversationIds = nextMetadataOnlyIds
-            let previousBaseline = durableDiskBaseline
-            durableDiskBaseline = metadataFromDisk.reduce(into: [:]) { baseline, metadata in
-                if let previous = previousBaseline[metadata.id], !previous.isMetadataOnly,
-                   previous.conversation.updatedAt == metadata.updatedAt
-                {
-                    baseline[metadata.id] = previous
-                } else {
-                    baseline[metadata.id] = (placeholderConversation(from: metadata), true)
-                }
-            }
+            rebuildDurableDiskBaseline(from: metadataFromDisk, keeping: reconciled)
             metadataSearchTextById = metadataFromDisk.reduce(into: [:]) { searchTextById, metadata in
                 guard nextMetadataOnlyIds.contains(metadata.id) else { return }
                 searchTextById[metadata.id] = metadata.searchableText
@@ -1276,8 +1274,10 @@ final class ConversationManager: ObservableObject {
                 pathsById[metadata.id] = paths
             }
 
-            // If selected conversation no longer exists, clear selection
+            // If selected conversation no longer exists, clear selection. The new-chat
+            // placeholder is never stored, and clearing it would discard its draft.
             if let selectedId = selectedConversationId,
+               selectedId != Self.newConversationId,
                !conversations.contains(where: { $0.id == selectedId })
             {
                 selectedConversationId = nil
@@ -1330,7 +1330,8 @@ final class ConversationManager: ObservableObject {
                 conversationIndexCache.removeAll()
             }
             isLoaded = true
-            scheduleLoadRetry()
+            // A retried refresh still keeps a reply that is streaming in.
+            scheduleLoadRetry(preservingUnsavedChanges: preservingUnsavedChanges)
         }
     }
 
@@ -1413,7 +1414,7 @@ final class ConversationManager: ObservableObject {
         #endif
     }
 
-    private func scheduleLoadRetry() {
+    private func scheduleLoadRetry(preservingUnsavedChanges: Bool = false) {
         guard !isConversationStateAuthoritative, loadRetryTask == nil else { return }
         let scale = 1 << min(loadRetryAttempt, 5)
         let delay = loadRetryBaseDelay * scale
@@ -1426,7 +1427,7 @@ final class ConversationManager: ObservableObject {
             }
             guard let self else { return }
             self.loadRetryTask = nil
-            await self.loadConversations()
+            await self.loadConversations(preservingUnsavedChanges: preservingUnsavedChanges)
         }
     }
 
@@ -1492,6 +1493,30 @@ final class ConversationManager: ObservableObject {
     private func finishSearchIndexWarmup(version: UInt64) {
         guard searchIndexWarmupVersion == version else { return }
         searchIndexWarmupTask = nil
+    }
+
+    /// Resets the record of what is on disk from freshly loaded metadata. A full snapshot is
+    /// kept unless the stored copy is newer; a row kept in memory but missing from the
+    /// metadata was saved while it loaded, so the baseline its save recorded is kept too
+    /// (only a completed save creates one).
+    private func rebuildDurableDiskBaseline(
+        from metadataFromDisk: [ConversationMetadata],
+        keeping reconciled: [Conversation]
+    ) {
+        let previousBaseline = durableDiskBaseline
+        durableDiskBaseline = metadataFromDisk.reduce(into: [:]) { baseline, metadata in
+            // A save that finished after the metadata was read leaves the snapshot newer.
+            if let previous = previousBaseline[metadata.id], !previous.isMetadataOnly,
+               previous.conversation.updatedAt >= metadata.updatedAt
+            {
+                baseline[metadata.id] = previous
+            } else {
+                baseline[metadata.id] = (placeholderConversation(from: metadata), true)
+            }
+        }
+        for conversation in reconciled where durableDiskBaseline[conversation.id] == nil {
+            durableDiskBaseline[conversation.id] = previousBaseline[conversation.id]
+        }
     }
 
     private func placeholderConversation(from metadata: ConversationMetadata) -> Conversation {
@@ -1805,7 +1830,35 @@ final class ConversationManager: ObservableObject {
         while let clearTask = clearConversationsTask {
             await clearTask.value
         }
-        await loadConversations()
+        await loadConversations(preservingUnsavedChanges: true)
+    }
+
+    /// Marks whether a reply is being generated for a conversation. While one is, a refresh
+    /// keeps the in-memory copy so later chunks still find the reply message.
+    func isGenerating(_ conversationId: UUID) -> Bool {
+        generatingConversationIds.contains(conversationId)
+    }
+
+    func setGenerating(_ isGenerating: Bool, for conversationId: UUID) {
+        if isGenerating {
+            generatingConversationIds.insert(conversationId)
+        } else {
+            generatingConversationIds.remove(conversationId)
+        }
+    }
+
+    /// Stored conversations that a user-requested reload keeps instead of replacing with the
+    /// stored copy: one with a reply in progress, or whose fully loaded in-memory copy has
+    /// changes not yet saved (streaming updates are saved when the reply finishes).
+    /// Conversations that are not on disk keep following the dirty-save rule.
+    private func unsavedStoredConversationIds(in metadataFromDisk: [ConversationMetadata]) -> Set<UUID> {
+        let storedIds = Set(metadataFromDisk.map(\.id))
+        return Set(conversations.lazy.filter { conversation in
+            guard storedIds.contains(conversation.id) else { return false }
+            if self.generatingConversationIds.contains(conversation.id) { return true }
+            return !self.metadataOnlyConversationIds.contains(conversation.id)
+                && self.durableDiskBaseline[conversation.id]?.conversation != conversation
+        }.map(\.id))
     }
 
     @discardableResult

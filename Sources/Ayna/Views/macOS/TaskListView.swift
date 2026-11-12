@@ -271,7 +271,7 @@ struct CompactTaskIndicator: View {
                 if statistics.inProgress > 0 {
                     Circle()
                         .fill(.blue)
-                        .frame(width: 6, height: 6)
+                        .frame(width: Spacing.Component.statusDotSmall, height: Spacing.Component.statusDotSmall)
                 }
             }
             .padding(.horizontal, 8)

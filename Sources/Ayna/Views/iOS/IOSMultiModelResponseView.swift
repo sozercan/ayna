@@ -523,11 +523,11 @@ struct IOSMultiModelSelector: View {
     }
 
     private func toggleModel(_ model: String) {
-        let generator = UIImpactFeedbackGenerator(style: .light)
-        generator.impactOccurred()
-
         if !multiModelEnabled {
             // Single-select mode: always replace selection
+            if selectedModels != [model] {
+                HapticEngine.modelChanged()
+            }
             selectedModels = [model]
             return
         }
@@ -535,8 +535,10 @@ struct IOSMultiModelSelector: View {
         // Multi-select mode
         if selectedModels.contains(model) {
             selectedModels.remove(model)
+            HapticEngine.modelChanged()
         } else if selectedModels.count < maxSelection {
             selectedModels.insert(model)
+            HapticEngine.modelChanged()
         }
     }
 }

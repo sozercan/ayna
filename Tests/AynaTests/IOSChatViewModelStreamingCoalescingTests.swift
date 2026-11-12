@@ -29,6 +29,36 @@ import Testing
             AIService.keychain = InMemoryKeychainStorage()
         }
 
+        @Test
+        func `a reading position is handed to its own conversation once`() {
+            let conversation = UUID()
+            TranscriptReadingPosition.handOver(1234, in: conversation)
+
+            #expect(TranscriptReadingPosition.take(for: UUID()) == nil)
+            #expect(TranscriptReadingPosition.take(for: conversation) == 1234)
+            #expect(TranscriptReadingPosition.take(for: conversation) == nil)
+        }
+
+        @Test
+        func `isGenerating tells the manager which conversation a reply is streaming into`() throws {
+            let manager = try ConversationManager(store: TestHelpers.makeTestStore(directory: TestHelpers.makeTemporaryDirectory()))
+            let first = UUID()
+            let second = UUID()
+            let viewModel = IOSChatViewModel(
+                conversationId: first,
+                conversationManager: manager,
+                aiService: AIService()
+            )
+
+            viewModel.isGenerating = true
+            #expect(manager.isGenerating(first))
+            viewModel.conversationId = second
+            #expect(!manager.isGenerating(first))
+            #expect(manager.isGenerating(second))
+            viewModel.isGenerating = false
+            #expect(!manager.isGenerating(second))
+        }
+
         @Test(.timeLimit(.minutes(1)))
         func `multi-model chunks wait for coalescing interval before mutating conversation`() async throws {
             let fixture = try await makeFixture()

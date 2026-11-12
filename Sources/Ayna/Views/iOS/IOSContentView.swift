@@ -150,6 +150,10 @@ struct IOSNewChatView: View {
     @StateObject private var viewModel = IOSChatViewModel.placeholder()
 
     @State private var isFileImporterPresented = false
+    /// Whether the streaming first reply keeps its newest text in view (see StreamingFollowScroll).
+    @State private var followsLatest = true
+    @State private var readingOffset: CGFloat = 0
+    @State private var isAwayFromEnd = false
     @State private var isPhotoPickerPresented = false
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var showSettings = false
@@ -191,7 +195,7 @@ struct IOSNewChatView: View {
                 // Show messages while generating (before navigating away)
                 ScrollViewReader { proxy in
                     ScrollView(.vertical, showsIndicators: true) {
-                        LazyVStack(spacing: 12) {
+                        LazyVStack(spacing: Spacing.messageSpacing) {
                             ForEach(cachedDisplayableItems) { item in
                                 switch item {
                                 case let .message(transcriptMessage):
@@ -243,9 +247,16 @@ struct IOSNewChatView: View {
                     }
                     .accessibilityIdentifier(TestIdentifiers.ChatView.messagesList)
                     .defaultScrollAnchor(.bottom)
+                    // Tracks the reader's place so it survives the handoff.
+                    .onScrollGeometryChange(for: CGFloat.self, of: TranscriptReadingPosition.offset) { _, offset in
+                        readingOffset = offset
+                    }
+                    .followsStreamingContent($followsLatest, isAwayFromEnd: $isAwayFromEnd)
                     .onChange(of: conversation.messages.count) {
                         updateDisplayableItems()
-                        scrollToBottom(proxy: proxy, conversation: conversation)
+                        if followsLatest {
+                            scrollToBottom(proxy: proxy, conversation: conversation)
+                        }
                     }
                         .onChange(of: conversation.updatedAt) {
                             // Message content, tool metadata, citations, and response status can change
@@ -254,18 +265,23 @@ struct IOSNewChatView: View {
                         }
                     .onChange(of: conversation.messages.last?.content) {
                             updateDisplayableItems()
-                        if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
+                        if viewModel.isGenerating, followsLatest, let lastId = conversation.messages.last?.id {
                             proxy.scrollTo(lastId, anchor: .bottom)
                         }
                     }
                     .onChange(of: conversation.messages.last?.reasoning) {
                         updateDisplayableItems()
-                        if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
+                        if viewModel.isGenerating, followsLatest, let lastId = conversation.messages.last?.id {
                             proxy.scrollTo(lastId, anchor: .bottom)
                         }
                     }
-                    .onChange(of: viewModel.isGenerating) { _, _ in
+                    .onChange(of: viewModel.isGenerating) { _, newValue in
                         updateDisplayableItems()
+                        // A new reply (a retry, or the next message) starts following again
+                        if newValue, let lastId = conversation.messages.last?.id {
+                            followsLatest = true
+                            proxy.scrollTo(lastId, anchor: .bottom)
+                        }
                     }
                     .onAppear {
                         updateDisplayableItems()
@@ -372,6 +388,11 @@ struct IOSNewChatView: View {
             // Configure ViewModel with actual environment object
             viewModel.configure(with: conversationManager)
             viewModel.onConversationCreated = { conversationId in
+                // The conversation view replaces this one; a reader who scrolled up keeps
+                // their place there instead of being pulled to the end.
+                if !followsLatest {
+                    TranscriptReadingPosition.handOver(readingOffset, in: conversationId)
+                }
                 conversationManager.selectedConversationId = conversationId
             }
 

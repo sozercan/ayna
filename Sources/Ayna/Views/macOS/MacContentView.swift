@@ -26,7 +26,11 @@ struct MacContentView: View {
         ZStack {
             NavigationSplitView {
                 MacSidebarView(selectedConversationId: $conversationManager.selectedConversationId)
-                    .navigationSplitViewColumnWidth(min: 260, ideal: 280, max: 320)
+                    .navigationSplitViewColumnWidth(
+                        min: Spacing.Component.sidebarMinWidth,
+                        ideal: Spacing.Component.sidebarIdealWidth,
+                        max: Spacing.Component.sidebarMaxWidth
+                    )
             } detail: {
                 Group {
                     if let conversationId = conversationManager.selectedConversationId,

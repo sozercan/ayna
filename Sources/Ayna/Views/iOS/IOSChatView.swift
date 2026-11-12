@@ -25,7 +25,11 @@ struct IOSChatView: View {
 
     /// Scroll-to-bottom button visibility
     @State private var showScrollToBottom = false
-    @State private var isNearBottom = true
+    /// Whether streaming keeps the newest text in view. Only the user scrolling away turns it
+    /// off; reaching the bottom again, the scroll button, or a new reply turns it back on.
+    @State private var followsLatest = true
+    /// Restores a reading position handed over from the new-chat screen.
+    @State private var restoredPosition = ScrollPosition()
 
     /// Performance: Cached displayable items to avoid O(n) computation on every render
     @State private var cachedDisplayableItems: [ChatTranscriptItem] = []
@@ -54,7 +58,7 @@ struct IOSChatView: View {
                 ScrollViewReader { proxy in
                     ZStack(alignment: .bottom) {
                         ScrollView(.vertical, showsIndicators: true) {
-                            LazyVStack(spacing: 12) {
+                            LazyVStack(spacing: Spacing.messageSpacing) {
                                 ForEach(cachedDisplayableItems) { item in
                                     switch item {
                                     case let .message(transcriptMessage):
@@ -103,15 +107,15 @@ struct IOSChatView: View {
                                     }
                                 }
 
-                                // Anchor for scroll position detection
+                                // Scroll target for "jump to bottom"
                                 Color.clear
                                     .frame(height: 1)
                                     .id("bottom")
-                                    .onAppear { isNearBottom = true; showScrollToBottom = false }
-                                    .onDisappear { isNearBottom = false; showScrollToBottom = true }
                             }
                             .padding()
                         }
+                        .scrollPosition($restoredPosition)
+                        .followsStreamingContent($followsLatest, isAwayFromEnd: $showScrollToBottom)
                         .accessibilityIdentifier(TestIdentifiers.ChatView.messagesList)
 
                         // Scroll-to-bottom floating button
@@ -119,6 +123,7 @@ struct IOSChatView: View {
                             isVisible: showScrollToBottom && !viewModel.isGenerating,
                             unreadCount: 0
                         ) {
+                            followsLatest = true
                             withAnimation(Motion.springStandard) {
                                 proxy.scrollTo("bottom", anchor: .bottom)
                             }
@@ -127,7 +132,10 @@ struct IOSChatView: View {
                     }
                     .onChange(of: conversation.messages.count) {
                         updateDisplayableItems()
-                        scrollToBottom(proxy: proxy, conversation: conversation)
+                        // Tool messages added mid-stream must not pull a reader back down.
+                        if followsLatest {
+                            scrollToBottom(proxy: proxy, conversation: conversation)
+                        }
                     }
                         .onChange(of: conversation.updatedAt) {
                             // Message content, tool metadata, citations, and response status can change
@@ -136,9 +144,9 @@ struct IOSChatView: View {
                         }
                     .onChange(of: conversation.messages.last?.content) {
                             updateDisplayableItems()
-                        // Only scroll during generation - use transaction to disable animations
-                        // This prevents janky scrolling during rapid streaming updates
-                        if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
+                        // Only scroll during generation, and only while following the reply.
+                        // A transaction without animations keeps rapid updates smooth.
+                        if viewModel.isGenerating, followsLatest, let lastId = conversation.messages.last?.id {
                             var transaction = Transaction()
                             transaction.disablesAnimations = true
                             withTransaction(transaction) {
@@ -149,7 +157,7 @@ struct IOSChatView: View {
                     .onChange(of: conversation.messages.last?.reasoning) {
                         updateDisplayableItems()
                         // Keep reasoning-only streams pinned just like answer content.
-                        if viewModel.isGenerating, let lastId = conversation.messages.last?.id {
+                        if viewModel.isGenerating, followsLatest, let lastId = conversation.messages.last?.id {
                             var transaction = Transaction()
                             transaction.disablesAnimations = true
                             withTransaction(transaction) {
@@ -159,8 +167,9 @@ struct IOSChatView: View {
                     }
                     .onChange(of: viewModel.isGenerating) { _, newValue in
                         updateDisplayableItems()
-                        // Scroll to bottom when generation starts
+                        // A new reply starts following again
                         if newValue, let lastId = conversation.messages.last?.id {
+                            followsLatest = true
                             proxy.scrollTo(lastId, anchor: .bottom)
                         }
                     }
@@ -172,9 +181,15 @@ struct IOSChatView: View {
                             metadata: ["conversationId": conversationId.uuidString]
                         )
                         updateDisplayableItems()
+                        let readingPosition = TranscriptReadingPosition.take(for: conversationId)
+                        if readingPosition != nil {
+                            followsLatest = false
+                        }
                         Task { @MainActor in
                             try? await Task.sleep(for: .milliseconds(100))
-                            if let lastId = conversation.messages.last?.id {
+                            if let readingPosition {
+                                restoredPosition.scrollTo(y: readingPosition)
+                            } else if let lastId = conversation.messages.last?.id {
                                 proxy.scrollTo(lastId, anchor: .bottom)
                             }
                         }

@@ -111,15 +111,6 @@ public enum Typography {
             #endif
         }
 
-        /// Large Title reference: 34pt (macOS/iOS), 28pt (watchOS)
-        public static var largeTitle: CGFloat {
-            #if os(watchOS)
-                28
-            #else
-                34
-            #endif
-        }
-
         /// Hero reference: 48pt (macOS/iOS), 32pt (watchOS)
         public static var hero: CGFloat {
             #if os(watchOS)
@@ -133,11 +124,6 @@ public enum Typography {
     // MARK: - Semantic Text Styles (Dynamic Type)
 
     // These fonts automatically scale with user's accessibility settings
-
-    /// Large title for hero sections - scales with Dynamic Type
-    public static var largeTitle: Font {
-        .largeTitle.weight(.bold)
-    }
 
     /// Primary title - scales with Dynamic Type
     public static var title1: Font {
@@ -211,11 +197,6 @@ public enum Typography {
         .system(.callout, design: .rounded, weight: .medium)
     }
 
-    /// Rounded caption - scales with Dynamic Type
-    public static var roundedCaption: Font {
-        .system(.caption, design: .rounded, weight: .medium)
-    }
-
     /// Model/provider name display - scales with Dynamic Type
     public static var modelName: Font {
         .caption.weight(.medium)
@@ -241,11 +222,6 @@ public enum Typography {
     /// Standard line spacing for body text
     public static let bodyLineSpacing: CGFloat = 4
 
-    /// Tight line spacing for compact displays
-    public static let tightLineSpacing: CGFloat = 2
-
-    /// Loose line spacing for readability
-    public static let looseLineSpacing: CGFloat = 6
 }
 
 // MARK: - View Modifiers
