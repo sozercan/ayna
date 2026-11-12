@@ -680,25 +680,12 @@ class AIService: ObservableObject {
         #if os(macOS)
             let permService = PermissionService()
             self.permissionService = permService
-            self.builtinToolService = BuiltinToolService(
-                permissionService: permService,
-                projectRoot: nil // Will be set via configureProjectRoot()
-            )
+            // Project root and the rest of the Agent settings are applied by AgentSettingsStore.
+            self.builtinToolService = BuiltinToolService(permissionService: permService)
             // Trigger AgentSettingsStore initialization to apply saved settings
             _ = AgentSettingsStore.shared
         #endif
     }
-
-    // Configures the project root for agentic tools (macOS only)
-    #if os(macOS)
-        func configureProjectRoot(_ url: URL?) {
-            guard let permService = permissionService else { return }
-            builtinToolService = BuiltinToolService(
-                permissionService: permService,
-                projectRoot: url
-            )
-        }
-    #endif
 
     #if !os(watchOS)
         private func persistModelProviders() {
@@ -4983,16 +4970,10 @@ extension AIService {
             )
         }
 
-        // Add native agentic tools (macOS only, excludes web_fetch which is cross-platform)
+        // Add native agentic tools (macOS only)
         #if os(macOS)
             if let builtinService = builtinToolService {
-                // Get all tool definitions except web_fetch (already added above)
-                let builtinTools = builtinService.allToolDefinitions().filter { tool in
-                    guard let function = tool["function"] as? [String: Any],
-                          let name = function["name"] as? String
-                    else { return true }
-                    return name != WebFetchService.toolName
-                }
+                let builtinTools = builtinService.allToolDefinitions()
                 tools.append(contentsOf: builtinTools)
                 DiagnosticsLogger.log(
                     .aiService,
@@ -5069,7 +5050,7 @@ extension AIService {
                 return "Error: Unknown built-in tool '\(toolName)'"
             }
         #elseif os(macOS)
-            // Check for native agentic tools first (excluding web_fetch which is handled above)
+            // Native agentic tools
             if BuiltinToolService.isBuiltinTool(toolName) {
                 guard let service = builtinToolService else {
                     return "Error: Agentic tools not configured"

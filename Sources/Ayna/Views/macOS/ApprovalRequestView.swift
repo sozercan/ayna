@@ -15,6 +15,7 @@ struct ApprovalRequestView: View {
     let onApprove: (Bool) -> Void // Bool indicates whether to remember for session
     let onDeny: () -> Void
     let pendingCount: Int // Total pending approvals for batch approval option
+    var onApproveAll: () -> Void = {}
 
     @State private var showDiff = false
 
@@ -114,17 +115,17 @@ struct ApprovalRequestView: View {
 
             Spacer()
 
-            // Batch approval option for file operations
-            if isFileOperation, pendingCount > 1 {
+            // Batch approval for every pending request in this conversation
+            if pendingCount > 1 {
                 Menu {
                     Button("Allow All (\(pendingCount))") {
-                        onApprove(true)
+                        onApproveAll()
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
                 .menuStyle(.borderlessButton)
-                .help("Approve all pending file operations")
+                .help("Approve all pending requests in this conversation")
                 .accessibilityLabel("More approval options")
                 .accessibilityHint("Opens menu with batch approval options")
             }
@@ -192,10 +193,6 @@ struct ApprovalRequestView: View {
         default:
             .clear
         }
-    }
-
-    private var isFileOperation: Bool {
-        ["write_file", "edit_file", "read_file"].contains(approval.toolName)
     }
 
     private var timeSinceRequest: String {
@@ -291,7 +288,10 @@ struct PendingApprovalsView: View {
                             onDeny: {
                                 permissionService.deny(approval.id)
                             },
-                            pendingCount: approvals.count
+                            pendingCount: approvals.count,
+                            onApproveAll: {
+                                permissionService.approveAllPending(forConversation: conversationId)
+                            }
                         )
                     }
                 }

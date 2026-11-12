@@ -537,8 +537,16 @@ struct ShellSandboxTests {
             ("git status", .allowed),
             ("echo 'safe; text'", .allowed),
             ("ls | grep test", .allowed),
-            ("FOO=bar swift test --list-tests", .allowed),
+            ("FOO=bar swift --version", .allowed),
             ("custom_tool --flag", .requiresApproval),
+            // Allowlisted commands that would run other code still ask.
+            ("swift test --list-tests", .requiresApproval),
+            ("env python3 -c 'print(1)'", .requiresApproval),
+            ("find . -name '*.tmp' -delete", .requiresApproval),
+            ("git -c core.pager=sh log", .requiresApproval),
+            ("git -ccore.fsmonitor=/tmp/hook status", .requiresApproval),
+            ("find . '-exec' printf ran {} +", .requiresApproval),
+            ("echo replaced > ~/.zshrc", .requiresApproval),
             ("git push origin main", .requiresApproval),
             ("python3 script.py", .requiresApproval),
             ("rm -r build", .requiresApproval),
@@ -572,7 +580,7 @@ struct ShellSandboxTests {
         let elapsed = Date().timeIntervalSince(start)
 
         #expect(allowed == iterations * 5)
-        #expect(requiresApproval == iterations * 4)
+        #expect(requiresApproval == iterations * 11)
         #expect(blocked == iterations * 4)
         print("BENCH ShellSandbox bulk validations: \(iterations * cases.count) in \(String(format: "%.4f", elapsed))s")
     }

@@ -269,6 +269,37 @@ struct MCPServerManagerTests {
         #expect(manager.getServerStatus(config.name)?.state == .idle)
     }
 
+    @Test("Clashing tool names route to the right server under their own name", .timeLimit(.minutes(1)))
+    func clashingToolNamesRouteToTheRightServer() async throws {
+        let alpha = MCPServerConfig(name: "alpha", command: "cmd", enabled: true)
+        let beta = MCPServerConfig(name: "beta", command: "cmd", enabled: true)
+        let services = [alpha.name: StubMCPService(config: alpha), beta.name: StubMCPService(config: beta)]
+        for (name, service) in services {
+            service.listToolsResult = .success([
+                MCPTool(
+                    name: "search",
+                    description: "",
+                    inputSchema: JSONSchema(type: "object", properties: nil, required: nil, items: nil),
+                    serverName: name
+                )
+            ])
+        }
+        let manager = MCPServerManager(
+            serviceFactory: { config in services[config.name]! },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [alpha, beta]
+        await manager.connectToServer(alpha)
+        await manager.connectToServer(beta)
+
+        let exposed = manager.getEnabledToolsAsOpenAIFunctions().compactMap {
+            ($0["function"] as? [String: Any])?["name"] as? String
+        }
+        #expect(Set(exposed) == ["alpha__search", "beta__search"])
+        #expect(try await manager.executeTool(name: "beta__search", arguments: [:]) == "beta:search")
+    }
+
     @Test("Cancellation after discovery commit removes stale tools", .timeLimit(.minutes(1)))
     func cancellationAfterDiscoveryCommitRemovesStaleTools() async {
         let config = MCPServerConfig(name: "stale-tools", command: "cmd", enabled: true)
@@ -844,8 +875,8 @@ private final class StubMCPService: MCPServicing, @unchecked Sendable {
         return try listResourcesResult.get()
     }
 
-    func callTool(name _: String, arguments _: [String: Any]) async throws -> String {
-        ""
+    func callTool(name: String, arguments _: [String: Any]) async throws -> String {
+        "\(serverConfig.name):\(name)"
     }
 
     @MainActor

@@ -455,7 +455,143 @@ struct ShellSandbox {
         }
     }
 
+    /// Read-only subcommands of allowlisted tools that can otherwise run project code (scripts,
+    /// hooks, build plugins). Anything else needs approval.
+    private static let readOnlySubcommands: [String: Set<String>] = [
+        "git": [
+            "status", "log", "diff", "show", "blame", "rev-parse", "ls-files", "ls-tree",
+            "describe", "shortlog", "grep", "cat-file", "--version", "version", "help"
+        ],
+        "npm": ["ls", "list", "view", "info", "outdated", "--version", "-v", "help"],
+        "yarn": ["list", "info", "why", "--version", "-v", "help"],
+        "pnpm": ["ls", "list", "why", "--version", "-v", "help"],
+        "swift": ["--version", "-version", "--help", "-help"],
+        "swiftc": ["--version", "-version", "--help", "-help"],
+        "xcodebuild": ["-version", "-showsdks", "-list", "-help", "-usage"]
+    ]
+
+    /// Whether an allowlisted command would run some other program or project code, which the
+    /// allowlist must not wave through (for example `env python3 -c ...` or `find -exec`).
+    private func runsOtherCode(_ component: String, command: String) -> Bool {
+        // A redirection can write any file, outside the approval checks of the file tools.
+        if Self.hasOutputRedirection(component) {
+            return true
+        }
+        guard let tokens = Self.shellWords(component) else {
+            return true // Quoting the classifier cannot interpret
+        }
+        guard let commandIndex = tokens.firstIndex(where: { $0 == command || $0.hasSuffix("/\(command)") }) else {
+            return true
+        }
+        let arguments = Array(tokens[(commandIndex + 1)...])
+
+        switch command {
+        case "env":
+            // env VAR=value ... COMMAND runs COMMAND; printing the environment is fine.
+            return arguments.contains { !$0.hasPrefix("-") && !$0.contains("=") }
+        case "find":
+            let executing: Set<String> = ["-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprintf", "-fls"]
+            return arguments.contains { executing.contains($0) }
+        case "rg":
+            return arguments.contains { $0 == "--pre" || $0.hasPrefix("--pre=") }
+        case "fd":
+            return arguments.contains { ["-x", "--exec", "-X", "--exec-batch"].contains($0) }
+        case "git":
+            // Configuration overrides (`-c x=y`, `-cx=y`) can point git at any program.
+            if arguments.contains(where: { $0.hasPrefix("-c") || $0.hasPrefix("--config-env") || $0.hasPrefix("--exec-path") }) {
+                return true
+            }
+            let subcommand = arguments.first { !$0.hasPrefix("-") }
+            return subcommand.map { !(Self.readOnlySubcommands["git"]?.contains($0) ?? false) } ?? false
+        case "npm", "yarn", "pnpm", "swift", "swiftc":
+            guard let first = arguments.first else { return false }
+            return !(Self.readOnlySubcommands[command]?.contains(first) ?? false)
+        case "xcodebuild":
+            guard let first = arguments.first else { return true }
+            return !(Self.readOnlySubcommands[command]?.contains(first) ?? false)
+        default:
+            return false
+        }
+    }
+
+    /// Splits a command into words the way the shell does for quotes and backslashes, or nil when
+    /// the quoting is unbalanced.
+    static func shellWords(_ command: String) -> [String]? {
+        var words: [String] = []
+        var current = ""
+        var inWord = false
+        var quote: Character?
+        var escaped = false
+        for character in command {
+            if escaped {
+                current.append(character)
+                escaped = false
+                inWord = true
+                continue
+            }
+            if character == "\\", quote != "'" {
+                escaped = true
+                continue
+            }
+            if let open = quote {
+                if character == open {
+                    quote = nil
+                } else {
+                    current.append(character)
+                }
+                continue
+            }
+            if character == "'" || character == "\"" {
+                quote = character
+                inWord = true
+            } else if character.isWhitespace {
+                if inWord {
+                    words.append(current)
+                    current = ""
+                    inWord = false
+                }
+            } else {
+                current.append(character)
+                inWord = true
+            }
+        }
+        guard quote == nil, !escaped else { return nil }
+        if inWord {
+            words.append(current)
+        }
+        return words
+    }
+
+    /// Whether a `>` outside quotes redirects output to a file (including `>>`, `&>`, `2>`).
+    static func hasOutputRedirection(_ command: String) -> Bool {
+        var quote: Character?
+        var escaped = false
+        for character in command {
+            if escaped {
+                escaped = false
+                continue
+            }
+            if character == "\\", quote != "'" {
+                escaped = true
+                continue
+            }
+            if let open = quote {
+                if character == open { quote = nil }
+                continue
+            }
+            if character == "'" || character == "\"" {
+                quote = character
+            } else if character == ">" {
+                return true
+            }
+        }
+        return false
+    }
+
     private func hasDangerousFlags(_ fullCommand: String, command: String) -> Bool {
+        if runsOtherCode(fullCommand, command: command) {
+            return true
+        }
         let lowercased = fullCommand.lowercased()
 
         // Dangerous flags for specific commands

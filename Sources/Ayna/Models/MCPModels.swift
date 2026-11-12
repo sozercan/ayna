@@ -57,16 +57,89 @@ struct MCPTool: Identifiable, Codable, Equatable, Sendable {
         self.serverName = serverName
     }
 
-    /// Convert to OpenAI function format
-    func toOpenAIFunction() -> [String: Any] {
+    /// Convert to OpenAI function format, optionally under a model-facing alias.
+    func toOpenAIFunction(exposedName: String? = nil) -> [String: Any] {
         [
             "type": "function",
             "function": [
-                "name": name,
+                "name": exposedName ?? name,
                 "description": description,
                 "parameters": inputSchema.toJSON()
             ]
         ]
+    }
+}
+
+/// Names MCP tools are offered to the model under, bound for the whole session.
+///
+/// A tool keeps its own name unless that name is reserved (served by Ayna) or already taken by
+/// another server's tool; then it becomes `server__tool`, cleaned to the `^[A-Za-z0-9_-]{1,64}$`
+/// form function-calling APIs accept. Once an alias is bound to a server and tool it is never
+/// given to anything else, so a call made against an older tool list either reaches the same
+/// tool or fails, and never runs on a different server.
+struct MCPToolNaming {
+    private var aliasByKey: [String: String] = [:]
+    private var keyByAlias: [String: String] = [:]
+
+    static func key(server: String, tool: String) -> String {
+        "\(server)\u{0}\(tool)"
+    }
+
+    /// Model-facing name for each tool, by tool ID.
+    mutating func assign(_ tools: [MCPTool], reserved: Set<String>) -> [UUID: String] {
+        let ordered = tools.sorted { Self.key(server: $0.serverName, tool: $0.name) < Self.key(server: $1.serverName, tool: $1.name) }
+        var result: [UUID: String] = [:]
+        var taken = reserved
+
+        // Keep every alias already bound to a tool that is still here.
+        for tool in ordered {
+            let key = Self.key(server: tool.serverName, tool: tool.name)
+            if let alias = aliasByKey[key], !taken.contains(alias) {
+                result[tool.id] = alias
+                taken.insert(alias)
+            }
+        }
+
+        let unassigned = ordered.filter { result[$0.id] == nil }
+        let rawNameCounts = unassigned.reduce(into: [String: Int]()) { $0[$1.name, default: 0] += 1 }
+        for tool in unassigned {
+            let key = Self.key(server: tool.serverName, tool: tool.name)
+            let alias: String
+            // Raw names are kept only when function-calling APIs accept them as they are.
+            if rawNameCounts[tool.name] == 1, Self.isValidFunctionName(tool.name),
+               isAvailable(tool.name, for: key, taken: taken)
+            {
+                alias = tool.name
+            } else {
+                let base = Self.sanitized("\(tool.serverName)__\(tool.name)")
+                var candidate = base
+                var suffix = 2
+                while !isAvailable(candidate, for: key, taken: taken) {
+                    let tail = "_\(suffix)"
+                    candidate = String(base.prefix(64 - tail.count)) + tail
+                    suffix += 1
+                }
+                alias = candidate
+            }
+            result[tool.id] = alias
+            taken.insert(alias)
+            aliasByKey[key] = alias
+            keyByAlias[alias] = key
+        }
+        return result
+    }
+
+    private func isAvailable(_ alias: String, for key: String, taken: Set<String>) -> Bool {
+        !taken.contains(alias) && (keyByAlias[alias] == nil || keyByAlias[alias] == key)
+    }
+
+    static func isValidFunctionName(_ name: String) -> Bool {
+        !name.isEmpty && name.count <= 64 && sanitized(name) == name
+    }
+
+    private static func sanitized(_ name: String) -> String {
+        let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+        return String(String(name.map { allowed.contains($0) ? $0 : "_" }).prefix(64))
     }
 }
 

@@ -1766,7 +1766,10 @@ private struct PendingApprovalsSectionView: View {
                             onDeny: {
                                 permService.deny(approval.id)
                             },
-                            pendingCount: approvals.count
+                            pendingCount: approvals.count,
+                            onApproveAll: {
+                                permService.approveAllPending(forConversation: conversationId)
+                            }
                         )
                     }
                 }

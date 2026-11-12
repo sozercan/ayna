@@ -54,6 +54,23 @@
             #expect(pingReply != nil)
         }
 
+        @Test("A tool result flagged isError is reported as a failure", .timeLimit(.minutes(1)))
+        func toolResultWithIsErrorThrows() async throws {
+            let harness = try MockMCPServerHarness(mode: .toolError)
+            defer { harness.cleanup() }
+
+            let service = harness.makeService(requestTimeoutSeconds: 5.0)
+            try await service.connect()
+            defer { service.disconnect() }
+
+            do {
+                let result = try await service.callTool(name: "write", arguments: [:])
+                Issue.record("Expected an error, got \(result)")
+            } catch let MCPServiceError.toolExecutionFailed(message) {
+                #expect(message == "disk full")
+            }
+        }
+
         @Test("List tools request times out and clears pending continuation", .timeLimit(.minutes(1)))
         func listToolsRequestTimesOut() async throws {
             let harness = try MockMCPServerHarness(mode: .listTimeout)
@@ -396,6 +413,7 @@
             case lateResponseAfterCancellation = "late-response-after-cancellation"
             case termResistant = "term-resistant"
             case serverPingDuringCall = "server-ping-during-call"
+            case toolError = "tool-error"
         }
 
         let directory: URL
@@ -539,7 +557,11 @@
                     if [ "$mode" = "server-ping-during-call" ]; then
                       printf '{"jsonrpc":"2.0","id":%s,"method":"ping"}\n' "$id"
                     fi
-                    printf '{"jsonrpc":"2.0","id":%s,"result":{"content":"ok"}}\n' "$id"
+                    if [ "$mode" = "tool-error" ]; then
+                      printf '{"jsonrpc":"2.0","id":%s,"result":{"isError":true,"content":[{"type":"text","text":"disk full"}]}}\n' "$id"
+                    else
+                      printf '{"jsonrpc":"2.0","id":%s,"result":{"content":"ok"}}\n' "$id"
+                    fi
                   fi
                   ;;
               esac

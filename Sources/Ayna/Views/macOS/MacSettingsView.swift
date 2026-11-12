@@ -584,11 +584,6 @@ struct WebSearchToolRow: View {
 struct AgenticToolsRow: View {
     @Bindable private var agentSettings = AgentSettingsStore.shared
 
-    private let toolNames = [
-        "read_file", "write_file", "edit_file",
-        "list_directory", "search_files", "run_command", "web_fetch"
-    ]
-
     var body: some View {
         HStack {
             Toggle("", isOn: $agentSettings.settings.isEnabled)
