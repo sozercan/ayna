@@ -85,8 +85,9 @@ import os.log
 
         // MARK: - Context Detection
 
-        /// Detects project from a given path
-        func detectProject(from path: URL) async {
+        /// Detects project from a given path. With `loadingContent: false` it only finds the
+        /// context files, so the caller can validate each one before reading it.
+        func detectProject(from path: URL, loadingContent: Bool = true) async {
             // Find project root by walking up from path
             projectRoot = await findProjectRoot(from: path)
 
@@ -104,7 +105,7 @@ import os.log
             contextFiles = await findContextFiles(in: root)
 
             // Load context content
-            contextContent = await loadContextContent()
+            contextContent = loadingContent ? await loadContextContent() : nil
 
             log(.info, "Project detected", metadata: [
                 "root": root.path,
@@ -280,33 +281,62 @@ import os.log
             var content = ""
 
             for url in contextFiles {
-                do {
-                    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-                    let fileSize = (attributes[.size] as? Int) ?? 0
-                    if fileSize > 100 * 1024 {
-                        log(.default, "Skipping large context file", metadata: [
-                            "file": url.lastPathComponent,
-                            "size": "\(fileSize)"
-                        ])
-                        continue
-                    }
-                    let fileContent = try String(contentsOf: url, encoding: .utf8)
-                    content += """
-
-                    ## \(url.lastPathComponent)
-
-                    \(fileContent)
-
-                    """
-                } catch {
-                    log(.error, "Failed to load context file", metadata: [
-                        "file": url.path,
-                        "error": error.localizedDescription
+                guard let (handle, _) = Self.openContextFile(url),
+                      let fileContent = Self.readContextFile(handle)
+                else {
+                    log(.default, "Skipping context file that is not a small regular text file", metadata: [
+                        "file": url.lastPathComponent
                     ])
+                    continue
                 }
+                content += """
+
+                ## \(url.lastPathComponent)
+
+                \(fileContent)
+
+                """
             }
 
             return content.isEmpty ? nil : content.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        /// Largest context file that is read.
+        nonisolated static let maximumContextFileBytes = 100 * 1024
+
+        /// Opens a context file without following a final symlink or blocking on a FIFO or
+        /// device. Returns the descriptor and the path it actually refers to, so that path is
+        /// what gets validated, and the bytes read later come from the same file even if the
+        /// name is replaced in between (for example while an approval card is open).
+        nonisolated static func openContextFile(_ file: URL) -> (handle: FileHandle, path: URL)? {
+            let resolved = file.resolvingSymlinksInPath().standardized
+            let descriptor = open(resolved.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+            guard descriptor >= 0 else { return nil }
+            let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+            var info = stat()
+            guard fstat(descriptor, &info) == 0,
+                  info.st_mode & S_IFMT == S_IFREG,
+                  info.st_size <= maximumContextFileBytes
+            else {
+                return nil
+            }
+            var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+            guard fcntl(descriptor, F_GETPATH, &buffer) != -1,
+                  let path = String(bytes: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, encoding: .utf8)
+            else {
+                return nil
+            }
+            return (handle, URL(fileURLWithPath: path))
+        }
+
+        /// Reads an opened context file as UTF-8, or nil if it grew past the limit or is not text.
+        nonisolated static func readContextFile(_ handle: FileHandle) -> String? {
+            guard let data = try? handle.read(upToCount: maximumContextFileBytes + 1),
+                  data.count <= maximumContextFileBytes
+            else {
+                return nil
+            }
+            return String(data: data, encoding: .utf8)
         }
 
         private func log(_ level: OSLogType, _ message: String, metadata: [String: String] = [:]) {

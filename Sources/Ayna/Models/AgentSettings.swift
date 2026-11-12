@@ -53,7 +53,10 @@ struct AgentSettings: Codable, Sendable {
             "web_fetch": .automatic,
             "write_file": .askOnce,
             "edit_file": .askOnce,
-            "run_command": .askAlways
+            "run_command": .askAlways,
+            "git_context": .automatic,
+            "project_context": .automatic,
+            "update_tasks": .automatic
         ],
         commandTimeoutSeconds: 30,
         requireApprovalOutsideProject: true,
@@ -73,10 +76,13 @@ struct AgentSettings: Codable, Sendable {
     /// Load settings from persistent storage
     static func load() -> AgentSettings {
         guard let data = AppPreferences.storage.data(forKey: storageKey),
-              let settings = try? JSONDecoder().decode(AgentSettings.self, from: data)
+              var settings = try? JSONDecoder().decode(AgentSettings.self, from: data)
         else {
             return .default
         }
+        // Tools added since the settings were saved get their default level.
+        settings.defaultPermissions = AgentSettings.default.defaultPermissions
+            .merging(settings.defaultPermissions) { _, saved in saved }
         return settings
     }
 

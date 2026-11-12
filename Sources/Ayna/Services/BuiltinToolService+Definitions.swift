@@ -21,7 +21,10 @@ import Foundation
                 editFileDefinition(),
                 listDirectoryDefinition(),
                 searchFilesDefinition(),
-                runCommandDefinition()
+                runCommandDefinition(),
+                gitContextDefinition(),
+                projectContextDefinition(),
+                updateTasksDefinition()
             ].filter { definition in
                 let name = (definition["function"] as? [String: Any])?["name"] as? String
                 return name.map { toolPermissions[$0] != .denied } ?? true
@@ -45,6 +48,9 @@ import Foundation
             - **list_directory**: List files and subdirectories in a directory
             - **search_files**: Search for text patterns in files (like grep)
             - **run_command**: Execute shell commands
+            - **git_context**: Get the branch, changed files, and recent commits
+            - **project_context**: Get the project type and its AI context files (AGENTS.md, CLAUDE.md)
+            - **update_tasks**: Show the user a task list for multi-step work and keep it current
 
             When to use these tools:
             - When the user asks what's in a file or directory, use list_directory or read_file
@@ -65,7 +71,8 @@ import Foundation
         /// Tool name constant for use in tool call routing
         static let toolNames: Set<String> = [
             "read_file", "write_file", "edit_file",
-            "list_directory", "search_files", "run_command"
+            "list_directory", "search_files", "run_command",
+            "git_context", "project_context", "update_tasks"
         ]
 
         /// Checks if a tool name is a builtin tool

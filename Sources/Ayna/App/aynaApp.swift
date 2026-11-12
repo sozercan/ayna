@@ -426,30 +426,29 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 @MainActor
 private func setupWorkWithApps(conversationManager: ConversationManager) {
-    guard AppPreferences.attachFromAppEnabled else {
-        DiagnosticsLogger.log(
-            .attachFromApp,
-            level: .info,
-            message: "Attach from App is disabled"
-        )
-        return
+    // Handlers are installed even when the feature is off or the hotkey fails to register, so
+    // enabling it or recording a new hotkey later works without a relaunch.
+    defer {
+        if AppPreferences.attachFromAppEnabled {
+            AccessibilityService.shared.startMonitoring()
+            do {
+                try GlobalHotkeyService.shared.registerSaved()
+            } catch {
+                DiagnosticsLogger.log(
+                    .attachFromApp,
+                    level: .error,
+                    message: "Failed to register global hotkey",
+                    metadata: ["error": error.localizedDescription]
+                )
+            }
+        } else {
+            DiagnosticsLogger.log(
+                .attachFromApp,
+                level: .info,
+                message: "Attach from App is disabled"
+            )
+        }
     }
-
-    // Register the global hotkey
-    do {
-        try GlobalHotkeyService.shared.registerDefault()
-    } catch {
-        DiagnosticsLogger.log(
-            .attachFromApp,
-            level: .error,
-            message: "Failed to register global hotkey",
-            metadata: ["error": error.localizedDescription]
-        )
-        return
-    }
-
-    // Start accessibility permission monitoring
-    AccessibilityService.shared.startMonitoring()
 
     // Set up hotkey handler - opens Spotlight-style panel (no auto-capture)
     GlobalHotkeyService.shared.onHotkeyPressed = { _ in

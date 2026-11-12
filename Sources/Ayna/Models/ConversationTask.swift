@@ -86,6 +86,9 @@ struct ConversationTask: Identifiable, Codable, Sendable, Equatable {
 #if os(macOS)
     @Observable @MainActor
     final class ConversationTaskManager {
+        /// Shared list the update_tasks tool writes and the chat view shows.
+        static let shared = ConversationTaskManager()
+
         /// Tasks indexed by conversation ID
         private(set) var tasksByConversation: [UUID: [ConversationTask]] = [:]
 

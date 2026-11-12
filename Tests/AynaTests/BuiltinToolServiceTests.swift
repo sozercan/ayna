@@ -91,12 +91,13 @@
             }
 
             @Test
-            func `Tool count is 6`() {
+            func `Tool count is 9`() {
                 let permissionService = PermissionService()
                 let sut = BuiltinToolService(permissionService: permissionService)
                 let definitions = sut.allToolDefinitions()
 
-                #expect(definitions.count == 6)
+                #expect(definitions.count == BuiltinToolService.toolNames.count)
+                #expect(definitions.count == 9)
             }
 
             @Test
@@ -109,7 +110,7 @@
                 }
 
                 #expect(!names.contains("run_command"))
-                #expect(names.count == 5)
+                #expect(names.count == BuiltinToolService.toolNames.count - 1)
             }
         }
 

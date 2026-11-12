@@ -350,6 +350,10 @@ struct MacChatView: View {
                     ToolExecutionIndicator(toolName: toolName)
                 }
 
+                // Task list the model keeps with update_tasks; hidden until it has tasks
+                TaskListView(taskManager: ConversationTaskManager.shared, conversationId: conversation.id)
+                    .padding(.horizontal, Spacing.contentPadding)
+
                 // Pending tool approval requests - reads directly from @Observable PermissionService
                 PendingApprovalsSectionView(
                     conversationId: conversation.id,
