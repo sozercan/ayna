@@ -47,20 +47,27 @@ struct StreamingFollowScroll: ViewModifier {
 }
 
 /// Hands the reader's place from the new-chat transcript to the conversation view that
-/// replaces it when the first reply finishes, so a reader who scrolled up stays put.
+/// replaces it when the first reply finishes, so a reader who scrolled up stays put. The place
+/// is a vertical offset into the content: both screens lay out the same transcript, and an
+/// offset keeps the position inside one long reply, which a row identifier cannot.
 @MainActor
 enum TranscriptReadingPosition {
-    private static var pending: (conversationId: UUID, messageId: UUID)?
+    private static var pending: (conversationId: UUID, offset: CGFloat)?
 
-    static func handOver(_ messageId: UUID, in conversationId: UUID) {
-        pending = (conversationId, messageId)
+    static func handOver(_ offset: CGFloat, in conversationId: UUID) {
+        pending = (conversationId, offset)
     }
 
-    /// The message to show at the top, once, if this conversation was handed a position.
-    static func take(for conversationId: UUID) -> UUID? {
+    /// The offset to restore, once, if this conversation was handed a position.
+    static func take(for conversationId: UUID) -> CGFloat? {
         guard let handoff = pending, handoff.conversationId == conversationId else { return nil }
         pending = nil
-        return handoff.messageId
+        return handoff.offset
+    }
+
+    /// How far into the content the top of the visible area is.
+    static func offset(of geometry: ScrollGeometry) -> CGFloat {
+        geometry.contentOffset.y + geometry.contentInsets.top
     }
 }
 

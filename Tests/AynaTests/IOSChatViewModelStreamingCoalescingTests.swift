@@ -32,11 +32,10 @@ import Testing
         @Test
         func `a reading position is handed to its own conversation once`() {
             let conversation = UUID()
-            let message = UUID()
-            TranscriptReadingPosition.handOver(message, in: conversation)
+            TranscriptReadingPosition.handOver(1234, in: conversation)
 
             #expect(TranscriptReadingPosition.take(for: UUID()) == nil)
-            #expect(TranscriptReadingPosition.take(for: conversation) == message)
+            #expect(TranscriptReadingPosition.take(for: conversation) == 1234)
             #expect(TranscriptReadingPosition.take(for: conversation) == nil)
         }
 
