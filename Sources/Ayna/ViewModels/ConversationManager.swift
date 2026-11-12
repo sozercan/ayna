@@ -104,6 +104,10 @@ final class ConversationManager: ObservableObject {
     // Conversations represented by lightweight metadata only until selected/opened.
     private var metadataOnlyConversationIds: Set<UUID> = []
     private var metadataSearchTextById: [UUID: String] = [:]
+    // What the last metadata load found on disk. In metadata-loading mode the persistence
+    // coordinator only knows this session's saves, so Watch publication fills in the rest
+    // from here. `isMetadataOnly` entries carry no message history.
+    private var durableDiskBaseline: [UUID: (conversation: Conversation, isMetadataOnly: Bool)] = [:]
     private var fullConversationLoadTasks: [UUID: Task<Conversation?, Never>] = [:]
     private var fullConversationLoadTaskVersions: [UUID: UInt64] = [:]
     private var nextFullConversationLoadTaskVersion: UInt64 = 0
@@ -851,6 +855,7 @@ final class ConversationManager: ObservableObject {
         }
         metadataOnlyConversationIds.remove(conversationID)
         metadataSearchTextById.removeValue(forKey: conversationID)
+        durableDiskBaseline.removeValue(forKey: conversationID)
         if selectedConversationId == conversationID {
             selectedConversationId = nil
         }
@@ -868,7 +873,31 @@ final class ConversationManager: ObservableObject {
     }
 
     func durableConversationsForSync() -> [Conversation] {
-        persistenceCoordinator.durableConversations()
+        durableSyncSnapshot().conversations
+    }
+
+    /// Durable conversations for Watch publication, plus the IDs whose message history is not
+    /// loaded and therefore must not be published as a conversation body.
+    func durableSyncSnapshot() -> (conversations: [Conversation], bodyUnavailableIDs: Set<UUID>) {
+        let saved = persistenceCoordinator.durableConversations()
+        guard usesMetadataLoading else { return (saved, []) }
+
+        let savedById = Dictionary(saved.map { ($0.id, $0) }, uniquingKeysWith: { _, new in new })
+        var durable: [Conversation] = []
+        var bodyUnavailableIDs: Set<UUID> = []
+        // In-memory membership decides what still exists: deletions leave `conversations`, and a
+        // failed deletion restores the conversation there.
+        for conversation in conversations {
+            if let savedConversation = savedById[conversation.id] {
+                durable.append(savedConversation)
+            } else if let baseline = durableDiskBaseline[conversation.id] {
+                durable.append(baseline.conversation)
+                if baseline.isMetadataOnly {
+                    bodyUnavailableIDs.insert(conversation.id)
+                }
+            }
+        }
+        return (durable, bodyUnavailableIDs)
     }
 
     func waitUntilConversationStateIsAuthoritative() async -> Bool {
@@ -1184,6 +1213,16 @@ final class ConversationManager: ObservableObject {
 
             conversations = reconciled
             metadataOnlyConversationIds = nextMetadataOnlyIds
+            let previousBaseline = durableDiskBaseline
+            durableDiskBaseline = metadataFromDisk.reduce(into: [:]) { baseline, metadata in
+                if let previous = previousBaseline[metadata.id], !previous.isMetadataOnly,
+                   previous.conversation.updatedAt == metadata.updatedAt
+                {
+                    baseline[metadata.id] = previous
+                } else {
+                    baseline[metadata.id] = (placeholderConversation(from: metadata), true)
+                }
+            }
             metadataSearchTextById = metadataFromDisk.reduce(into: [:]) { searchTextById, metadata in
                 guard nextMetadataOnlyIds.contains(metadata.id) else { return }
                 searchTextById[metadata.id] = metadata.searchableText
@@ -1590,6 +1629,16 @@ final class ConversationManager: ObservableObject {
         return await startFullConversationLoad(conversationId).value
     }
 
+    /// A metadata-only conversation has no messages in memory, so an edit built from it and saved
+    /// directly would overwrite its history on disk. Returns false if the history could not load.
+    func loadFullHistoryBeforeEdit(_ conversationId: UUID) async -> Bool {
+        guard metadataOnlyConversationIds.contains(conversationId) else { return true }
+        _ = await ensureConversationLoaded(conversationId)
+        // A delete or clear during the load also clears the marker; that is not a success.
+        return conversationSnapshot(byId: conversationId) != nil
+            && !metadataOnlyConversationIds.contains(conversationId)
+    }
+
     private func loadFullConversation(
         _ conversationId: UUID,
         version: UInt64
@@ -1605,6 +1654,9 @@ final class ConversationManager: ObservableObject {
         do {
             guard var loadedConversation = try await conversationLoader(conversationId) else {
                 return nil
+            }
+            if !Task.isCancelled, durableDiskBaseline[conversationId] != nil {
+                durableDiskBaseline[conversationId] = (loadedConversation, false)
             }
             guard !Task.isCancelled,
                   metadataOnlyConversationIds.contains(conversationId),
@@ -1883,6 +1935,7 @@ final class ConversationManager: ObservableObject {
             if clearConversationsGeneration == generation {
                 switch clearResult {
                 case .cleared, .committedWithCleanupFailure:
+                    durableDiskBaseline.removeAll()
                     discardManagerReconciliationVersions(
                         through: reconciliationVersionAtClearStart
                     )
@@ -2419,6 +2472,7 @@ final class ConversationManager: ObservableObject {
             switch result {
             case .deleted:
                 self.finishDestructivePersistenceOperation()
+                self.durableDiskBaseline.removeValue(forKey: id)
                 #if !os(watchOS)
                     self.deindexConversation(
                         id: id,

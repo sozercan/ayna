@@ -772,17 +772,22 @@ struct PhoneWatchSyncState: Equatable, Sendable {
     var conversations: [Conversation]
     var acknowledgedWatchRevisions: [UUID: WatchSyncRevision]
     var tombstoneRevisions: [UUID: WatchSyncRevision]
+    /// Conversations known only by metadata. They stay in the manifest but never ship as bodies,
+    /// so the Watch keeps its copy instead of receiving an empty history.
+    var bodyUnavailableConversationIDs: Set<UUID>
 
     init(
         peerID: UUID? = WatchSyncIdentity.legacyPeerID,
         conversations: [Conversation] = [],
         acknowledgedWatchRevisions: [UUID: WatchSyncRevision] = [:],
-        tombstoneRevisions: [UUID: WatchSyncRevision] = [:]
+        tombstoneRevisions: [UUID: WatchSyncRevision] = [:],
+        bodyUnavailableConversationIDs: Set<UUID> = []
     ) {
         self.peerID = peerID
         self.conversations = WatchConversationCanonicalizer.phoneConversations(conversations)
         self.acknowledgedWatchRevisions = acknowledgedWatchRevisions
         self.tombstoneRevisions = tombstoneRevisions
+        self.bodyUnavailableConversationIDs = bodyUnavailableConversationIDs
     }
 }
 
@@ -1473,7 +1478,8 @@ enum WatchSyncPayloadBuilder {
         tombstoneRevisions: [UUID: WatchSyncRevision] = [:],
         configuration: Configuration = .default,
         resolvedSystemPrompt: ((Conversation) -> String?)? = nil,
-        pageCycleCursor: WatchSyncPageCycleCursor? = nil
+        pageCycleCursor: WatchSyncPageCycleCursor? = nil,
+        bodyUnavailableConversationIDs: Set<UUID> = []
     ) throws -> WatchSyncPayload {
         let defaults = AppPreferences.storage
         WatchDefaultSystemPromptPublicationGate.prepareForSnapshotBuild(defaults: defaults)
@@ -1488,7 +1494,8 @@ enum WatchSyncPayloadBuilder {
             tombstoneRevisions: tombstoneRevisions,
             configuration: configuration,
             resolvedSystemPrompt: resolvedSystemPrompt,
-            pageCycleCursor: pageCycleCursor
+            pageCycleCursor: pageCycleCursor,
+            bodyUnavailableConversationIDs: bodyUnavailableConversationIDs
         ).payload
         WatchDefaultSystemPromptPublicationGate.installIfNeeded(
             configuration: configuration,
@@ -1509,7 +1516,8 @@ enum WatchSyncPayloadBuilder {
         tombstoneRevisions: [UUID: WatchSyncRevision],
         configuration: Configuration,
         resolvedSystemPrompt: ((Conversation) -> String?)?,
-        pageCycleCursor: WatchSyncPageCycleCursor?
+        pageCycleCursor: WatchSyncPageCycleCursor?,
+        bodyUnavailableConversationIDs: Set<UUID>
     ) throws -> SnapshotBuildResult {
         guard configuration.byteBudget > 0 else {
             throw WatchSyncPayloadBuilderError.invalidByteBudget(configuration.byteBudget)
@@ -1544,6 +1552,7 @@ enum WatchSyncPayloadBuilder {
             uniquingKeysWith: { existing, _ in existing }
         )
         let bodies = resolvedConversations
+            .filter { !bodyUnavailableConversationIDs.contains($0.conversation.id) }
             .prefix(max(0, configuration.maximumConversations))
             .filter { !transportPlan.deferredConfigurationIDs.contains($0.conversation.id) }
             .map { resolved in
@@ -1706,7 +1715,8 @@ enum WatchSyncPayloadBuilder {
             tombstoneRevisions: state.tombstoneRevisions,
             configuration: configuration,
             resolvedSystemPrompt: resolvedSystemPrompt,
-            pageCycleCursor: pageCycleCursor
+            pageCycleCursor: pageCycleCursor,
+            bodyUnavailableConversationIDs: state.bodyUnavailableConversationIDs
         )
     }
 
@@ -1740,7 +1750,8 @@ enum WatchSyncPayloadBuilder {
             tombstoneRevisions: canonicalState.tombstoneRevisions,
             configuration: configuration,
             resolvedSystemPrompt: resolvedSystemPrompt,
-            pageCycleCursor: cursor
+            pageCycleCursor: cursor,
+            bodyUnavailableConversationIDs: canonicalState.bodyUnavailableConversationIDs
         )
         let activeIDs = Set(canonicalState.conversations.map(\.id))
         var snapshot = buildResult.payload.snapshot

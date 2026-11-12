@@ -51,6 +51,8 @@
             private var legacyPlaceholderConversationIDs: Set<UUID> = []
             private var hasPersistedManifest = false
             private var pageCycleCoordinator = WatchPhonePageCycleCoordinator()
+            private var bodyHydrationTask: Task<Void, Never>?
+            private var bodyHydrationFailedIDs: Set<UUID> = []
 
             override private init() {
                 super.init()
@@ -103,6 +105,7 @@
             }
 
             func syncConversationsToWatch(_ conversations: [Conversation]) {
+                guard !hydrateRecentBodiesBeforeSync() else { return }
                 let pageCycle: WatchSyncPageCycleRequest?
                 if activeWatchCapability.supportsCurrentSchema {
                     let cycleID = UUID()
@@ -113,6 +116,38 @@
                     pageCycle = nil
                 }
                 publishConversationsToWatch(conversations, pageCycle: pageCycle)
+            }
+
+            /// Loads message history for the most recent metadata-only conversations, then syncs
+            /// again so the Watch receives their bodies. Returns true while that load is pending.
+            private func hydrateRecentBodiesBeforeSync() -> Bool {
+                guard bodyHydrationTask == nil else { return true }
+                // Only load histories when a publication can actually reach a Watch.
+                guard let session, session.isPaired, session.isWatchAppInstalled,
+                      let conversationManager, conversationManager.isConversationStateAuthoritative
+                else {
+                    return false
+                }
+                let snapshot = conversationManager.durableSyncSnapshot()
+                let pendingIDs = WatchConversationCanonicalizer.phoneConversations(snapshot.conversations)
+                    .prefix(WatchSyncPayloadConfiguration.default.maximumConversations)
+                    .map(\.id)
+                    .filter { snapshot.bodyUnavailableIDs.contains($0) && !bodyHydrationFailedIDs.contains($0) }
+                guard !pendingIDs.isEmpty else { return false }
+
+                bodyHydrationTask = Task { [weak self] in
+                    for id in pendingIDs {
+                        _ = await conversationManager.ensureConversationLoaded(id)
+                        if conversationManager.durableSyncSnapshot().bodyUnavailableIDs.contains(id) {
+                            // Leave it manifest-only rather than retrying on every sync.
+                            self?.bodyHydrationFailedIDs.insert(id)
+                        }
+                    }
+                    guard let self else { return }
+                    self.bodyHydrationTask = nil
+                    self.syncConversationsToWatch(conversationManager.conversations)
+                }
+                return true
             }
 
             private func publishConversationsToWatch(
@@ -127,7 +162,9 @@
                     )
                     return
                 }
-                let durableConversations = conversationManager?.durableConversationsForSync() ?? conversations
+                let durableSnapshot = conversationManager?.durableSyncSnapshot()
+                    ?? (conversations: conversations, bodyUnavailableIDs: [])
+                let durableConversations = durableSnapshot.conversations
                 guard WatchPhonePublicationBarrier.prepare(
                     pendingOperationCount: {
                         self.conversationManager?.pendingDestructivePersistenceOperations ?? 0
@@ -154,7 +191,8 @@
                         peerID: activeWatchPeerID,
                         conversations: durableConversations,
                         acknowledgedWatchRevisions: acknowledgedWatchRevisions,
-                        tombstoneRevisions: tombstoneRevisions
+                        tombstoneRevisions: tombstoneRevisions,
+                        bodyUnavailableConversationIDs: durableSnapshot.bodyUnavailableIDs
                     )
                     let memoryFacts = try memoryFactsPayloadForSync()
                     guard let publication = try boundedApplicationContext(
@@ -499,6 +537,11 @@
                 guard conversationManager.pendingDestructivePersistenceOperations == 0 else {
                     return .retry(for: mutation)
                 }
+                // A delete removes the conversation by ID and needs no history.
+                let isDelete = mutation.fields.contains(.delete)
+                if !isDelete, !(await hydrateBeforeWatchEdit(mutation.conversationID, in: conversationManager)) {
+                    return .retry(for: mutation)
+                }
 
                 let state = PhoneWatchSyncState(
                     peerID: activeWatchPeerID,
@@ -527,9 +570,13 @@
                     }
 
                 case .deleted:
-                    let deletion = if let existing = conversationManager.conversations.first(where: {
-                        $0.id == mutation.conversationID
-                    }) {
+                    // A metadata-only placeholder has no messages; it must never become the
+                    // rollback snapshot a failed delete writes back.
+                    let deletion = if !conversationManager.isMetadataOnlyConversation(mutation.conversationID),
+                                      let existing = conversationManager.conversations.first(where: {
+                                          $0.id == mutation.conversationID
+                                      })
+                    {
                         conversationManager.persistProposedDeletion(existing)
                     } else {
                         conversationManager.persistProposedDeletion(conversationID: mutation.conversationID)
@@ -617,6 +664,22 @@
                 )
             }
 
+            private func hydrateBeforeWatchEdit(
+                _ conversationID: UUID,
+                in conversationManager: ConversationManager
+            ) async -> Bool {
+                guard await conversationManager.loadFullHistoryBeforeEdit(conversationID) else {
+                    DiagnosticsLogger.log(
+                        .watchConnectivity,
+                        level: .error,
+                        message: "Could not load conversation history before applying Watch edit",
+                        metadata: ["conversationId": conversationID.uuidString]
+                    )
+                    return false
+                }
+                return true
+            }
+
             private func persistLegacyConversation(
                 _ conversation: Conversation,
                 with conversationManager: ConversationManager
@@ -668,6 +731,7 @@
                         )
                         return
                     }
+                    guard await self.hydrateBeforeWatchEdit(conversationID, in: conversationManager) else { return }
                     let converted = watchMessage.toMessage()
 
                     let proposed: Conversation
@@ -713,6 +777,9 @@
                     else {
                         return
                     }
+                    guard await self.hydrateBeforeWatchEdit(watchConversation.id, in: conversationManager) else {
+                        return
+                    }
 
                     let existing = conversationManager.conversations.first {
                         $0.id == watchConversation.id
@@ -756,6 +823,7 @@
             ) async {
                 await processLegacyPayload { [weak self] conversationManager in
                     guard let self,
+                          await self.hydrateBeforeWatchEdit(conversationID, in: conversationManager),
                           metadata.isFromActivePeer(self.activeWatchPeerID),
                           !metadata.isCovered(
                               conversationID: conversationID,
