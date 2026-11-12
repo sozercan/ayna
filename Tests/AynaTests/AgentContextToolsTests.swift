@@ -230,6 +230,28 @@ import Testing
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func `A separate git directory is approved once`() async throws {
+            let root = try makeRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let work = root.appendingPathComponent("work")
+            await git(["init", "--separate-git-dir", root.appendingPathComponent("elsewhere").path, work.path], in: root)
+            await git(["commit", "--allow-empty", "-m", "visible subject"], in: work)
+            let permissionService = PermissionService()
+            let service = BuiltinToolService(permissionService: permissionService)
+            var settings = AgentSettings.default
+            settings.projectRootPath = work.path
+            service.apply(settings)
+
+            let call = Task { await service.executeToolCall(toolName: "git_context", arguments: [:], conversationId: UUID()) }
+            try permissionService.approve(#require(await waitForPending(permissionService)).id)
+            let second = await waitForPending(permissionService, seconds: 1)
+            #expect(second == nil)
+            if let second { permissionService.approve(second.id) }
+
+            #expect(await call.value.contains("visible subject"))
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func `A directory swapped while approval is pending is not read`() async throws {
             let root = try makeRoot()
             defer { try? FileManager.default.removeItem(at: root) }
