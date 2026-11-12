@@ -278,7 +278,7 @@ import Testing
             }
 
             let approved = Task { await service.executeToolCall(toolName: "update_tasks", arguments: tasks(2), conversationId: first) }
-            permissionService.approve(try #require(await waitForPending(permissionService)).id)
+            try permissionService.approve(#require(await waitForPending(permissionService)).id)
             _ = await approved.value
 
             // Another conversation with a list of the same length still asks.
