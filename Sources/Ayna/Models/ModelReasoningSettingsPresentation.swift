@@ -251,44 +251,97 @@ struct ChatReasoningSettingsPresentation: Equatable, Sendable {
     }
 }
 
-/// Effort stops offered by the composer's thinking-effort slider.
+/// Stops offered by the thinking-effort slider in the model selector.
 ///
-/// Automatic mode only sends reasoning parameters to verified first-party
-/// endpoints. For custom endpoints (Azure, proxies, deployment aliases) the
-/// slider still offers the efforts that an explicit "On" would allow, and
-/// picking one opts the conversation in.
+/// The slider replaces the old activation picker:
+/// - no selection keeps Automatic (the model's default behavior);
+/// - an effort stop sends that effort, opting custom endpoints (Azure, proxies,
+///   deployment aliases) into reasoning because Automatic only targets
+///   verified first-party endpoints;
+/// - an `off` stop explicitly disables thinking for models whose effort list
+///   has no `none` value of its own (for example Anthropic).
 struct ChatReasoningEffortSelection: Equatable, Sendable {
-    let options: [ReasoningEffort]
+    enum Stop: Equatable, Sendable {
+        case off
+        case effort(ReasoningEffort)
+
+        var displayName: String {
+            switch self {
+            case .off: "Off"
+            case let .effort(effort): effort.displayName
+            }
+        }
+    }
+
+    let stops: [Stop]
     /// True when choosing an effort must also switch activation to `.enabled`.
     let requiresOptIn: Bool
 
     init(models: [ChatReasoningModelContext], configuration: ModelReasoningConfiguration) {
-        let current = ChatReasoningSettingsPresentation(models: models, configuration: configuration)
-        guard current.isAvailable,
-              current.effortOptions.isEmpty,
-              configuration.activation == .automatic
-        else {
-            options = current.effortOptions
+        var base = configuration
+        if base.activation == .explicitlyDisabled || base.activation == .disabled {
+            base.activation = .automatic
+        }
+
+        let current = ChatReasoningSettingsPresentation(models: models, configuration: base)
+        guard current.isAvailable else {
+            stops = []
             requiresOptIn = false
             return
         }
 
-        var enabled = configuration
-        enabled.activation = .enabled
-        options = ChatReasoningSettingsPresentation(models: models, configuration: enabled).effortOptions
-        requiresOptIn = !options.isEmpty
+        var efforts = current.effortOptions
+        var optIn = false
+        if efforts.isEmpty, base.activation == .automatic {
+            var enabled = base
+            enabled.activation = .enabled
+            efforts = ChatReasoningSettingsPresentation(models: models, configuration: enabled).effortOptions
+            optIn = !efforts.isEmpty
+        }
+
+        let supportsOff = current.activationOptions.contains(.explicitlyDisabled) && !efforts.contains(.none)
+        stops = (supportsOff ? [.off] : []) + efforts.map(Stop.effort)
+        requiresOptIn = optIn
+    }
+
+    func selectedIndex(for configuration: ModelReasoningConfiguration) -> Int? {
+        if configuration.activation == .explicitlyDisabled {
+            return stops.firstIndex(of: .off)
+        }
+        return configuration.effort.flatMap { stops.firstIndex(of: .effort($0)) }
     }
 
     func configuration(
-        selecting effort: ReasoningEffort?,
+        selecting stop: Stop?,
         from configuration: ModelReasoningConfiguration
     ) -> ModelReasoningConfiguration {
         var updated = configuration
-        updated.effort = effort
-        if effort != nil, requiresOptIn {
-            updated.activation = .enabled
+        switch stop {
+        case nil:
+            updated.effort = nil
+            if updated.activation == .explicitlyDisabled {
+                updated.activation = .automatic
+            }
+        case .off:
+            updated.activation = .explicitlyDisabled
+            updated.effort = nil
+        case let .effort(effort):
+            updated.effort = effort
+            if requiresOptIn {
+                updated.activation = .enabled
+            } else if updated.activation == .explicitlyDisabled || updated.activation == .disabled {
+                updated.activation = .automatic
+            }
         }
         return updated
+    }
+}
+
+extension ModelReasoningSettingsPresentation {
+    /// Whether any provider-specific option exists beyond the effort slider.
+    var hasAdvancedControls: Bool {
+        showsAnthropicMode || showsOpenAIMode || showsOpenAIContext || showsSummary ||
+            showsAnthropicDisplay || showsLegacyBudget
     }
 }
 

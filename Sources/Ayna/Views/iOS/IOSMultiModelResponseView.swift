@@ -464,23 +464,20 @@
 
         var body: some View {
             List {
-                if let reasoningConfiguration,
-                   ChatReasoningPanel.isAvailable(selectedModels: selectedModels, primaryModel: primaryModel)
-                {
-                    Section("Thinking") {
-                        ChatReasoningPanel(
-                            configuration: reasoningConfiguration,
-                            selectedModels: selectedModels,
-                            primaryModel: primaryModel,
-                            identifier: reasoningIdentifier
-                        )
-                        .padding(.vertical, Spacing.xs)
-                    }
-                }
-
                 Section {
                     ForEach(availableModels, id: \.self) { model in
                         modelRow(for: model)
+                            .listRowSeparator(model == reasoningHostModel ? .hidden : .automatic, edges: .bottom)
+                        if model == reasoningHostModel, let reasoningConfiguration {
+                            // Separate row so slider drags never toggle the model.
+                            ChatReasoningPanel(
+                                configuration: reasoningConfiguration,
+                                selectedModels: selectedModels,
+                                primaryModel: primaryModel,
+                                identifier: reasoningIdentifier
+                            )
+                            .padding(.bottom, Spacing.xs)
+                        }
                     }
                 } header: {
                     if multiModelEnabled {
@@ -504,6 +501,17 @@
             .navigationBarTitleDisplayMode(.inline)
         }
 
+        /// The selected row that hosts the inline thinking-effort controls. With
+        /// several models selected, the first one in list order hosts the shared setting.
+        private var reasoningHostModel: String? {
+            guard reasoningConfiguration != nil,
+                  ChatReasoningPanel.isAvailable(selectedModels: selectedModels, primaryModel: primaryModel)
+            else {
+                return nil
+            }
+            return availableModels.first { selectedModels.contains($0) }
+        }
+
         private func modelRow(for model: String) -> some View {
             let isModelSelected = selectedModels.contains(model)
             let modelCapability = aiService.getModelCapability(model)
@@ -523,6 +531,14 @@
                         .foregroundStyle(Theme.textPrimary)
 
                     Spacer()
+
+                    if model == reasoningHostModel,
+                       let effortBadge = reasoningConfiguration?.wrappedValue.thinkingEffortBadge
+                    {
+                        Text(effortBadge)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Theme.accent)
+                    }
 
                     // Show capability badge for image gen models
                     if modelCapability == .imageGeneration {

@@ -1,6 +1,8 @@
 import SwiftUI
 
-/// Provider-aware reasoning controls used from the chat composer.
+/// Provider-specific reasoning options shown behind the thinking-effort slider.
+///
+/// Activation and effort are driven by the slider itself, so they are not repeated here.
 struct ModelReasoningSettingsControls: View {
     @Binding var configuration: ModelReasoningConfiguration
     let model: String
@@ -8,8 +10,6 @@ struct ModelReasoningSettingsControls: View {
     let endpointType: APIEndpointType
     let endpoint: String?
     var identifierPrefix = "chat.reasoning"
-    /// The composer renders effort with its own slider, so it hides this picker.
-    var includesEffortPicker = true
 
     private var presentation: ModelReasoningSettingsPresentation {
         ModelReasoningSettingsPresentation(
@@ -33,20 +33,19 @@ struct ModelReasoningSettingsControls: View {
     }
 
     var body: some View {
-        Picker("Activation", selection: $configuration.activation) {
-            ForEach(presentation.activationOptions, id: \.self) { mode in
-                Text(mode.displayName).tag(mode)
-            }
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            controls
         }
-        .disabled(!presentation.isActivationEnabled)
-        .accessibilityIdentifier("\(identifierPrefix).activation")
         .onAppear {
             normalizeConfiguration()
         }
         .onChange(of: normalizationInput) { _, _ in
             normalizeConfiguration()
         }
+    }
 
+    @ViewBuilder
+    private var controls: some View {
         if presentation.showsAnthropicMode {
             Picker("Thinking Mode", selection: $configuration.anthropicMode) {
                 ForEach(presentation.anthropicModeOptions, id: \.self) { mode in
@@ -54,16 +53,6 @@ struct ModelReasoningSettingsControls: View {
                 }
             }
             .accessibilityIdentifier("\(identifierPrefix).anthropicMode")
-        }
-
-        if includesEffortPicker, presentation.showsEffort {
-            Picker("Effort", selection: $configuration.effort) {
-                Text("Model Default").tag(nil as ReasoningEffort?)
-                ForEach(presentation.effortOptions, id: \.self) { effort in
-                    Text(effort.displayName).tag(effort as ReasoningEffort?)
-                }
-            }
-            .accessibilityIdentifier("\(identifierPrefix).effort")
         }
 
         if presentation.showsOpenAIMode {

@@ -32,18 +32,6 @@
 
         var body: some View {
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                if ChatReasoningPanel.isAvailable(selectedModels: selectedModels, primaryModel: selectedModel) {
-                    ChatReasoningPanel(
-                        configuration: $reasoningConfiguration,
-                        selectedModels: selectedModels,
-                        primaryModel: selectedModel,
-                        identifier: reasoningIdentifier
-                    )
-
-                    Divider()
-                        .padding(.vertical, Spacing.xs)
-                }
-
                 // Header
                 Text(multiModelEnabled ? "Select models" : "Select model")
                     .font(Typography.captionBold)
@@ -87,12 +75,44 @@
 
         private var modelListView: some View {
             ForEach(aiService.usableModels, id: \.self) { model in
-                modelRow(for: model)
+                if model == reasoningHostModel {
+                    VStack(alignment: .leading, spacing: 0) {
+                        modelRow(for: model, showsEffortBadge: true)
+                        ChatReasoningPanel(
+                            configuration: $reasoningConfiguration,
+                            selectedModels: selectedModels,
+                            primaryModel: selectedModel,
+                            identifier: reasoningIdentifier
+                        )
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.top, Spacing.xs)
+                        .padding(.bottom, Spacing.sm)
+                    }
+                    .background(
+                        RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm)
+                            .fill(Theme.selection)
+                    )
+                } else {
+                    modelRow(for: model)
+                }
             }
         }
 
-        private func modelRow(for model: String) -> some View {
-            let isSelected = selectedModels.contains(model)
+        /// The selected row that hosts the inline thinking-effort controls.
+        /// With several models selected, the first one in list order hosts the
+        /// shared setting.
+        private var reasoningHostModel: String? {
+            guard ChatReasoningPanel.isAvailable(selectedModels: selectedModels, primaryModel: selectedModel) else {
+                return nil
+            }
+            if selectedModels.isEmpty {
+                return aiService.usableModels.contains(selectedModel) ? selectedModel : nil
+            }
+            return aiService.usableModels.first { selectedModels.contains($0) }
+        }
+
+        private func modelRow(for model: String, showsEffortBadge: Bool = false) -> some View {
+            let isSelected = selectedModels.contains(model) || showsEffortBadge
             let modelCapability = aiService.getModelCapability(model)
             let isCapabilityMismatch: Bool = {
                 guard let selectedType = selectedCapabilityType else { return false }
@@ -112,6 +132,12 @@
 
                     Spacer()
 
+                    if showsEffortBadge, let effortBadge = reasoningConfiguration.thinkingEffortBadge {
+                        Text(effortBadge)
+                            .font(Typography.captionBold)
+                            .foregroundStyle(Theme.accent)
+                    }
+
                     // Capability badge for image gen models
                     if modelCapability == .imageGeneration {
                         Image(systemName: "photo")
@@ -123,7 +149,7 @@
                 .padding(.horizontal, Spacing.sm)
                 .background(
                     RoundedRectangle(cornerRadius: Spacing.CornerRadius.sm)
-                        .fill(isSelected ? Theme.selection : Color.clear)
+                        .fill(isSelected && !showsEffortBadge ? Theme.selection : Color.clear)
                 )
             }
             .buttonStyle(.plain)

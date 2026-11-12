@@ -1,10 +1,11 @@
 import SwiftUI
 
 #if !os(watchOS)
-    /// Conversation-level thinking-effort controls embedded in the model selector.
+    /// Thinking-effort controls shown inline under the selected model in the
+    /// model selector.
     ///
-    /// Leads with a stepped effort slider; provider-specific knobs stay behind the
-    /// header disclosure so the common case is a single drag.
+    /// The stepped slider covers activation and effort; provider-specific
+    /// options stay behind an "Options" disclosure.
     struct ChatReasoningPanel: View {
         @Binding var configuration: ModelReasoningConfiguration
         let selectedModels: Set<String>
@@ -58,12 +59,23 @@ import SwiftUI
             ChatReasoningSettingsPresentation(models: modelContexts, configuration: configuration)
         }
 
-        private var effortSelection: ChatReasoningEffortSelection {
+        private var selection: ChatReasoningEffortSelection {
             ChatReasoningEffortSelection(models: modelContexts, configuration: configuration)
         }
 
-        private var effortOptions: [ReasoningEffort] {
-            effortSelection.options
+        private var singleModelContext: ChatReasoningModelContext? {
+            modelContexts.count == 1 ? modelContexts.first : nil
+        }
+
+        private var hasAdvancedControls: Bool {
+            guard let context = singleModelContext else { return false }
+            return ModelReasoningSettingsPresentation(
+                model: context.model,
+                provider: context.provider,
+                endpointType: context.endpointType,
+                endpoint: context.endpoint,
+                configuration: configuration
+            ).hasAdvancedControls
         }
 
         private var defaultConfiguration: ModelReasoningConfiguration {
@@ -74,37 +86,47 @@ import SwiftUI
             configuration == defaultConfiguration
         }
 
-        private var levelLabel: String {
-            configuration.thinkingEffortBadge ?? "Default"
-        }
-
-        private var modelTitle: String {
-            models.count == 1 ? models[0] : "\(models.count) models"
+        private var valueLabel: String {
+            configuration.thinkingEffortBadge ?? "Model default"
         }
 
         var body: some View {
             if presentation.isAvailable {
-                VStack(alignment: .leading, spacing: Spacing.md) {
-                    header
-
-                    if effortOptions.isEmpty {
-                        Text(emptyEffortDescription)
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    if selection.stops.isEmpty {
+                        Text("Thinking effort isn't adjustable for this model.")
                             .font(Typography.caption)
                             .foregroundStyle(Theme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
                         ReasoningEffortStepSlider(
-                            stepCount: effortOptions.count,
-                            selection: effortIndexBinding,
-                            valueLabel: levelLabel
+                            stepCount: selection.stops.count,
+                            selection: stopIndexBinding,
+                            valueLabel: valueLabel
                         )
                         .accessibilityIdentifier("\(identifier).effort")
                     }
 
-                    if showsAdvanced {
-                        advancedControls
-                            .padding(.top, Spacing.xs)
-                            .transition(.opacity)
+                    if models.count > 1 {
+                        Text("Applies to all \(models.count) selected models.")
+                            .font(Typography.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+
+                    if hasAdvancedControls || !isAtDefault {
+                        footer
+                    }
+
+                    if showsAdvanced, hasAdvancedControls, let context = singleModelContext {
+                        ModelReasoningSettingsControls(
+                            configuration: $configuration,
+                            model: context.model,
+                            provider: context.provider,
+                            endpointType: context.endpointType,
+                            endpoint: context.endpoint,
+                            identifierPrefix: identifier
+                        )
+                        .transition(.opacity)
                     }
                 }
                 .onAppear {
@@ -116,115 +138,61 @@ import SwiftUI
             }
         }
 
-        private var header: some View {
+        private var footer: some View {
             HStack(spacing: Spacing.sm) {
-                Button {
-                    withAnimation(Motion.springSnappy) {
-                        showsAdvanced.toggle()
+                if hasAdvancedControls {
+                    Button {
+                        withAnimation(Motion.springSnappy) {
+                            showsAdvanced.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: Spacing.xxs) {
+                            Text("Options")
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: Typography.Size.xs, weight: .semibold))
+                                .rotationEffect(.degrees(showsAdvanced ? 90 : 0))
+                        }
+                        .contentShape(Rectangle())
                     }
-                } label: {
-                    HStack(spacing: Spacing.xs) {
-                        Text(modelTitle)
-                            .foregroundStyle(Theme.textPrimary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Text(levelLabel)
-                            .foregroundStyle(Theme.accent)
-                            .lineLimit(1)
-                            .layoutPriority(1)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: Typography.Size.xs, weight: .semibold))
-                            .foregroundStyle(Theme.textSecondary)
-                            .rotationEffect(.degrees(showsAdvanced ? 90 : 0))
-                    }
-                    .font(Typography.headline)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(showsAdvanced ? "Hide thinking options" : "Show thinking options")
+                    .accessibilityIdentifier("\(identifier).advanced")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(showsAdvanced ? "Hide advanced thinking settings" : "Show advanced thinking settings")
-                .accessibilityValue("\(modelTitle), \(levelLabel)")
-                .accessibilityIdentifier("\(identifier).advanced")
 
                 Spacer(minLength: Spacing.sm)
 
-                Button {
-                    withAnimation(Motion.springSnappy) {
-                        configuration = defaultConfiguration
-                    }
-                } label: {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: Typography.Size.body, weight: .medium))
-                        .foregroundStyle(Theme.textSecondary)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(isAtDefault)
-                .opacity(isAtDefault ? 0.4 : 1)
-                .help("Reset to model default")
-                .accessibilityLabel("Reset thinking to model default")
-                .accessibilityIdentifier("\(identifier).reset")
-            }
-        }
-
-        private var advancedControls: some View {
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                if models.count == 1, let model = models.first {
-                    ModelReasoningSettingsControls(
-                        configuration: $configuration,
-                        model: model,
-                        provider: provider(for: model),
-                        endpointType: endpointType(for: model),
-                        endpoint: aiService.modelEndpoints[model],
-                        identifierPrefix: identifier,
-                        includesEffortPicker: false
-                    )
-                } else {
-                    Picker("Activation", selection: $configuration.activation) {
-                        ForEach(presentation.activationOptions, id: \.self) { activation in
-                            Text(activation.displayName).tag(activation)
+                if !isAtDefault {
+                    Button {
+                        withAnimation(Motion.springSnappy) {
+                            configuration = defaultConfiguration
                         }
+                    } label: {
+                        Label("Default", systemImage: "arrow.counterclockwise")
+                            .contentShape(Rectangle())
                     }
-
-                    Text("Only settings supported by every selected model are shown.")
-                        .font(Typography.caption)
-                        .foregroundStyle(Theme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    .buttonStyle(.plain)
+                    .help("Reset to model default")
+                    .accessibilityLabel("Reset thinking to model default")
+                    .accessibilityIdentifier("\(identifier).reset")
                 }
             }
+            .font(Typography.caption)
+            .foregroundStyle(Theme.textSecondary)
         }
 
-        private var emptyEffortDescription: String {
-            switch configuration.activation {
-            case .explicitlyDisabled:
-                "Thinking is turned off."
-            case .disabled:
-                "Using the provider's default thinking behavior."
-            case .automatic, .enabled:
-                "Effort levels aren't available for this model."
-            }
-        }
-
-        private var effortIndexBinding: Binding<Int?> {
+        private var stopIndexBinding: Binding<Int?> {
             Binding(
                 get: {
-                    configuration.effort.flatMap { effortOptions.firstIndex(of: $0) }
+                    selection.selectedIndex(for: configuration)
                 },
                 set: { newValue in
-                    configuration = effortSelection.configuration(
-                        selecting: newValue.map { effortOptions[$0] },
+                    let stops = selection.stops
+                    configuration = selection.configuration(
+                        selecting: newValue.flatMap { stops.indices.contains($0) ? stops[$0] : nil },
                         from: configuration
                     )
                 }
             )
-        }
-
-        private func provider(for model: String) -> AIProvider {
-            aiService.modelProviders[model] ?? aiService.provider
-        }
-
-        private func endpointType(for model: String) -> APIEndpointType {
-            aiService.modelEndpointTypes[model] ?? .chatCompletions
         }
 
         private func normalizeConfiguration() {
