@@ -70,9 +70,11 @@ import Foundation
             conversationId: UUID
         ) async throws {
             let rootComponents = layout.topLevel.pathComponents
-            for metadata in [layout.gitDirectory, layout.commonDirectory]
-                where !metadata.pathComponents.starts(with: rootComponents)
-            {
+            // A separate git dir is usually also the common dir; ask once per location.
+            let locations = layout.commonDirectory == layout.gitDirectory
+                ? [layout.gitDirectory]
+                : [layout.gitDirectory, layout.commonDirectory]
+            for metadata in locations where !metadata.pathComponents.starts(with: rootComponents) {
                 let riskReason = switch pathValidator.validate(url: metadata, operation: .read) {
                 case let .denied(reason):
                     throw ToolExecutionError.invalidPath(path: metadata.path, reason: reason)
