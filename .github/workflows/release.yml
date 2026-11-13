@@ -517,8 +517,8 @@ jobs:
 
           app "Ayna.app"
 
-          postflight do
-            system_command "/usr/bin/xattr", args: ["-cr", "#{appdir}/Ayna.app"], sudo: false
+          postflight_steps do
+            run "/usr/bin/xattr", args: ["-cr", "{{appdir}}/Ayna.app"], sudo: false
           end
 
           zap trash: [
