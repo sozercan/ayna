@@ -298,7 +298,10 @@
                 return
             }
 
-            if let managed = services[config.name], managed.service.isConnected {
+            if let managed = services[config.name],
+               managed.configID == config.id,
+               managed.service.isConnected
+            {
                 if !availableTools.contains(where: { $0.serverName == config.name }),
                    let operation = startDiscoveryOperation(
                        serverName: config.name,
@@ -326,7 +329,10 @@
         private func launchConnection(to requestedConfig: MCPServerConfig, autoDisableOnFailure: Bool = true) {
             guard let config = currentConfig(matching: requestedConfig), config.enabled else { return }
 
-            if let managed = services[config.name], managed.service.isConnected {
+            if let managed = services[config.name],
+               managed.configID == config.id,
+               managed.service.isConnected
+            {
                 if !availableTools.contains(where: { $0.serverName == config.name }) {
                     _ = startDiscoveryOperation(
                         serverName: config.name,

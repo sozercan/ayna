@@ -1219,18 +1219,9 @@ struct MacChatView: View {
             ]
         )
 
-        if mcpManager.getEnabledTools().isEmpty,
-           mcpManager.serverConfigs.contains(where: \.enabled)
-        {
-            logChat("⏳ Enabled servers found but no tools yet, waiting for discovery...", level: .info)
+        if mcpManager.serverConfigs.contains(where: \.enabled) {
             await mcpManager.waitForPendingDiscovery()
             guard sendPreparationID == preparationID, !Task.isCancelled else { return }
-            let updatedTools = mcpManager.getEnabledTools()
-            logChat(
-                "⏳ After waiting for discovery: \(updatedTools.count) tools available",
-                level: .info,
-                metadata: ["availableTools": "\(updatedTools.count)"]
-            )
         }
 
         guard
