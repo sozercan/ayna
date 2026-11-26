@@ -1,14 +1,7 @@
-//
-//  ChatDraftContent.swift
-//  Ayna
-//
-
 import Foundation
 import UniformTypeIdentifiers
 
-/// Shared rules for deciding whether a composer draft can form a provider request.
 enum ChatDraftContent {
-    /// Matches the strictest supported provider limit (Anthropic: 20 images per request).
     static let maximumImageCount = 20
 
     static func isSendable(
@@ -37,8 +30,6 @@ enum ChatDraftContent {
         return max(0, maximumImageCount - imageFileCount - max(0, inMemoryImageCount))
     }
 
-    /// Selects dropped files to attach: skips files already attached or dropped twice, and
-    /// images beyond the per-request image limit. Other files are always accepted, like the picker.
     static func filesToAttach(
         _ droppedFiles: [URL],
         existing: [URL],

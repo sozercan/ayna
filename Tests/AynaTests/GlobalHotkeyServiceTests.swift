@@ -1,10 +1,3 @@
-//
-//  GlobalHotkeyServiceTests.swift
-//  aynaTests
-//
-//  Tests for GlobalHotkeyService
-//
-
 #if os(macOS)
     @testable import Ayna
     import Carbon.HIToolbox
@@ -21,12 +14,9 @@
             service.onHotkeyPressed = nil
         }
 
-        // MARK: - Registration Tests
-
         @Test("Initial state not registered")
         func initialStateNotRegistered() {
-            // Fresh service should not be registered
-            service.unregister() // Ensure clean state
+            service.unregister()
             #expect(!service.isRegistered)
         }
 
@@ -68,7 +58,6 @@
                 modifiers: UInt32(cmdKey | shiftKey)
             )
 
-            // Register again with different modifiers
             try service.register(
                 keyCode: UInt32(kVK_Space),
                 modifiers: UInt32(cmdKey | optionKey)
@@ -77,8 +66,6 @@
             #expect(service.isRegistered)
             service.unregister()
         }
-
-        // MARK: - Hotkey String Parsing Tests
 
         @Test("Register with hotkey string")
         func registerWithHotkeyString() throws {
@@ -96,8 +83,6 @@
             service.unregister()
         }
 
-        // MARK: - Callback Tests
-
         @Test("Callback can be set")
         func callbackCanBeSet() {
             var callbackInvoked = false
@@ -106,10 +91,8 @@
                 callbackInvoked = true
             }
 
-            // We can't easily trigger the hotkey in tests,
-            // but we can verify the callback is stored
             #expect(service.onHotkeyPressed != nil)
-            _ = callbackInvoked // Silence unused variable warning
+            _ = callbackInvoked
         }
 
         @Test("Captured app initially nil")
@@ -117,20 +100,15 @@
             #expect(service.capturedApp == nil)
         }
 
-        // MARK: - Error Handling Tests
-
         @Test("Multiple unregister calls safe")
         func multipleUnregisterCallsSafe() {
             service.unregister()
             service.unregister()
             service.unregister()
 
-            // Should not crash
             #expect(!service.isRegistered)
         }
     }
-
-    // MARK: - GlobalHotkeyError Tests
 
     @Suite("GlobalHotkeyError Tests")
     struct GlobalHotkeyErrorTests {

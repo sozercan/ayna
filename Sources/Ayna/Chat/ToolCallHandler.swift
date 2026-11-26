@@ -1,10 +1,3 @@
-//
-//  ToolCallHandler.swift
-//  ayna
-//
-//  Extracted from MacChatView/MacNewChatView - handles tool call execution
-//
-
 #if os(macOS)
 
     import Foundation
@@ -60,17 +53,12 @@
         }
     }
 
-    /// Handles tool call execution and response processing
     @MainActor
     final class ToolCallHandler {
-        /// Maximum tool call depth from settings
         static var maxToolCallDepth: Int {
             AgentSettingsStore.shared.settings.maxToolChainDepth
         }
 
-        // MARK: - Tool Call Storage
-
-        /// Creates an MCPToolCall from the callback parameters
         static func createToolCall(
             id: String,
             toolName: String,
@@ -89,7 +77,6 @@
             )
         }
 
-        /// Creates a tool message with the execution result
         static func createToolMessage(
             toolCallId: String,
             toolName: String,
@@ -142,7 +129,6 @@
             return true
         }
 
-        /// Creates a continuation assistant message for tool chain
         static func createContinuationMessage(
             model: String,
             citations: [CitationReference]? = nil
@@ -154,23 +140,10 @@
             return message
         }
 
-        /// Checks if a tool is web_search (which has special handling)
         static func isWebSearchTool(_ toolName: String) -> Bool {
             toolName == "web_search"
         }
 
-        // MARK: - Message Building for Tool Continuations
-
-        /// Builds the messages array for continuing after tool execution
-        /// - Parameters:
-        ///   - conversation: The conversation with all messages including the new assistant placeholder
-        ///   - toolCallId: The tool call ID
-        ///   - toolName: The tool name
-        ///   - arguments: The tool arguments
-        ///   - result: The tool execution result
-        ///   - isWebSearch: Whether this is a web_search tool (synthetic message)
-        ///   - systemPrompt: Optional system prompt to prepend
-        /// - Returns: Array of messages ready for the API
         static func buildContinuationMessages(
             conversationMessages: [Message],
             toolCallId: String,
@@ -230,8 +203,6 @@
             completedToolCalls _: [MacCompletedToolCall],
             systemPrompt: String?
         ) -> [Message] {
-            // Exclude the continuation assistant message (last one). Tool results
-            // are inserted durably as each side effect completes.
             var messages = Array(conversationMessages.dropLast())
 
             if let systemPrompt {

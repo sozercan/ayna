@@ -1,15 +1,8 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  MacSettingsView.swift
-//  ayna
-//
-//  Created on 11/2/25.
-//
 
 import SwiftUI
 
-// This legacy settings surface is split into sections but remains in one source file.
 // swiftlint:disable file_length
 
 struct MacSettingsView: View {
@@ -155,7 +148,6 @@ struct GeneralSettingsView: View {
                     .font(Typography.caption)
             }
 
-            // Attach from App Section
             AttachFromAppSettingsSection(isEnabled: $attachFromAppEnabled)
 
             Section {
@@ -172,7 +164,6 @@ struct GeneralSettingsView: View {
     }
 }
 
-/// Settings section for Tavily Web Search configuration
 struct WebSearchSettingsSection: View {
     @ObservedObject private var tavilyService = TavilyService.shared
     @State private var showAPIKey = false
@@ -184,7 +175,6 @@ struct WebSearchSettingsSection: View {
                 .accessibilityIdentifier("settings.webSearch.enableToggle")
 
             if tavilyService.isEnabled {
-                // Active provider indicator
                 HStack(spacing: Spacing.xs) {
                     Image(systemName: tavilyService.isConfigured ? "bolt.fill" : "magnifyingglass")
                         .foregroundStyle(Theme.accent)
@@ -259,7 +249,6 @@ struct WebSearchSettingsSection: View {
     }
 }
 
-/// Settings section for "Attach from App" feature
 struct AttachFromAppSettingsSection: View {
     @Binding var isEnabled: Bool
     @State private var accessibilityEnabled = AccessibilityService.shared.isEnabled
@@ -273,7 +262,6 @@ struct AttachFromAppSettingsSection: View {
                     AppPreferences.attachFromAppEnabled = newValue
 
                     if newValue {
-                        // Register hotkey when enabled
                         do {
                             try GlobalHotkeyService.shared.registerSaved()
                             AccessibilityService.shared.startMonitoring()
@@ -286,20 +274,17 @@ struct AttachFromAppSettingsSection: View {
                             )
                         }
                     } else {
-                        // Unregister when disabled
                         GlobalHotkeyService.shared.unregister()
                         AccessibilityService.shared.stopMonitoring()
                     }
                 }
 
             if isEnabled {
-                // Hotkey display
                 LabeledContent("Hotkey") {
                     HotkeyRecorderView()
                 }
                 .accessibilityIdentifier("settings.attachFromApp.hotkey")
 
-                // Accessibility permission status
                 LabeledContent("Accessibility") {
                     if accessibilityEnabled {
                         Label("Enabled", systemImage: "checkmark.circle.fill")
@@ -334,7 +319,6 @@ struct AttachFromAppSettingsSection: View {
     }
 }
 
-/// Combined Tools settings view containing Web Search and MCP Servers
 struct ToolsSettingsView: View {
     @ObservedObject private var tavilyService = TavilyService.shared
     @StateObject private var mcpManager = MCPServerManager.shared
@@ -342,7 +326,6 @@ struct ToolsSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header
             HStack {
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text("Tools")
@@ -372,10 +355,8 @@ struct ToolsSettingsView: View {
 
             Divider()
 
-            // Tools list
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
-                    // Built-in Tools Section
                     VStack(alignment: .leading, spacing: Spacing.md) {
                         Text("Built-in Tools")
                             .font(Typography.subheadline)
@@ -389,7 +370,6 @@ struct ToolsSettingsView: View {
                     Divider()
                         .padding(.horizontal)
 
-                    // Agentic Tools Section
                     VStack(alignment: .leading, spacing: Spacing.md) {
                         Text("Agentic Tools")
                             .font(Typography.subheadline)
@@ -403,7 +383,6 @@ struct ToolsSettingsView: View {
                     Divider()
                         .padding(.horizontal)
 
-                    // MCP Tools Section
                     VStack(alignment: .leading, spacing: Spacing.md) {
                         HStack {
                             Text("MCP Servers")
@@ -429,7 +408,6 @@ struct ToolsSettingsView: View {
     }
 }
 
-/// Row displaying Web Search tool status with inline configuration
 struct WebSearchToolRow: View {
     @ObservedObject private var tavilyService = TavilyService.shared
     @State private var isExpanded = false
@@ -483,13 +461,11 @@ struct WebSearchToolRow: View {
             }
             .padding()
 
-            // Expandable configuration section
             if isExpanded, tavilyService.isEnabled {
                 Divider()
                     .padding(.horizontal)
 
                 VStack(alignment: .leading, spacing: Spacing.sm) {
-                    // Active provider indicator
                     HStack(spacing: Spacing.xs) {
                         Image(systemName: tavilyService.isConfigured ? "bolt.fill" : "magnifyingglass")
                             .foregroundStyle(Theme.accent)
@@ -580,7 +556,6 @@ struct WebSearchToolRow: View {
     }
 }
 
-/// Row displaying Agentic Tools status
 struct AgenticToolsRow: View {
     @Bindable private var agentSettings = AgentSettingsStore.shared
 
@@ -641,7 +616,6 @@ struct AgenticToolsRow: View {
     }
 }
 
-/// List of MCP servers
 struct MCPServersList: View {
     @StateObject private var mcpManager = MCPServerManager.shared
     @State private var showingAddServer = false
@@ -723,7 +697,6 @@ struct MCPServersList: View {
     }
 }
 
-/// Compact MCP Server row
 struct MCPServerRow: View {
     let config: MCPServerConfig
     let status: MCPServerStatus?
@@ -855,9 +828,7 @@ struct APISettingsView: View {
 
     var body: some View {
         HSplitView {
-            // Left panel - Model Management
             VStack(alignment: .leading, spacing: 0) {
-                // Header
                 VStack(alignment: .leading, spacing: Spacing.sm) {
                     HStack {
                         VStack(alignment: .leading, spacing: Spacing.xxs) {
@@ -884,7 +855,6 @@ struct APISettingsView: View {
 
                 Divider()
 
-                // Model list
                 ScrollView {
                     if aiService.customModels.isEmpty {
                         VStack(spacing: Spacing.md) {
@@ -976,11 +946,8 @@ struct APISettingsView: View {
             .frame(minWidth: 180, idealWidth: 200, maxWidth: 220)
             .background(Theme.backgroundSecondary)
 
-            // Right panel - API Configuration
             VStack(spacing: 0) {
-                // Provider Selection - Fixed at top
                 VStack(alignment: .leading, spacing: Spacing.xl) {
-                    // Header
                     VStack(alignment: .leading, spacing: Spacing.xs) {
                         Text("Model Configuration")
                             .font(Typography.title2)
@@ -990,7 +957,6 @@ struct APISettingsView: View {
                             .foregroundStyle(Theme.textSecondary)
                     }
 
-                    // Provider Selection
                     VStack(alignment: .leading, spacing: Spacing.md) {
                         Text("AI Provider")
                             .font(Typography.headline)
@@ -1014,10 +980,8 @@ struct APISettingsView: View {
                 Divider()
                     .padding(.bottom, Spacing.lg)
 
-                // Scrollable configuration area
                 ScrollView {
                     VStack(alignment: .leading, spacing: Spacing.contentPadding) {
-                        // API Endpoint Type Selection (not applicable for Apple Intelligence or Anthropic)
                         if aiService.provider != .appleIntelligence, aiService.provider != .anthropic {
                             VStack(alignment: .leading, spacing: Spacing.md) {
                                 Text("API Endpoint")
@@ -1045,14 +1009,12 @@ struct APISettingsView: View {
                         }
 
                         if aiService.provider == .openai {
-                            // OpenAI Configuration
                             VStack(alignment: .leading, spacing: Spacing.lg) {
                                 Text("OpenAI Configuration")
                                     .font(Typography.headline)
                                     .foregroundStyle(.primary)
 
                                 VStack(alignment: .leading, spacing: Spacing.lg) {
-                                    // Model Name
                                     VStack(alignment: .leading, spacing: Spacing.xs) {
                                         HStack {
                                             Text("Model Name")
@@ -1077,7 +1039,6 @@ struct APISettingsView: View {
                                             .foregroundStyle(.tertiary)
                                     }
 
-                                    // Endpoint URL
                                     VStack(alignment: .leading, spacing: Spacing.xs) {
                                         HStack {
                                             Text("Endpoint URL")
@@ -1106,7 +1067,6 @@ struct APISettingsView: View {
                                         .foregroundStyle(.tertiary)
                                     }
 
-                                    // API Key
                                     VStack(alignment: .leading, spacing: Spacing.xs) {
                                         HStack {
                                             Text("API Key")
@@ -1155,7 +1115,6 @@ struct APISettingsView: View {
                                 .background(Theme.backgroundSecondary)
                                 .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
 
-                                // Action Buttons
                                 HStack(spacing: Spacing.md) {
                                     Button {
                                         Task {
@@ -1177,14 +1136,12 @@ struct APISettingsView: View {
                                     if let selectedName = selectedModelName,
                                        aiService.customModels.contains(selectedName)
                                     {
-                                        // Update existing model
                                         Button {
                                             let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
                                             let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
                                             let apiKey = tempAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
                                             if !modelName.isEmpty {
-                                                // Remove old model data if name changed
                                                 if selectedName != modelName {
                                                     aiService.customModels.removeAll { $0 == selectedName }
                                                     aiService.modelProviders.removeValue(forKey: selectedName)
@@ -1192,29 +1149,24 @@ struct APISettingsView: View {
                                                     aiService.modelEndpoints.removeValue(forKey: selectedName)
                                                     aiService.modelEndpointTypes.removeValue(forKey: selectedName)
 
-                                                    // Add new model name if not already present
                                                     if !aiService.customModels.contains(modelName) {
                                                         aiService.customModels.append(modelName)
                                                     }
 
-                                                    // Update selected model if it was the renamed one
                                                     if aiService.selectedModel == selectedName {
                                                         aiService.selectedModel = modelName
                                                     }
                                                 }
 
-                                                // Update provider and endpoint type
                                                 aiService.modelProviders[modelName] = .openai
                                                 aiService.modelEndpointTypes[modelName] = tempEndpointType
 
-                                                // Update per-model API key
                                                 if !apiKey.isEmpty {
                                                     aiService.modelAPIKeys[modelName] = apiKey
                                                 } else {
                                                     aiService.modelAPIKeys.removeValue(forKey: modelName)
                                                 }
 
-                                                // Update custom endpoint
                                                 if !endpoint.isEmpty {
                                                     aiService.modelEndpoints[modelName] = endpoint
                                                 } else {
@@ -1238,7 +1190,6 @@ struct APISettingsView: View {
                                         .buttonStyle(.borderedProminent)
                                         .controlSize(.large)
                                     } else {
-                                        // Add new model
                                         Button {
                                             let modelName = tempModelName.trimmingCharacters(in: .whitespacesAndNewlines)
                                             let endpoint = tempEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1249,12 +1200,10 @@ struct APISettingsView: View {
                                                 aiService.modelProviders[modelName] = .openai
                                                 aiService.modelEndpointTypes[modelName] = tempEndpointType
 
-                                                // Save per-model API key if provided
                                                 if !apiKey.isEmpty {
                                                     aiService.modelAPIKeys[modelName] = apiKey
                                                 }
 
-                                                // Save custom endpoint if provided
                                                 if !endpoint.isEmpty {
                                                     aiService.modelEndpoints[modelName] = endpoint
                                                 }
@@ -1283,7 +1232,6 @@ struct APISettingsView: View {
                             }
                             .padding(.horizontal)
                         } else if aiService.provider == .appleIntelligence {
-                            // Apple Intelligence Configuration
                             VStack(alignment: .leading, spacing: Spacing.lg) {
                                 Text("Apple Intelligence Configuration")
                                     .font(Typography.headline)
@@ -1293,7 +1241,6 @@ struct APISettingsView: View {
                                     if #available(macOS 26.0, *) {
                                         let service = AppleIntelligenceService.shared
 
-                                        // Availability Status
                                         VStack(alignment: .leading, spacing: Spacing.xs) {
                                             Text("Availability")
                                                 .font(Typography.subheadline)
@@ -1317,7 +1264,6 @@ struct APISettingsView: View {
                                             }
                                         }
 
-                                        // Model Name
                                         VStack(alignment: .leading, spacing: Spacing.xs) {
                                             HStack {
                                                 Text("Model Name")
@@ -1339,7 +1285,6 @@ struct APISettingsView: View {
                                                 .foregroundStyle(.tertiary)
                                         }
                                     } else {
-                                        // macOS 26+ required message
                                         VStack(spacing: Spacing.md) {
                                             Image(systemName: "exclamationmark.triangle.fill")
                                                 .font(.system(size: 48))
@@ -1363,7 +1308,6 @@ struct APISettingsView: View {
                                 .background(Theme.backgroundSecondary)
                                 .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
 
-                                // Action Buttons
                                 if #available(macOS 26.0, *) {
                                     HStack(spacing: Spacing.md) {
                                         Button {
@@ -1393,7 +1337,6 @@ struct APISettingsView: View {
                             }
                             .padding(.horizontal)
                         } else if aiService.provider == .anthropic {
-                            // Anthropic Configuration
                             AnthropicConfigurationView(
                                 tempModelName: $tempModelName,
                                 tempAPIKey: $tempAPIKey,
@@ -1405,7 +1348,6 @@ struct APISettingsView: View {
                             .padding(.horizontal)
                         }
 
-                        // Status Section
                         if aiService.provider != .appleIntelligence, aiService.provider != .anthropic {
                             VStack(alignment: .leading, spacing: Spacing.lg) {
                                 Text("Validation Status")
@@ -1478,23 +1420,20 @@ struct APISettingsView: View {
                         }
                     }
                 }
-            } // End of outer VStack wrapping provider selection and scroll view
+            }
         }
         .onAppear {
-            // If there's a selected model, load its config; otherwise set defaults
             if let model = selectedModelName, aiService.customModels.contains(model) {
                 loadModelConfig(model)
             } else {
                 tempAPIKey = ""
                 tempEndpoint = "https://api.openai.com/"
-                // Default to a new-model state for Anthropic.
                 if aiService.provider == .anthropic {
                     createNewModel()
                 }
             }
         }
         .onChange(of: aiService.provider) { _, newProvider in
-            // Reset to a new-model state when switching to Anthropic.
             if newProvider == .anthropic {
                 createNewModel()
             }
@@ -1502,12 +1441,9 @@ struct APISettingsView: View {
     }
 
     private func createNewModel() {
-        // Clear all fields and deselect - complete clean slate
         selectedModelName = nil
         tempModelName = ""
         tempAPIKey = ""
-        // For Anthropic, use empty endpoint (defaults to api.anthropic.com)
-        // For others, use OpenAI endpoint
         tempEndpoint = aiService.provider == .anthropic ? "" : "https://api.openai.com/"
         tempEndpointType = .chatCompletions
         validationStatus = .notChecked
@@ -1543,7 +1479,6 @@ struct APISettingsView: View {
                     return
                 }
 
-                // Use the /openai/models endpoint to validate Azure credentials without consuming tokens
                 let baseEndpoint = endpoint.hasSuffix("/") ? String(endpoint.dropLast()) : endpoint
                 let modelsURL = "\(baseEndpoint)/openai/models?api-version=\(aiService.latestAzureAPIVersion)"
 
@@ -1620,22 +1555,18 @@ struct APISettingsView: View {
     }
 
     private func loadModelConfig(_ model: String) {
-        // Switch to the correct provider for this model
         if let modelProvider = aiService.modelProviders[model] {
             aiService.provider = modelProvider
         }
 
         tempModelName = model
-        // Load per-model API key if available
         tempAPIKey = aiService.modelAPIKeys[model] ?? ""
         tempEndpointType = aiService.modelEndpointTypes[model] ?? .chatCompletions
 
-        // Load endpoint based on provider
         switch aiService.provider {
         case .openai:
             tempEndpoint = aiService.modelEndpoints[model] ?? "https://api.openai.com"
         case .anthropic:
-            // For Anthropic, empty string means use default (api.anthropic.com)
             tempEndpoint = aiService.modelEndpoints[model] ?? ""
         default:
             tempEndpoint = aiService.modelEndpoints[model] ?? ""
@@ -1644,13 +1575,11 @@ struct APISettingsView: View {
 
     private func removeModel(_ model: String) {
         aiService.customModels.removeAll { $0 == model }
-        // Also remove from provider mapping and per-model settings
         aiService.modelProviders.removeValue(forKey: model)
         aiService.modelEndpoints.removeValue(forKey: model)
         aiService.modelAPIKeys.removeValue(forKey: model)
         aiService.modelEndpointTypes.removeValue(forKey: model)
 
-        // If we removed the selected default model, pick the next available one or clear it
         if aiService.selectedModel == model {
             if let nextModel = aiService.customModels.first {
                 aiService.selectedModel = nextModel
@@ -1667,7 +1596,6 @@ struct APISettingsView: View {
     }
 
     private func duplicateModel(_ model: String) {
-        // Generate a unique name by appending "Copy" or "Copy N"
         var newName = "\(model) Copy"
         var copyNumber = 2
         while aiService.customModels.contains(newName) {
@@ -1682,10 +1610,8 @@ struct APISettingsView: View {
             metadata: ["original": model, "duplicate": newName]
         )
 
-        // Add the new model
         aiService.customModels.append(newName)
 
-        // Copy all settings from the original model
         if let provider = aiService.modelProviders[model] {
             aiService.modelProviders[newName] = provider
         }
@@ -1695,16 +1621,12 @@ struct APISettingsView: View {
         if let apiKey = aiService.modelAPIKeys[model] {
             aiService.modelAPIKeys[newName] = apiKey
         }
-        // Always copy endpoint type, defaulting to chatCompletions if not set
         aiService.modelEndpointTypes[newName] = aiService.modelEndpointTypes[model] ?? .chatCompletions
 
-        // Select the new model for editing
         selectedModelName = newName
         loadModelConfig(newName)
     }
 }
-
-// MARK: - Anthropic Configuration View
 
 struct AnthropicConfigurationView: View {
     @ObservedObject private var aiService = AIService.shared
@@ -1723,9 +1645,7 @@ struct AnthropicConfigurationView: View {
                 .font(Typography.headline)
                 .foregroundStyle(.primary)
 
-            // Fields card (matching OpenAI style)
             VStack(alignment: .leading, spacing: Spacing.lg) {
-                // Model Name
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     HStack {
                         Text("Model Name")
@@ -1750,7 +1670,6 @@ struct AnthropicConfigurationView: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                // Custom Endpoint (Optional)
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     HStack {
                         Text("Endpoint URL")
@@ -1775,7 +1694,6 @@ struct AnthropicConfigurationView: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                // API Key
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     HStack {
                         Text("API Key")
@@ -1823,7 +1741,6 @@ struct AnthropicConfigurationView: View {
             .background(Theme.backgroundSecondary)
             .clipShape(.rect(cornerRadius: Spacing.CornerRadius.md))
 
-            // Action Buttons (outside the card, matching OpenAI)
             HStack(spacing: Spacing.md) {
                 Button {
                     Task {
@@ -1842,7 +1759,6 @@ struct AnthropicConfigurationView: View {
                 if let selectedName = selectedModelName,
                    aiService.customModels.contains(selectedName)
                 {
-                    // Update existing model
                     Button {
                         saveAnthropicModel()
                     } label: {
@@ -1856,7 +1772,6 @@ struct AnthropicConfigurationView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                 } else {
-                    // Add new model
                     Button {
                         saveAnthropicModel()
                     } label: {
@@ -1872,7 +1787,6 @@ struct AnthropicConfigurationView: View {
                 }
             }
 
-            // Validation Status Section (matching OpenAI style)
             VStack(alignment: .leading, spacing: Spacing.lg) {
                 Text("Validation Status")
                     .font(Typography.headline)
@@ -1962,7 +1876,6 @@ struct AnthropicConfigurationView: View {
             return
         }
 
-        // Validate endpoint URL if provided
         if !endpoint.isEmpty {
             do {
                 _ = try AnthropicEndpointResolver.messagesURL(customEndpoint: endpoint)
@@ -1973,7 +1886,6 @@ struct AnthropicConfigurationView: View {
             }
         }
 
-        // Test the API with a minimal request
         do {
             let url = try AnthropicEndpointResolver.messagesURL(
                 customEndpoint: endpoint.isEmpty ? nil : endpoint
@@ -2008,7 +1920,6 @@ struct AnthropicConfigurationView: View {
             } else if httpResponse.statusCode == 404 {
                 validationStatus = .invalid("Model not found: \(modelName)")
             } else {
-                // Try to parse error message
                 if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let error = json["error"] as? [String: Any],
                    let message = error["message"] as? String
@@ -2032,7 +1943,6 @@ struct AnthropicConfigurationView: View {
 
         guard !modelName.isEmpty, !apiKey.isEmpty else { return }
 
-        // Remove old model if updating
         if let oldName = selectedModelName, oldName != modelName {
             aiService.customModels.removeAll { $0 == oldName }
             aiService.modelProviders.removeValue(forKey: oldName)
@@ -2041,7 +1951,6 @@ struct AnthropicConfigurationView: View {
             aiService.modelEndpointTypes.removeValue(forKey: oldName)
         }
 
-        // Add or update model
         if !aiService.customModels.contains(modelName) {
             aiService.customModels.append(modelName)
         }

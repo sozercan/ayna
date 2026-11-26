@@ -2,10 +2,6 @@
     import Darwin
     import Foundation
 
-    /// A shell subprocess launched as the leader of its own process group.
-    ///
-    /// Group ownership lets cancellation and timeout terminate the shell and every descendant,
-    /// including background jobs that would otherwise retain stdout/stderr pipes indefinitely.
     final class CommandSubprocess: @unchecked Sendable {
         typealias SignalProcess = @Sendable (_ processIdentifier: pid_t, _ signal: Int32) -> Int32
 
@@ -129,12 +125,9 @@
             signalProcessGroup(SIGKILL)
         }
 
-        /// Waits for the shell leader, then tears down any background descendants in its group.
         func waitUntilExit() -> Int32 {
             let exitObserved = waitForExitWithoutReaping()
             if exitObserved {
-                // The zombie leader still reserves both its PID and process-group identifier,
-                // so descendant cleanup cannot target a reused process.
                 terminateRemainingProcessGroup()
             }
             revokeSignalAuthority()

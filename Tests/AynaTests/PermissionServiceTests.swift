@@ -1,10 +1,3 @@
-//
-//  PermissionServiceTests.swift
-//  aynaTests
-//
-//  Unit tests for PermissionService approval workflow.
-//
-
 @testable import Ayna
 import Foundation
 import Testing
@@ -17,8 +10,6 @@ struct PermissionServiceTests {
     init() {
         sut = PermissionService()
     }
-
-    // MARK: - Permission Level
 
     @Test("PermissionLevel has correct display names")
     func permissionLevelDisplayNames() {
@@ -40,8 +31,6 @@ struct PermissionServiceTests {
         #expect(PermissionService.defaultPermissionLevel(for: "unknown_tool") == .askAlways)
     }
 
-    // MARK: - Session Approvals
-
     @Test("Records session approval")
     func recordsSessionApproval() {
         let tool = "write_file"
@@ -57,7 +46,6 @@ struct PermissionServiceTests {
     func sessionApprovalIsSpecific() {
         sut.recordSessionApproval(tool: "write_file", details: "/path/to/file1.txt")
 
-        // Different file should still require approval
         let level = sut.checkPermission(
             tool: "write_file",
             details: "/path/to/file2.txt",
@@ -79,8 +67,6 @@ struct PermissionServiceTests {
         #expect(level == .askOnce)
     }
 
-    // MARK: - Directory Approvals
-
     @Test("Records directory approval")
     func recordsDirectoryApproval() {
         sut.recordDirectoryApproval(tool: "write_file", directory: "/path/to/project")
@@ -95,8 +81,6 @@ struct PermissionServiceTests {
         #expect(sut.isDirectoryApproved(tool: "edit_file", directory: "/path/to/project") == false)
     }
 
-    // MARK: - Pending Approvals
-
     @Test("Starts with no pending approvals")
     func startsEmpty() {
         #expect(sut.pendingApprovals.isEmpty)
@@ -108,13 +92,10 @@ struct PermissionServiceTests {
         #expect(sut.pendingCount(forConversation: conversationId) == 0)
     }
 
-    // MARK: - Approval Workflow
-
     @Test("Approve removes from pending and resumes")
     func approveRemovesFromPending() async {
         let conversationId = UUID()
 
-        // Start approval request in background
         let task = Task {
             await sut.requestApproval(
                 toolName: "write_file",
@@ -124,18 +105,14 @@ struct PermissionServiceTests {
             )
         }
 
-        // Wait for approval to be queued
         try? await Task.sleep(for: .milliseconds(50))
 
-        // Check pending
         #expect(sut.pendingApprovals.count == 1)
 
-        // Approve
         if let approvalId = sut.pendingApprovals.first?.id {
             sut.approve(approvalId)
         }
 
-        // Check result
         let result = await task.value
         #expect(result == true)
         #expect(sut.pendingApprovals.isEmpty)
@@ -186,7 +163,6 @@ struct PermissionServiceTests {
 
         _ = await task.value
 
-        // Check that it was remembered
         let level = sut.checkPermission(
             tool: "write_file",
             details: "/path/to/file.txt",
@@ -379,14 +355,11 @@ struct PermissionServiceTests {
         #expect(await replacementTask.value == false)
     }
 
-    // MARK: - Deny All Pending
-
     @Test("Deny all pending for conversation")
     func denyAllPendingForConversation() async {
         let conversationId = UUID()
         let otherConversationId = UUID()
 
-        // Start two approval requests for same conversation
         let task1 = Task {
             await sut.requestApproval(
                 toolName: "write_file",
@@ -405,7 +378,6 @@ struct PermissionServiceTests {
             )
         }
 
-        // And one for a different conversation
         let task3 = Task {
             await sut.requestApproval(
                 toolName: "write_file",
@@ -417,7 +389,6 @@ struct PermissionServiceTests {
 
         try? await Task.sleep(for: .milliseconds(50))
 
-        // Deny all for first conversation
         sut.denyAllPending(forConversation: conversationId, reason: "Conversation closed")
 
         let result1 = await task1.value
@@ -426,17 +397,13 @@ struct PermissionServiceTests {
         #expect(result1 == false)
         #expect(result2 == false)
 
-        // Other conversation should still have pending
         #expect(sut.pendingCount(forConversation: otherConversationId) == 1)
 
-        // Clean up
         if let approvalId = sut.pendingApprovals.first?.id {
             sut.deny(approvalId)
         }
         _ = await task3.value
     }
-
-    // MARK: - Timeout Configuration
 
     @Test("Default timeout is 5 minutes")
     func defaultTimeout() {
@@ -462,7 +429,6 @@ struct PermissionServiceTests {
         }
         #expect(sut.pendingApprovals.count == 1)
 
-        // A zero timeout used to deny immediately; the request must still be pending.
         try? await Task.sleep(for: .milliseconds(300))
         #expect(sut.pendingApprovals.count == 1)
 

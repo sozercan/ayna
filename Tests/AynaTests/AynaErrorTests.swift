@@ -1,15 +1,6 @@
-//
-//  AynaErrorTests.swift
-//  aynaTests
-//
-//  Unit tests for AynaError and ErrorPresenter.
-//
-
 @testable import Ayna
 import Foundation
 import Testing
-
-// MARK: - CustomTestStringConvertible Extension for Better Diagnostics
 
 extension AynaError: CustomTestStringConvertible {
     public var testDescription: String {
@@ -45,9 +36,6 @@ extension AynaError: CustomTestStringConvertible {
     }
 }
 
-// MARK: - Test Input Types for Parameterized Tests
-
-/// Test case for error description validation
 struct ErrorDescriptionCase: Sendable {
     let error: AynaError
     let expectedContains: String
@@ -58,7 +46,6 @@ struct ErrorDescriptionCase: Sendable {
     }
 }
 
-/// Test case for URLError wrapping
 struct URLErrorWrapCase: Sendable, CustomTestStringConvertible {
     let code: URLError.Code
     let expectedCase: ExpectedAynaError
@@ -94,8 +81,6 @@ struct URLErrorWrapCase: Sendable, CustomTestStringConvertible {
 
 @Suite("AynaError Tests", .tags(.errorHandling, .fast))
 struct AynaErrorTests {
-    // MARK: - Error Description Tests (Parameterized)
-
     @Test("Error descriptions are correct", arguments: [
         ErrorDescriptionCase(error: .timeout, expectedContains: "Request timed out", hasRecoverySuggestion: true),
         ErrorDescriptionCase(error: .noModelSelected, expectedContains: "No model selected", hasRecoverySuggestion: true),
@@ -127,8 +112,6 @@ struct AynaErrorTests {
         #expect(error.errorDescription?.contains("calculator") == true)
         #expect(error.errorDescription?.contains("Division by zero") == true)
     }
-
-    // MARK: - Error Wrapping Tests (Parameterized)
 
     @Test("URLError wrapping returns correct AynaError", arguments: [
         URLErrorWrapCase(code: .timedOut, expectedCase: .timeout),
@@ -170,8 +153,6 @@ struct AynaErrorTests {
         }
     }
 
-    // MARK: - HTTP Response Conversion Tests
-
     @Test("HTTP response 401 returns invalid API key error")
     func fromHTTPResponse401() {
         let error = AynaError.fromHTTPResponse(statusCode: 401, data: nil)
@@ -209,8 +190,6 @@ struct AynaErrorTests {
         #expect(message == "Internal server error")
     }
 
-    // MARK: - Equatable Tests (Parameterized)
-
     @Test("Simple error cases are equatable", arguments: [
         AynaError.timeout,
         AynaError.noModelSelected,
@@ -245,9 +224,6 @@ struct AynaErrorTests {
     }
 }
 
-// MARK: - ErrorPresenter Tests
-
-/// Test case for suggested actions
 struct SuggestedActionCase: Sendable, CustomTestStringConvertible {
     let error: AynaError
     let expectedAction: ErrorPresenter.ErrorAction
@@ -296,8 +272,6 @@ struct ErrorPresenterTests {
         #expect(suggestion?.contains("Settings") == true)
     }
 
-    // MARK: - Category Tests (Parameterized)
-
     @Test("Error category is correct", arguments: zip(
         [
             AynaError.networkError(underlying: URLError(.timedOut)),
@@ -315,8 +289,6 @@ struct ErrorPresenterTests {
         #expect(category == expectedCategory)
     }
 
-    // MARK: - Retryable Tests (Parameterized)
-
     @Test("Retryable errors are identified correctly", arguments: zip(
         [AynaError.timeout, AynaError.missingAPIKey(provider: "Test")],
         [true, false]
@@ -325,8 +297,6 @@ struct ErrorPresenterTests {
         #expect(ErrorPresenter.isRetryable(error) == expected)
     }
 
-    // MARK: - Requires User Action Tests (Parameterized)
-
     @Test("User action requirement is correct", arguments: zip(
         [AynaError.missingAPIKey(provider: "Test"), AynaError.timeout],
         [true, false]
@@ -334,8 +304,6 @@ struct ErrorPresenterTests {
     func requiresUserAction(error: AynaError, expected: Bool) {
         #expect(ErrorPresenter.requiresUserAction(error) == expected)
     }
-
-    // MARK: - Suggested Action Tests (Parameterized)
 
     @Test("Suggested action is correct", arguments: [
         SuggestedActionCase(error: .timeout, expectedAction: .retry),

@@ -1,10 +1,4 @@
 // swiftformat:options --ifdef no-indent
-//
-//  MCPService.swift
-//  ayna
-//
-//  Created on 11/3/25.
-//
 
 #if os(macOS)
 import Combine
@@ -272,8 +266,6 @@ private final class MCPTransportLease: @unchecked Sendable {
     init(id: UUID, inputHandle: FileHandle) {
         self.id = id
         self.inputHandle = inputHandle
-        // Closing a wedged transport from another task must make blocked writes fail with
-        // EPIPE rather than terminating the entire app with SIGPIPE.
         _ = fcntl(inputHandle.fileDescriptor, F_SETNOSIGPIPE, 1)
     }
 
@@ -350,7 +342,6 @@ private final class MCPProcessLifecycle: @unchecked Sendable {
         errorPipe.fileHandleForReading.readabilityHandler = nil
     }
 
-    /// Returns whether this was a manual disconnect. Nil means another exit observer finalized it.
     func finalize() -> Bool? {
         let finalization: (manual: Bool, shouldUnregister: Bool)? = lock.withLock {
             guard !state.isFinalized else { return nil }
@@ -412,7 +403,6 @@ private actor MCPOutboundWriter {
     }
 }
 
-/// Service for communicating with MCP servers via stdio
 class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     private var activeLifecycle: MCPProcessLifecycle?
     private var lifecycles: [UUID: MCPProcessLifecycle] = [:]
@@ -481,11 +471,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         }
     }
 
-    // MARK: - Connection Management
-
-    /// This routine wires up the MCP subprocess, pipes, and async stream handlers in one place so we
-    /// can share the same cleanup/error propagation. Splitting it today would duplicate fragile state
-    /// management, so we temporarily allow the longer body until the connection pipeline is refactored.
     func connect() async throws {
         guard withLock({ activeLifecycle == nil }) else { return }
 
@@ -665,14 +650,11 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         return true
     }
 
-    // MARK: - MCP Protocol Methods
-
     private func initialize(on lifecycle: MCPProcessLifecycle) async throws {
         let response = try await sendRequest(
             method: "initialize",
             params: [
                 "protocolVersion": AnyCodable("2024-11-05"),
-                // Ayna does not serve roots or sampling requests, so it advertises no client capabilities.
                 "capabilities": AnyCodable([String: Any]()),
                 "clientInfo": AnyCodable([
                     "name": "ayna",
@@ -686,7 +668,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             throw MCPServiceError.initializationFailed(response.error?.message ?? "Unknown error")
         }
 
-        // Send initialized notification on the same transport generation.
         try await sendNotification(method: "notifications/initialized", lifecycle: lifecycle)
     }
 
@@ -699,7 +680,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             throw MCPServiceError.invalidResponse("Failed to parse tools list")
         }
 
-        // Parse tools individually, skipping invalid ones instead of crashing
         var validTools: [MCPTool] = []
         for (index, toolDict) in toolsArray.enumerated() {
             do {
@@ -744,7 +724,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         } else {
             throw MCPServiceError.invalidResponse("Unexpected content format in tool result")
         }
-        // A tool-level failure arrives as a normal result flagged `isError`.
         if result["isError"] as? Bool == true {
             throw MCPServiceError.toolExecutionFailed(text.isEmpty ? "The tool reported an error" : text)
         }
@@ -764,8 +743,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             parseResource(from: resourceDict)
         }
     }
-
-    // MARK: - Low-level JSON-RPC
 
     @MainActor
     private func sendRequest(
@@ -903,8 +880,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         }
     }
 
-    /// MCP 2024-11-05 cancellation schema:
-    /// `notifications/cancelled` with params `{ "requestId": RequestId, "reason"?: string }`.
     private func sendCancellationNotification(_ action: MCPRequestCompletionAction) async throws {
         guard let lifecycle = withLock({ lifecycles[action.transportID] }) else {
             throw MCPServiceError.notConnected
@@ -945,10 +920,8 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             }
             outputBuffer += output
 
-            // Process complete JSON-RPC messages (newline-delimited)
             let lines = outputBuffer.components(separatedBy: "\n")
 
-            // Keep the last incomplete line in the buffer
             if let last = lines.last, !output.hasSuffix("\n") {
                 outputBuffer = last
             } else {
@@ -958,7 +931,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             return Array(lines.dropLast())
         }
 
-        // Process complete lines
         for line in completedLines {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
@@ -967,8 +939,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         }
     }
 
-    /// Answers server-initiated requests: `ping` gets an empty result, anything else gets
-    /// JSON-RPC "method not found". Notifications (no `id`) need no reply.
     private func handleServerMessage(_ object: [String: Any], method: String, transportID: UUID) {
         guard let id = object["id"], let lifecycle = withLock({ lifecycles[transportID] }) else { return }
         var reply: [String: Any] = ["jsonrpc": "2.0", "id": id]
@@ -994,8 +964,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             return
         }
 
-        // Server-initiated requests and notifications carry a `method`. They must not be
-        // treated as responses, or a server request with id N would resolve our request N.
         if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let method = object["method"] as? String
         {
@@ -1028,8 +996,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             )
         }
     }
-
-    // MARK: - Parsing Helpers
 
     private func parseTool(from dict: [String: Any]) throws -> MCPTool {
         guard let name = dict["name"] as? String else {
@@ -1107,10 +1073,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         )
     }
 
-    // MARK: - Helper Methods
-
     private func findExecutable(_ command: String) throws -> String {
-        // If command is already an absolute path, validate it exists
         if command.hasPrefix("/") {
             guard FileManager.default.isExecutableFile(atPath: command) else {
                 throw MCPServiceError.initializationFailed("Executable not found at path: \(command)")
@@ -1118,7 +1081,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             return command
         }
 
-        // Common locations to search for executables
         let searchPaths = [
             "/opt/homebrew/bin",
             "/usr/local/bin",
@@ -1126,7 +1088,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             "/bin"
         ]
 
-        // Search in common paths
         for path in searchPaths {
             let fullPath = "\(path)/\(command)"
             DiagnosticsLogger.log(
@@ -1155,15 +1116,11 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             }
         }
 
-        // Fallback: Try to use 'which' command with a proper shell environment
-        // This is important because the sandboxed app may not have access to the same PATH
         let shellProcess = Process()
         shellProcess.executableURL = URL(fileURLWithPath: "/bin/bash")
         shellProcess.arguments = ["-l", "-c", "which '\(command.replacingOccurrences(of: "'", with: "'\\''"))'"]
 
-        // Set up environment to use the user's actual PATH
         var environment = ProcessInfo.processInfo.environment
-        // Add common paths to ensure we find executables
         let commonPaths = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
         environment["PATH"] = commonPaths
         shellProcess.environment = environment
@@ -1200,7 +1157,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
             )
         }
 
-        // Could not find executable
         let errorMsg = """
         Could not find executable '\(command)'.
 
@@ -1213,8 +1169,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
         """
         throw MCPServiceError.initializationFailed(errorMsg)
     }
-
-    // MARK: - Connection Monitoring
 
     private func isActiveTransport(_ transportID: UUID) -> Bool {
         withLock { activeLifecycle?.id == transportID }
@@ -1242,9 +1196,7 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
                     }
                     try await Task.sleep(for: .seconds(5))
                 }
-            } catch {
-                // Cancellation is the expected shutdown path.
-            }
+            } catch {}
         }
 
         withLock {
@@ -1342,8 +1294,6 @@ class MCPService: ObservableObject, MCPServicing, @unchecked Sendable {
     }
 }
 
-// MARK: - Errors
-
 enum MCPServiceError: LocalizedError {
     case notConnected
     case encodingFailed
@@ -1369,8 +1319,6 @@ enum MCPServiceError: LocalizedError {
         }
     }
 }
-
-// MARK: - Timeout Helper
 
 func withTimeout<T: Sendable>(
     seconds: TimeInterval,

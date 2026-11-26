@@ -1,10 +1,3 @@
-//
-//  DuckDuckGoSearchServiceTests.swift
-//  AynaTests
-//
-//  Tests for DuckDuckGo HTML search scraping, URL decoding, and HTML stripping.
-//
-
 @testable import Ayna
 import Foundation
 import Testing
@@ -22,8 +15,6 @@ struct DuckDuckGoSearchServiceTests {
         let session = URLSession(configuration: config)
         return DuckDuckGoSearchService(urlSession: session)
     }
-
-    // MARK: - Search Tests
 
     @Test("Search returns parsed results from DDG HTML", .timeLimit(.minutes(1)))
     func searchReturnsParsedResults() async throws {
@@ -116,8 +107,6 @@ struct DuckDuckGoSearchServiceTests {
         }
     }
 
-    // MARK: - Bounded Response Reader Tests
-
     @Test("bounded response reader stops at byte limit without consuming the rest")
     func boundedResponseReaderStopsAtLimit() async throws {
         let counter = ByteReadCounter()
@@ -128,8 +117,6 @@ struct DuckDuckGoSearchServiceTests {
         #expect(data == Data(repeating: 65, count: 8))
         #expect(await counter.value == 8)
     }
-
-    // MARK: - HTML Parsing Tests
 
     @Test("parseDDGResults extracts links and snippets")
     func parseDDGResultsExtractsLinksAndSnippets() {
@@ -159,8 +146,6 @@ struct DuckDuckGoSearchServiceTests {
         let results = service.parseDDGResults(html: html, maxResults: 5)
         #expect(results.isEmpty)
     }
-
-    // MARK: - decodeDDGURL Tests
 
     @Test("decodeDDGURL extracts URL from uddg parameter")
     func decodeDDGURLExtractsFromUddg() {
@@ -197,8 +182,6 @@ struct DuckDuckGoSearchServiceTests {
         let decoded = service.decodeDDGURL(rawURL)
         #expect(decoded == "https://example.com/search?q=hello world")
     }
-
-    // MARK: - stripHTMLTags Tests
 
     @Test("stripHTMLTags removes HTML tags")
     func stripHTMLTagsRemovesTags() {
@@ -241,8 +224,6 @@ struct DuckDuckGoSearchServiceTests {
     }
 }
 
-// MARK: - HTML Fixtures
-
 private enum DDGHTMLFixtures {
     static let twoResults = """
     <html>
@@ -261,8 +242,6 @@ private enum DDGHTMLFixtures {
     </html>
     """
 }
-
-// MARK: - Counting Async Bytes
 
 private actor ByteReadCounter {
     private(set) var value = 0
@@ -294,8 +273,6 @@ private struct CountingAsyncBytes: AsyncSequence, Sendable {
         }
     }
 }
-
-// MARK: - Mock URL Protocol
 
 private final class DDGMockURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?

@@ -166,8 +166,6 @@
             writeGate.release()
             await expectCancellation(from: task)
 
-            // A following request is a deterministic transport barrier: once it receives a
-            // response, the mock server has observed every message the cancelled task could send.
             #expect(try await service.listTools().isEmpty)
             #expect(harness.recordedMessages(method: "tools/call").isEmpty)
             #expect(harness.recordedMessages(method: "notifications/cancelled").isEmpty)
@@ -398,7 +396,6 @@
                 _ = try await task.value
                 Issue.record("Expected callTool() to throw cancellation")
             } catch is CancellationError {
-                // Expected.
             } catch {
                 Issue.record("Unexpected error type: \(error.localizedDescription)")
             }

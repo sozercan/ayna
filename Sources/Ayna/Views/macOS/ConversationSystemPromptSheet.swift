@@ -1,15 +1,8 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  ConversationSystemPromptSheet.swift
-//  ayna
-//
-//  Created on 11/25/25.
-//
 
 import SwiftUI
 
-/// A sheet view for editing the system prompt mode of a conversation.
 struct ConversationSystemPromptSheet: View {
     let conversation: Conversation
     @Environment(\.dismiss) var dismiss
@@ -27,7 +20,6 @@ struct ConversationSystemPromptSheet: View {
     init(conversation: Conversation) {
         self.conversation = conversation
 
-        // Initialize state from conversation
         switch conversation.systemPromptMode {
         case .inheritGlobal:
             _selectedMode = State(initialValue: .inheritGlobal)

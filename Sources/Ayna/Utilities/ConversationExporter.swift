@@ -1,10 +1,4 @@
 // swiftformat:options --ifdef no-indent
-//
-//  ConversationExporter.swift
-//  ayna
-//
-//  Created on 11/18/25.
-//
 
 #if os(macOS)
 import AppKit
@@ -34,7 +28,6 @@ enum ConversationExporter {
         markdown += "Model: \(conversation.model)\n\n"
         markdown += "---\n\n"
 
-        // Multi-model turns export only the chosen response, as the conversation reads.
         for message in conversation.getEffectiveHistory() {
             guard message.role != .system, message.role != .tool else { continue }
 
@@ -63,7 +56,6 @@ enum ConversationExporter {
     #if os(macOS) || os(iOS)
     @MainActor
     static func generatePDF(for conversation: Conversation) -> URL? {
-        // We'll use a temporary URL for the PDF
         let tempDir = FileManager.default.temporaryDirectory
         let sanitized = conversation.title
             .replacingOccurrences(of: " ", with: "_")
@@ -74,14 +66,12 @@ enum ConversationExporter {
         let fileName = sanitized.isEmpty ? "conversation.pdf" : "\(sanitized).pdf"
         let pdfURL = tempDir.appendingPathComponent(fileName)
 
-        // Page setup
-        let pageWidth: CGFloat = 612 // 8.5 inches * 72 dpi
-        let pageHeight: CGFloat = 792 // 11 inches * 72 dpi
+        let pageWidth: CGFloat = 612
+        let pageHeight: CGFloat = 792
         let margin: CGFloat = 50
         let contentWidth = pageWidth - (margin * 2)
         let contentHeight = pageHeight - (margin * 2)
 
-        // Text attributes
         let titleFont = PlatformFont.boldSystemFont(ofSize: 24)
         let headerFont = PlatformFont.systemFont(ofSize: 12, weight: .medium)
         let roleFont = PlatformFont.boldSystemFont(ofSize: 14)
@@ -107,15 +97,12 @@ enum ConversationExporter {
         ]
         let bodyAttributes: [NSAttributedString.Key: Any] = [.font: bodyFont]
 
-        // Create attributed string for the entire content
         let fullContent = NSMutableAttributedString()
 
-        // Title
         fullContent.append(
             NSAttributedString(string: conversation.title + "\n\n", attributes: titleAttributes)
         )
 
-        // Metadata
         let dateFormatter = DateFormatter()
         dateFormatter.dateStyle = .medium
         dateFormatter.timeStyle = .short
@@ -123,17 +110,13 @@ enum ConversationExporter {
             "Date: \(dateFormatter.string(from: conversation.createdAt)) • Model: \(conversation.model)\n\n"
         fullContent.append(NSAttributedString(string: metaText, attributes: headerAttributes))
 
-        // Messages
-        // Multi-model turns export only the chosen response, as the conversation reads.
         for message in conversation.getEffectiveHistory() {
             guard message.role != .system, message.role != .tool else { continue }
 
-            // Role
             let roleName = message.role == .user ? "User" : "Assistant"
             let roleAttributes = message.role == .user ? userRoleAttributes : assistantRoleAttributes
             fullContent.append(NSAttributedString(string: roleName + "\n", attributes: roleAttributes))
 
-            // Content
             var content = message.content
             if let reasoning = message.reasoning {
                 content += "\n\n[Reasoning: \(reasoning)]"
@@ -142,7 +125,6 @@ enum ConversationExporter {
             fullContent.append(NSAttributedString(string: content + "\n\n", attributes: bodyAttributes))
         }
 
-        // Create PDF Context
         guard let pdfContext = CGContext(pdfURL as CFURL, mediaBox: nil, nil) else {
             DiagnosticsLogger.log(.app, level: .error, message: "Failed to create PDF context")
             return nil
@@ -155,26 +137,10 @@ enum ConversationExporter {
         while currentTextRange.location < textLength {
             pdfContext.beginPDFPage(nil)
 
-            // Core Text coordinates are bottom-up, so we need to flip the context
-            // However, we need to be careful with the path.
-            // Let's define the text frame rect.
-
             let path = CGMutablePath()
-            // In Core Text, (0,0) is bottom-left.
-            // We want to draw from top-left of the page, which is (margin, pageHeight - margin).
-            // But since we flip the context, we can draw in a flipped coordinate system?
-            // Standard way:
-            // 1. Flip context.
-            // 2. Define rect in flipped coordinates.
 
             pdfContext.saveGState()
 
-            // Flip the context so (0,0) is bottom-left (standard PDF/Quartz)
-            // Actually, PDF context is already bottom-left origin.
-            // But CTFramesetter expects standard Quartz coordinates.
-
-            // Let's define the rect where text goes.
-            // Bottom-left of text box is (margin, margin). Top-right is (pageWidth - margin, pageHeight - margin).
             let textRect = CGRect(x: margin, y: margin, width: contentWidth, height: contentHeight)
             path.addRect(textRect)
 

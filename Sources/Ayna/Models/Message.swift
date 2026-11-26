@@ -1,15 +1,5 @@
-//
-//  Message.swift
-//  ayna
-//
-//  Created on 11/2/25.
-//
-
 import Foundation
 
-// MARK: - Citation Reference
-
-/// Represents a citation source from web search results
 struct CitationReference: Codable, Equatable, Sendable {
     let number: Int
     let title: String
@@ -31,30 +21,24 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
     let timestamp: Date
     var isLiked: Bool
     var toolCalls: [MCPToolCall]?
-    var model: String? // Track which model generated this message
+    var model: String?
 
-    // Multi-model response support
-    var responseGroupId: UUID? // Groups parallel responses together
-    var isSelectedResponse: Bool? // Is this the chosen response in its group?
+    var responseGroupId: UUID?
+    var isSelectedResponse: Bool?
     #if !os(watchOS)
-        var pendingToolCalls: [MCPToolCall]? // Tool calls deferred until response selection
+        var pendingToolCalls: [MCPToolCall]?
     #endif
 
-    // Image generation support
     var mediaType: MediaType?
     var imageData: Data?
-    var imagePath: String? // Path relative to AttachmentStorage
+    var imagePath: String?
 
-    /// File attachments for vision/multimodal support
     var attachments: [FileAttachment]?
 
-    /// Reasoning/thinking support for o1/o3 models
     var reasoning: String?
 
-    /// Web search citation support
     var citations: [CitationReference]?
 
-    /// Edit tracking support
     var isEdited: Bool
     var editedAt: Date?
 
@@ -67,7 +51,7 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
         let fileName: String
         let mimeType: String
         var data: Data?
-        var localPath: String? // Path relative to AttachmentStorage
+        var localPath: String?
 
         init(
             id: UUID = UUID(),
@@ -83,7 +67,6 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
             self.localPath = localPath
         }
 
-        // FileAttachment is already nested in Message; Codable requires one further key type.
         // swiftlint:disable:next nesting
         private enum CodingKeys: String, CodingKey {
             case id, fileName, mimeType, data, localPath
@@ -98,7 +81,6 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
             localPath = try container.decodeIfPresent(String.self, forKey: .localPath)
         }
 
-        /// Helper to get data regardless of storage method
         @MainActor
         var content: Data? {
             if let data { return data }
@@ -108,7 +90,6 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
             return nil
         }
 
-        /// Async loader that avoids blocking the current actor on disk I/O.
         func loadContent() async -> Data? {
             if let data { return data }
             guard let path = localPath else { return nil }
@@ -203,8 +184,6 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
         }
     #endif
 
-    // MARK: - Codable (backward compatibility)
-
     #if os(watchOS)
         private enum CodingKeys: String, CodingKey {
             case id, role, content, timestamp, isLiked, toolCalls, model
@@ -222,17 +201,14 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
             isLiked = try container.decode(Bool.self, forKey: .isLiked)
             toolCalls = try container.decodeIfPresent([MCPToolCall].self, forKey: .toolCalls)
             model = try container.decodeIfPresent(String.self, forKey: .model)
-            // Multi-model fields (backward compatibility)
             responseGroupId = try container.decodeIfPresent(UUID.self, forKey: .responseGroupId)
             isSelectedResponse = try container.decodeIfPresent(Bool.self, forKey: .isSelectedResponse)
-            // Media fields
             mediaType = try container.decodeIfPresent(MediaType.self, forKey: .mediaType)
             imageData = try container.decodeIfPresent(Data.self, forKey: .imageData)
             imagePath = try container.decodeIfPresent(String.self, forKey: .imagePath)
             attachments = try container.decodeIfPresent([FileAttachment].self, forKey: .attachments)
             reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
             citations = try container.decodeIfPresent([CitationReference].self, forKey: .citations)
-            // Edit tracking (backward compatibility - defaults to false for old messages)
             isEdited = try container.decodeIfPresent(Bool.self, forKey: .isEdited) ?? false
             editedAt = try container.decodeIfPresent(Date.self, forKey: .editedAt)
         }
@@ -253,24 +229,20 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
             isLiked = try container.decode(Bool.self, forKey: .isLiked)
             toolCalls = try container.decodeIfPresent([MCPToolCall].self, forKey: .toolCalls)
             model = try container.decodeIfPresent(String.self, forKey: .model)
-            // Multi-model fields (backward compatibility)
             responseGroupId = try container.decodeIfPresent(UUID.self, forKey: .responseGroupId)
             isSelectedResponse = try container.decodeIfPresent(Bool.self, forKey: .isSelectedResponse)
             pendingToolCalls = try container.decodeIfPresent([MCPToolCall].self, forKey: .pendingToolCalls)
-            // Media fields
             mediaType = try container.decodeIfPresent(MediaType.self, forKey: .mediaType)
             imageData = try container.decodeIfPresent(Data.self, forKey: .imageData)
             imagePath = try container.decodeIfPresent(String.self, forKey: .imagePath)
             attachments = try container.decodeIfPresent([FileAttachment].self, forKey: .attachments)
             reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
             citations = try container.decodeIfPresent([CitationReference].self, forKey: .citations)
-            // Edit tracking (backward compatibility - defaults to false for old messages)
             isEdited = try container.decodeIfPresent(Bool.self, forKey: .isEdited) ?? false
             editedAt = try container.decodeIfPresent(Date.self, forKey: .editedAt)
         }
     #endif
 
-    /// Helper to get image data regardless of storage method
     @MainActor
     var effectiveImageData: Data? {
         if let data = imageData { return data }
@@ -280,14 +252,12 @@ struct Message: Identifiable, Codable, Equatable, Sendable {
         return nil
     }
 
-    /// Async loader that avoids blocking the current actor on attachment I/O.
     func loadEffectiveImageData() async -> Data? {
         if let data = imageData { return data }
         guard let path = imagePath else { return nil }
         return await Message.loadAttachmentData(at: path)
     }
 
-    /// Static loader to decouple from AttachmentStorage
     @MainActor static var attachmentLoader: ((String) -> Data?)?
     @MainActor static var attachmentAsyncLoader: (@Sendable (String) async -> Data?)?
 

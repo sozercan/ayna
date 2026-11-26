@@ -1,6 +1,5 @@
 import os
 
-/// Bridges one callback-driven multi-model request into structured concurrency.
 struct MultiModelRequestRunner: Sendable {
     private enum ContinuationPhase {
         case pending
@@ -90,7 +89,6 @@ struct MultiModelRequestRunner: Sendable {
         }
     }
 
-    /// Idempotent completion handle that may be called from any callback thread.
     final class Completion: Sendable {
         private let state = ContinuationState()
 
@@ -122,8 +120,6 @@ struct MultiModelRequestRunner: Sendable {
         }
     }
 
-    /// Synchronously commits `start` on the main actor, then waits for either
-    /// callback completion or cancellation.
     @MainActor
     static func run(
         start: @escaping @MainActor @Sendable (Completion) -> Void

@@ -1,13 +1,5 @@
-//
-//  ToolCallRequestRoundCoordinator.swift
-//  ayna
-//
-//  Coordinates provider request rounds that can emit multiple tool calls.
-//
-
 import Foundation
 
-/// Hard safety bounds for one provider request round.
 enum ToolCallRequestRoundPolicy {
     static let maximumToolCallsPerRound = 8
 
@@ -18,7 +10,6 @@ enum ToolCallRequestRoundPolicy {
     }
 }
 
-/// Rejects excess provider callbacks before they enter the main-actor callback queue.
 final class ToolCallRequestAdmissionGate: @unchecked Sendable {
     private enum CallbackIdentity: Hashable {
         case providerID(String)
@@ -86,23 +77,14 @@ final class ToolCallRequestAdmissionGate: @unchecked Sendable {
     }
 }
 
-/// Joins provider completion with every tool completion for one request round.
-///
-/// Start a distinct round for every provider request and capture its ID in that
-/// request's callbacks. Tool registrations retain callback order, while tool
-/// results may arrive in any order. Exactly one event receives
-/// ``Resolution/launchContinuation(_:)`` once the provider has completed and all
-/// registered tools have completed.
 @MainActor
 final class ToolCallRequestRoundCoordinator<ResultPayload: Sendable> {
     typealias OperationID = ToolChainCoordinator.OperationID
 
-    /// Identifies one provider request within a longer tool-chain operation.
     struct RequestRoundID: Hashable, Sendable {
         fileprivate let rawValue = UUID()
     }
 
-    /// Opaque handle returned for one tool callback in a request round.
     struct ToolToken: Hashable, Sendable {
         let operationID: OperationID
         let requestRoundID: RequestRoundID
@@ -119,31 +101,24 @@ final class ToolCallRequestRoundCoordinator<ResultPayload: Sendable> {
         }
     }
 
-    /// One completed tool paired with its registration token.
     struct CompletedTool: Sendable {
         let token: ToolToken
         let result: ResultPayload
     }
 
-    /// Ordered tool results needed to launch the next provider request.
     struct Continuation: Sendable {
         let operationID: OperationID
         let completedRequestRoundID: RequestRoundID
         let toolResults: [CompletedTool]
     }
 
-    /// Observable result of closing a provider round or completing a tool.
     enum Resolution: Sendable {
-        /// More events are required before the round can resolve.
         case pending
 
-        /// The provider completed without requesting tools.
         case responseCompleted
 
-        /// The caller receiving this value is the sole continuation launcher.
         case launchContinuation(Continuation)
 
-        /// The event was duplicate, stale, cancelled, or for another round.
         case ignored
     }
 
@@ -172,21 +147,12 @@ final class ToolCallRequestRoundCoordinator<ResultPayload: Sendable> {
     private var activeRound: RequestRound?
     private var canBeginRound = false
 
-    /// Starts the next provider request round for an operation.
-    ///
-    /// Passing a different operation ID replaces any previous state. The round
-    /// also registers with `ToolChainCoordinator`, so cancelling or replacing
-    /// that operation immediately fences all later round and tool callbacks.
-    /// Returns `nil` for a stale operation or when the current round has not yet
-    /// produced a continuation decision.
     @discardableResult
     func beginRequestRound(
         for operationID: OperationID,
         coordinatedBy toolChainCoordinator: ToolChainCoordinator
     ) -> RequestRoundID? {
         if activeOperationID != operationID {
-            // Registration runs its cancellation immediately when the operation is
-            // no longer owned, giving us an ownership check before replacing state.
             let ownershipProbe = OwnershipProbe()
             toolChainCoordinator.onCancel(for: operationID) { [weak self] in
                 ownershipProbe.isOwned = false
@@ -214,9 +180,6 @@ final class ToolCallRequestRoundCoordinator<ResultPayload: Sendable> {
         return requestRoundID
     }
 
-    /// Registers a tool callback in provider callback order.
-    ///
-    /// Registration is rejected after provider completion closes the round.
     func registerTool(
         for operationID: OperationID,
         requestRoundID: RequestRoundID
@@ -241,7 +204,6 @@ final class ToolCallRequestRoundCoordinator<ResultPayload: Sendable> {
         return token
     }
 
-    /// Marks the provider callback stream complete and closes tool registration.
     func providerDidComplete(
         operationID: OperationID,
         requestRoundID: RequestRoundID
@@ -260,7 +222,6 @@ final class ToolCallRequestRoundCoordinator<ResultPayload: Sendable> {
         return resolveIfReady()
     }
 
-    /// Records a tool result. Results are returned in registration order.
     func toolDidComplete(_ token: ToolToken, result: ResultPayload) -> Resolution {
         guard activeOperationID == token.operationID,
               var round = activeRound,
@@ -281,8 +242,6 @@ final class ToolCallRequestRoundCoordinator<ResultPayload: Sendable> {
         return resolveIfReady()
     }
 
-    /// Explicitly clears state for an operation. Normally invoked automatically
-    /// by the cancellation hook registered with `ToolChainCoordinator`.
     @discardableResult
     func cancelOperation(_ operationID: OperationID) -> Bool {
         guard activeOperationID == operationID else { return false }

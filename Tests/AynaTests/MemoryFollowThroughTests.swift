@@ -3,7 +3,6 @@
 import Foundation
 import Testing
 
-/// Collects values from @Sendable callbacks.
 private final class Recorder<Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var stored: [Value] = []
@@ -95,7 +94,6 @@ struct ConversationSummaryStorageTests {
 
     @Test
     func `Sidecars without attachment paths are rebuilt`() throws {
-        // A sidecar from before attachment paths were recorded has every other field.
         var older = ConversationMetadata(conversation: TestHelpers.sampleConversation(title: "Older"))
         older.attachmentPaths = nil
         let decoded = try JSONDecoder().decode(ConversationMetadata.self, from: JSONEncoder().encode(older))
@@ -119,7 +117,6 @@ struct ConversationSummaryStorageTests {
         _ = await manager.loadingTask?.value
         let received = TestHelpers.sampleConversation(title: "From the Watch")
 
-        // The Watch path saves first, then commits the conversation into the manager.
         #expect(await manager.persistProposedConversation(received).value == .saved)
         manager.commitPersistedConversation(received)
 
@@ -177,7 +174,6 @@ private struct InMemoryUserMemoryStore: UserMemoryStoreAdapter {
     func clearMemory() async throws {}
 }
 
-/// Holds a synchronous persistence operation until the test releases it.
 private final class BlockingGate: @unchecked Sendable {
     private let condition = NSCondition()
     private var released = false
@@ -421,7 +417,7 @@ struct MemoryFactExtractorTests {
         let facts = Recorder<String>()
         let extractor = MemoryFactExtractor(
             generate: { _, _ in
-                facts.record("Lives in Lisbon") // Another pass stored it meanwhile
+                facts.record("Lives in Lisbon")
                 return #"["Lives in Lisbon"]"#
             },
             existingFacts: { facts.values.map { UserMemoryFact(content: $0) } },
@@ -457,7 +453,6 @@ struct MemoryFactExtractorTests {
             try? await Task.sleep(for: .milliseconds(50))
         }
         try? await Task.sleep(for: .milliseconds(300))
-        // The first timer was replaced by the second save, so extraction ran once.
         #expect(calls.values.count == 1)
     }
 }

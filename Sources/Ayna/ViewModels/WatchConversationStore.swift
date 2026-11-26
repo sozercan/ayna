@@ -1,20 +1,8 @@
-//
-//  WatchConversationStore.swift
-//  Ayna Watch App
-//
-//  Created on 11/29/25.
-//
-
 #if os(watchOS) || WATCH_STORE_HOST_TESTING
 
     import Combine
     import Foundation
 
-    /// Durable local conversation state for Apple Watch.
-    ///
-    /// Committed conversations, Watch-originated mutations, and in-progress draft overlays
-    /// are persisted before any mutation is handed to WatchConnectivity. Draft overlays are
-    /// deliberately local until `finishDraft(conversationID:)` promotes them to a mutation.
     @MainActor
     // swiftlint:disable:next type_body_length
     final class WatchConversationStore: ObservableObject {
@@ -204,12 +192,10 @@
             initializeFromDisk()
         }
 
-        /// Coalesced durable mutations ready for WatchConnectivity transport.
         var pendingMutationsForSync: [WatchConversationMutation] {
             WatchConversationMutation.coalesced(pendingMutations)
         }
 
-        /// Loads all durable Watch sync state immediately, independent of WCSession state.
         func initializeFromDisk() {
             guard let data = userDefaults.data(forKey: persistenceKey) else {
                 rebuildPublishedConversations()
@@ -244,7 +230,6 @@
                     lastAccessedConversationID = persisted.lastAccessedConversationID
                     recoverInterruptedDrafts()
                 } else {
-                    // Backward compatibility with the original conversations-only payload.
                     committedConversations = try deduplicated(
                         decoder.decode([WatchConversation].self, from: data)
                     )
@@ -279,8 +264,6 @@
             }
         }
 
-        /// Reconciles one explicit page-cycle snapshot and promotes the accumulated manifest
-        /// to authoritative only on the final durable page.
         @discardableResult
         func applySyncSnapshot(
             _ snapshot: WatchSyncSnapshot,
@@ -303,7 +286,6 @@
             pageCycleManifestAccumulator.reset()
         }
 
-        /// Reconciles a phone-authoritative snapshot under durable local mutations and drafts.
         @discardableResult
         func applySyncSnapshot(_ snapshot: WatchSyncSnapshot) -> WatchSyncSnapshotApplyOutcome {
             let previousState = captureRuntimeState()
@@ -370,7 +352,6 @@
             return .applied
         }
 
-        /// Removes all queued mutations at or below the phone-acknowledged revision.
         @discardableResult
         func acknowledgeWatchRevision(
             conversationID: UUID,
@@ -405,8 +386,6 @@
             rebuildPublishedConversations()
             return true
         }
-
-        // MARK: - Conversation operations
 
         func conversation(for id: UUID) -> WatchConversation? {
             guard let conversation = conversations.first(where: { $0.id == id }) else { return nil }
@@ -593,9 +572,6 @@
             return true
         }
 
-        // MARK: - Draft overlays
-
-        /// Persists a full local draft overlay without creating a transport mutation.
         @discardableResult
         func syncDraft(_ conversation: WatchConversation, persist: Bool = true) -> Bool {
             guard let committed = committedConversation(for: conversation.id),
@@ -631,7 +607,6 @@
             return true
         }
 
-        /// Promotes a persisted draft to one coalesced message mutation.
         @discardableResult
         func finishDraft(conversationID: UUID) -> DraftPromotionOutcome {
             guard let draft = pendingDrafts[conversationID],
@@ -677,7 +652,6 @@
             return .promoted(finished)
         }
 
-        /// Removes a persisted draft and restores the committed conversation.
         @discardableResult
         func discardDraft(conversationID: UUID) -> Bool {
             guard pendingDrafts[conversationID] != nil else { return false }
@@ -688,9 +662,6 @@
             return true
         }
 
-        // MARK: - Compatibility helpers
-
-        /// Compatibility path for legacy application-context payloads.
         func updateConversations(_ newConversations: [WatchConversation]) {
             let sourceID = lastSnapshotRevision == .max
                 ? UUID()
@@ -707,16 +678,12 @@
             )
         }
 
-        /// Treats direct replacement as an in-progress local draft.
-        /// `persist: false` keeps the change in memory (for streaming updates); the next persisting
-        /// change, such as finishing the draft, writes it.
         @discardableResult
         func replaceConversation(_ conversation: WatchConversation, persist: Bool = true) -> Bool {
             guard committedConversation(for: conversation.id) != nil else { return false }
             return syncDraft(conversation, persist: persist)
         }
 
-        /// Treats streaming content changes as draft-only state.
         @discardableResult
         func updateLastMessage(in conversationID: UUID, content: String) -> Bool {
             guard var conversation = conversation(for: conversationID),
@@ -795,8 +762,6 @@
             let preview = visibleContent.prefix(50)
             return preview.count < visibleContent.count ? "\(preview)..." : String(preview)
         }
-
-        // MARK: - Private state management
 
         private func queueMutation(
             for conversation: WatchConversation,

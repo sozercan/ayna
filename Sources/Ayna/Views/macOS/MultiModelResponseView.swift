@@ -1,22 +1,13 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  MultiModelResponseView.swift
-//  ayna
-//
-//  Created on 11/25/25.
-//
 
 import SwiftUI
 
-/// A view that displays parallel responses from multiple AI models in a grid layout.
-/// Users can compare responses and select one to continue the conversation.
 @MainActor
 struct MultiModelResponseView: View {
     let responseGroupId: UUID
     let responses: [Message]
     let conversation: Conversation
-    /// ID of the response that would be auto-selected if the user continues without choosing.
     var defaultCandidateId: UUID?
     var onSelectResponse: ((UUID) -> Void)?
     var onRetry: ((Message) -> Void)?
@@ -35,7 +26,6 @@ struct MultiModelResponseView: View {
         selectedResponseId != nil
     }
 
-    /// Determines the grid layout based on number of responses
     private var columns: [GridItem] {
         let count = responses.count
         switch count {
@@ -46,14 +36,12 @@ struct MultiModelResponseView: View {
         case 3:
             return [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
         default:
-            // 4+ models: 2x2 grid
             return [GridItem(.flexible()), GridItem(.flexible())]
         }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            // Header
             HStack {
                 Image(systemName: "square.stack.3d.up")
                     .foregroundStyle(Theme.textSecondary)
@@ -79,7 +67,6 @@ struct MultiModelResponseView: View {
             }
             .padding(.horizontal, Spacing.contentPadding)
 
-            // Response Grid
             LazyVGrid(columns: columns, spacing: Spacing.lg) {
                 ForEach(responses) { response in
                     MultiModelResponseCard(
@@ -109,7 +96,6 @@ struct MultiModelResponseView: View {
     }
 }
 
-/// Individual response card in the multi-model grid
 @MainActor
 struct MultiModelResponseCard: View {
     let message: Message
@@ -308,7 +294,6 @@ struct MultiModelResponseCard: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 if message.mediaType == .image {
-                    // Image generation content
                     if let decodedImage {
                         let nsImage = decodedImage
                         Image(nsImage: nsImage)
@@ -325,7 +310,6 @@ struct MultiModelResponseCard: View {
                                 }
                             }
                     } else if isStreaming {
-                        // Still generating
                         VStack(spacing: Spacing.md) {
                             ProgressView()
                                 .scaleEffect(1.5)
@@ -338,7 +322,6 @@ struct MultiModelResponseCard: View {
                     } else if hasFailed {
                         failedContentView
                     } else {
-                        // Completed but no image data (shouldn't happen)
                         Text("Image unavailable")
                             .font(Typography.caption)
                             .foregroundStyle(Theme.textSecondary)
@@ -486,8 +469,6 @@ struct MultiModelResponseCard: View {
         }
     }
 
-    // MARK: - Image Actions
-
     private func saveImage(_ image: NSImage) {
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = [.png, .jpeg]
@@ -511,7 +492,6 @@ struct MultiModelResponseCard: View {
     }
 }
 
-/// A compact view for selecting models to use in multi-model mode
 struct MultiModelSelector: View {
     @Binding var selectedModels: Set<String>
     let availableModels: [String]
@@ -520,7 +500,6 @@ struct MultiModelSelector: View {
     @State private var isExpanded = false
     @ObservedObject private var aiService = AIService.shared
 
-    /// Determines the capability type of currently selected models (if any)
     private var selectedCapabilityType: AIService.ModelCapability? {
         guard let firstSelected = selectedModels.first else { return nil }
         return aiService.getModelCapability(firstSelected)
@@ -575,7 +554,6 @@ struct MultiModelSelector: View {
 
     private var modelList: some View {
         VStack(alignment: .leading, spacing: Spacing.xxs) {
-            // Header with capability hint
             if selectedCapabilityType == .imageGeneration {
                 Text("Select up to \(maxSelection) image models:")
                     .font(Typography.footnote)
@@ -609,7 +587,6 @@ struct MultiModelSelector: View {
         let isSelected = selectedModels.contains(model)
         let modelCapability = aiService.getModelCapability(model)
 
-        // Disable if max reached OR if mixing capability types
         let isCapabilityMismatch: Bool = {
             guard let selectedType = selectedCapabilityType else { return false }
             return modelCapability != selectedType
@@ -629,7 +606,6 @@ struct MultiModelSelector: View {
 
                 Spacer()
 
-                // Show capability badge for image gen models
                 if modelCapability == .imageGeneration {
                     Image(systemName: "photo")
                         .font(.system(size: Typography.Size.xs))
@@ -656,8 +632,6 @@ struct MultiModelSelector: View {
         }
     }
 }
-
-// MARK: - Previews
 
 #if DEBUG
 struct MultiModelResponseView_Previews: PreviewProvider {

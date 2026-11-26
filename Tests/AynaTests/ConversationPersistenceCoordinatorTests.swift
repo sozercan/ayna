@@ -1310,9 +1310,7 @@ struct ConversationPersistenceCoordinatorTests {
         do {
             try await coordinator.clearAll(suppressing: [conversation.id])
             Issue.record("Expected clear to fail")
-        } catch {
-            // The compatibility API intentionally erases the store's concrete error type.
-        }
+        } catch {}
         await coordinator.enqueueSave(conversation)
         await coordinator.flushPendingSaves()
 
@@ -1705,9 +1703,7 @@ struct ConversationPersistenceCoordinatorTests {
         do {
             try await coordinator.delete(conversationId)
             Issue.record("Expected deletion to fail")
-        } catch {
-            // Expected: rollback must persist the queued edit before returning.
-        }
+        } catch {}
 
         #expect(try await store.loadConversation(id: conversationId)?.title == "Queued Edit")
     }

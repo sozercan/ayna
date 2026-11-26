@@ -1,17 +1,10 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  DynamicTextEditor.swift
-//  ayna
-//
-//  Created on 11/20/25.
-//
 
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Dynamic Text Editor with auto-sizing and keyboard shortcuts
 struct DynamicTextEditor: NSViewRepresentable {
     @Binding var text: String
     @Binding var isFirstResponder: Bool
@@ -20,7 +13,6 @@ struct DynamicTextEditor: NSViewRepresentable {
     let remainingImageCapacity: () -> Int
     let onSubmit: () -> Void
     let onPasteImages: ([PastedImage]) -> Void
-    /// Receives file URLs dropped on the editor, which would otherwise insert their paths as text.
     var onDropFiles: ([URL]) -> Void = { _ in }
     let accessibilityIdentifier: String?
 
@@ -61,7 +53,6 @@ struct DynamicTextEditor: NSViewRepresentable {
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
 
-        // Remove default scroll view padding
         textView.textContainerInset = NSSize(width: 0, height: 2)
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = true
@@ -236,8 +227,6 @@ private final class PasteAwareTextView: NSTextView {
         importImages(selection)
     }
 
-    // MARK: - Drag and Drop
-
     override var acceptableDragTypes: [NSPasteboard.PasteboardType] {
         super.acceptableDragTypes + [.fileURL] + Self.supportedImageTypes.map(\.pasteboardType)
     }
@@ -254,7 +243,6 @@ private final class PasteAwareTextView: NSTextView {
         hasAttachmentDrop(sender.draggingPasteboard) || super.prepareForDragOperation(sender)
     }
 
-    /// Dropped files attach like the attach button; dropped image data imports like a paste.
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let pasteboard = sender.draggingPasteboard
         let fileURLs = Self.fileURLs(in: pasteboard)
@@ -282,8 +270,6 @@ private final class PasteAwareTextView: NSTextView {
         )
         return (objects as? [URL]) ?? []
     }
-
-    // MARK: - Image Import
 
     private func imageCandidateSelection(from pasteboard: NSPasteboard) -> CandidateSelection {
         let capacity = max(

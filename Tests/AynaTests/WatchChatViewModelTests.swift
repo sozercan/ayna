@@ -4,10 +4,6 @@
     import Foundation
     import Testing
 
-    // Note: WatchChatViewModel is only available on watchOS. These tests verify the
-    // AIService tool integration and the data flow patterns used by the watch.
-    // The actual WatchChatViewModel cannot be tested directly on macOS.
-
     @Suite("WatchChatViewModel Integration Tests", .serialized)
     @MainActor
     struct WatchChatViewModelIntegrationTests {
@@ -26,17 +22,12 @@
             keychain = InMemoryKeychainStorage()
         }
 
-        // MARK: - Tool Integration Tests
-
         @Test
         func `openAI service includes Tavily tool when configured`() {
-            // Configure TavilyService with a test API key
             let tavilyService = TavilyService(keychain: keychain)
             tavilyService.apiKey = "tvly-test-key"
             tavilyService.isEnabled = true
 
-            // Note: In the actual app, AIService.getAllAvailableTools() includes Tavily
-            // when TavilyService.shared.isAvailable is true
             #expect(tavilyService.isAvailable)
             #expect(tavilyService.isConfigured)
 
@@ -71,25 +62,19 @@
             #expect(!tavilyService.isAvailable)
         }
 
-        // MARK: - Message Flow Tests
-
         @Test
         func `watch message sync flow`() throws {
-            // Simulate the message flow: User sends message → WatchMessage → sync to iPhone
             let userContent = "What's the weather?"
             let userMessage = Message(role: .user, content: userContent)
             let watchMessage = WatchMessage(from: userMessage)
 
-            // Encode for WatchConnectivity
             let data = try JSONEncoder().encode(watchMessage)
             #expect(!data.isEmpty)
 
-            // Decode on iPhone side
             let decoded = try JSONDecoder().decode(WatchMessage.self, from: data)
             #expect(decoded.content == userContent)
             #expect(decoded.role == "user")
 
-            // Convert to Message for ConversationManager
             let message = decoded.toMessage()
             #expect(message.content == userContent)
             #expect(message.role == .user)
@@ -97,7 +82,6 @@
 
         @Test
         func `assistant message sync flow`() throws {
-            // Simulate: API response → Update local → WatchMessage → sync to iPhone
             let assistantContent = "The weather is sunny with a high of 72°F."
             let assistantMessage = Message(role: .assistant, content: assistantContent, model: "gpt-4o")
             let watchMessage = WatchMessage(from: assistantMessage)
@@ -109,8 +93,6 @@
             #expect(decoded.role == "assistant")
             #expect(decoded.model == "gpt-4o")
         }
-
-        // MARK: - Tool Execution Flow Tests
 
         @Test
         func `tavily tool call execution`() async {
@@ -160,12 +142,9 @@
 
         @Test
         func `tool call depth limit`() {
-            // The WatchChatViewModel has a maxToolCallDepth of 5
-            // This test verifies the concept of depth limiting
             let maxDepth = 5
             var currentDepth = 0
 
-            // Simulate recursive tool calls
             for _ in 1 ... 10 {
                 guard currentDepth < maxDepth else {
                     break
@@ -175,8 +154,6 @@
 
             #expect(currentDepth == maxDepth, "Tool call depth should be limited to \(maxDepth)")
         }
-
-        // MARK: - Model Filtering Tests
 
         @Test
         func `watchOS model filtering`() {
@@ -208,11 +185,8 @@
             ))
         }
 
-        // MARK: - Conversation State Tests
-
         @Test
         func `title generation trigger`() {
-            // Title generation should only trigger on the first message
             var conversation = Conversation(title: "New Chat", model: "gpt-4o")
 
             let isFirstMessage = conversation.messages.isEmpty
@@ -227,33 +201,25 @@
 
         @Test
         func `conversation update preserves local title`() {
-            // When iPhone syncs with "New Chat" but watch has generated a title,
-            // the local title should be preserved
             let conversationId = UUID()
 
-            // Simulate local conversation with generated title
             let localTitle = "Weather Discussion"
             var localConv = Conversation(id: conversationId, title: localTitle, model: "gpt-4o")
             localConv.addMessage(Message(role: .user, content: "What's the weather?"))
 
-            // Simulate sync from iPhone with "New Chat" title
             let syncedTitle = "New Chat"
             var syncedConv = Conversation(id: conversationId, title: syncedTitle, model: "gpt-4o")
             syncedConv.addMessage(Message(role: .user, content: "What's the weather?"))
 
-            // Merge logic: preserve local title if iPhone still has "New Chat"
             let shouldPreserveLocal = syncedConv.title == "New Chat" && localConv.title != "New Chat"
             let finalTitle = shouldPreserveLocal ? localConv.title : syncedConv.title
 
             #expect(finalTitle == localTitle)
         }
 
-        // MARK: - Additional Watch Integration Tests
-
         @Test
         func `streaming throttle interval`() {
-            // Verify the throttle interval constant is reasonable for Watch performance
-            let uiUpdateInterval: TimeInterval = 0.1 // 100ms as used in WatchChatViewModel
+            let uiUpdateInterval: TimeInterval = 0.1
             #expect(uiUpdateInterval == 0.1)
             #expect(uiUpdateInterval >= 0.05, "Throttle should be at least 50ms for performance")
             #expect(uiUpdateInterval <= 0.2, "Throttle should be at most 200ms for responsiveness")
@@ -261,10 +227,8 @@
 
         @Test
         func `max tool call depth constant`() {
-            // The WatchChatViewModel should limit recursive tool calls
             let maxToolCallDepth = 5
 
-            // Simulate checking depth limit
             var currentDepth = 0
             var reachedLimit = false
 
@@ -282,21 +246,17 @@
 
         @Test
         func `watch conversation sync merge logic`() {
-            // Test the merge logic used in WatchConversationStore.updateConversations
             let conversationId = UUID()
 
-            // Local has more messages (during streaming)
             var localConv = Conversation(id: conversationId, title: "Chat", model: "gpt-4o")
             localConv.addMessage(Message(role: .user, content: "Hello"))
             localConv.addMessage(Message(role: .assistant, content: "Hi!"))
-            localConv.addMessage(Message(role: .assistant, content: "")) // Streaming placeholder
+            localConv.addMessage(Message(role: .assistant, content: ""))
 
-            // Remote has fewer messages (hasn't received streaming update yet)
             var remoteConv = Conversation(id: conversationId, title: "Chat", model: "gpt-4o")
             remoteConv.addMessage(Message(role: .user, content: "Hello"))
             remoteConv.addMessage(Message(role: .assistant, content: "Hi!"))
 
-            // Merge logic should preserve local when it has more messages
             let shouldPreserveLocalMessages = localConv.messages.count > remoteConv.messages.count
             #expect(shouldPreserveLocalMessages)
         }
@@ -313,14 +273,11 @@
                 model: "gpt-4o"
             )
 
-            // Convert to WatchMessage
             let watchMessage = WatchMessage(from: original)
 
-            // Encode/decode (simulating WatchConnectivity transfer)
             let data = try JSONEncoder().encode(watchMessage)
             let decoded = try JSONDecoder().decode(WatchMessage.self, from: data)
 
-            // Convert back to Message
             let final = decoded.toMessage()
 
             #expect(final.id == originalId)
@@ -343,14 +300,11 @@
             original.addMessage(Message(role: .user, content: "Question"))
             original.addMessage(Message(role: .assistant, content: "Answer", model: "gpt-4o"))
 
-            // Convert to WatchConversation
             let watchConv = WatchConversation(from: original)
 
-            // Encode/decode
             let data = try JSONEncoder().encode(watchConv)
             let decoded = try JSONDecoder().decode(WatchConversation.self, from: data)
 
-            // Convert back
             let final = decoded.toConversation()
 
             #expect(final.id == originalId)

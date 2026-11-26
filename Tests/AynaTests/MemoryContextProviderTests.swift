@@ -1,10 +1,3 @@
-//
-//  MemoryContextProviderTests.swift
-//  ayna
-//
-//  Created on 1/29/26.
-//
-
 @testable import Ayna
 import Foundation
 import Testing
@@ -12,8 +5,6 @@ import Testing
 @Suite("MemoryContextProvider Tests")
 @MainActor
 struct MemoryContextProviderTests {
-    // MARK: - Context Building
-
     @Test
     func `build context returns empty when memory disabled`() {
         let memoryService = UserMemoryService()
@@ -26,7 +17,6 @@ struct MemoryContextProviderTests {
             summaryService: summaryService
         )
 
-        // Explicitly disable memory to avoid state leaking from other tests
         provider.setMemoryEnabled(false)
         let context = provider.buildContext()
 
@@ -48,7 +38,6 @@ struct MemoryContextProviderTests {
             summaryService: summaryService
         )
 
-        // Enable memory and add a fact
         provider.setMemoryEnabled(true)
         memoryService.addFact("Prefers Swift")
 
@@ -73,24 +62,19 @@ struct MemoryContextProviderTests {
 
         provider.setMemoryEnabled(true)
 
-        // Add some conversation summaries
         let conversation1 = TestHelpers.sampleConversation(title: "First Chat")
         let conversation2 = TestHelpers.sampleConversation(title: "Second Chat")
 
         summaryService.updateSummary(for: conversation1)
         summaryService.updateSummary(for: conversation2)
 
-        // Build context excluding conversation1
         let context = provider.buildContext(currentConversationId: conversation1.id)
 
-        // Should only include conversation2's summary
         if let summaries = context.conversationSummaries {
             #expect(!summaries.contains("First Chat"))
             #expect(summaries.contains("Second Chat"))
         }
     }
-
-    // MARK: - Memory Command Processing
 
     @Test
     func `process memory command returns nil when disabled`() {
@@ -104,7 +88,6 @@ struct MemoryContextProviderTests {
             summaryService: summaryService
         )
 
-        // Explicitly disable memory to avoid state leaking from other tests
         provider.setMemoryEnabled(false)
         let response = provider.processMemoryCommand(in: "Remember that I like Swift")
 
@@ -132,13 +115,11 @@ struct MemoryContextProviderTests {
         #expect(memoryService.activeFacts().count == 1)
     }
 
-    // MARK: - Context Allocation
-
     @Test
     func `context allocation adapts to small context window`() {
         let allocation = MemoryContextProvider.ContextAllocation(availableTokens: 4000)
 
-        #expect(allocation.conversationSummary == 0) // Disabled for small context
+        #expect(allocation.conversationSummary == 0)
         #expect(allocation.userMemory < 1000)
     }
 
@@ -150,8 +131,6 @@ struct MemoryContextProviderTests {
         #expect(allocation.userMemory == 1000)
         #expect(allocation.conversationSummary == 500)
     }
-
-    // MARK: - Accessors
 
     @Test
     func `enabled memory requires an authoritative load even when unchanged`() {

@@ -14,6 +14,8 @@ on:
       - 'Tests/**'
       - '.swiftlint.yml'
       - '.swiftformat'
+      - '.comment-ratchet.json'
+      - 'Scripts/check-comment-ratchet.py'
       - '.github/workflows/lint.yml'
   pull_request:
     branches: [ main ]
@@ -24,6 +26,8 @@ on:
       - 'Tests/**'
       - '.swiftlint.yml'
       - '.swiftformat'
+      - '.comment-ratchet.json'
+      - 'Scripts/check-comment-ratchet.py'
       - '.github/workflows/lint.yml'
 
 env:
@@ -50,6 +54,9 @@ jobs:
     - name: Run SwiftLint
       run: |
         swiftlint lint --strict --reporter github-actions-logging
+
+    - name: Check comment ratchet
+      run: python3 Scripts/check-comment-ratchet.py
 
   format:
     runs-on: macos-26

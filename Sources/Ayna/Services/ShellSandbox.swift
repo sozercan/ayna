@@ -1,20 +1,5 @@
-//
-//  ShellSandbox.swift
-//  Ayna
-//
-//  Shell command validation and sandboxing for agentic execution.
-//  Defense-in-depth protection against dangerous commands.
-//
-
 import Foundation
 
-/// Validates and restricts shell command execution.
-///
-/// Security Model:
-/// - The blocklist is a *defense-in-depth* measure, not the primary security boundary
-/// - The actual security comes from user approval for any dangerous operation
-/// - The blocklist helps models avoid obviously dangerous commands without user intervention
-/// - Sophisticated bypass attempts are stopped at the approval layer
 struct ShellSandbox {
     let allowedCommands: Set<String>
     let blockedPatterns: [String]
@@ -41,53 +26,37 @@ struct ShellSandbox {
         }
     }
 
-    // MARK: - Default Configuration
-
-    /// Commands that execute without approval (read-only, safe operations)
     static let defaultAllowed: Set<String> = [
-        // File inspection
         "ls", "cat", "head", "tail", "less", "more", "file", "wc",
-        // Search
         "grep", "find", "rg", "fd", "ag",
-        // Git (read-only)
         "git",
-        // Development tools (read-only)
         "npm", "yarn", "pnpm", "swift", "swiftc", "xcodebuild",
-        // System info
         "echo", "pwd", "which", "whereis", "env", "printenv",
         "uname", "hostname", "date", "whoami",
-        // Process inspection
         "ps", "top"
     ]
 
-    /// Patterns that are always blocked (denied even with approval attempt)
     static let defaultBlocked: [String] = [
-        // Privilege escalation
         "sudo", "doas", "pkexec", "su ",
 
-        // Destructive filesystem operations
         "rm -rf /",
         "rm -rf ~",
         "rm -rf .",
         "rm -rf *",
 
-        // Unsafe permissions
         "chmod 777",
         "chmod -R 777",
         "chown root",
 
-        // Device/filesystem danger
         "> /dev/",
         "dd if=",
         "mkfs",
         "fdisk",
         "parted",
 
-        // Fork bombs and resource exhaustion
         ":(){ :|:& };:",
         "fork()",
 
-        // Network exfiltration patterns
         "curl .* \\| *sh",
         "wget .* \\| *sh",
         "curl .* \\| *bash",
@@ -95,38 +64,30 @@ struct ShellSandbox {
         "nc -e",
         "bash -i",
 
-        // System modification
         "launchctl",
         "systemctl",
         "shutdown",
         "reboot",
         "halt",
 
-        // Package managers with dangerous flags
         "brew install --cask",
         "pip install --user",
         "npm install -g"
     ]
 
-    /// Commands that require user approval due to arbitrary code execution potential.
-    /// These are not in `defaultAllowed` but are allowed with explicit user approval.
     static let requiresApprovalCommands: Set<String> = [
         "python", "python3", "ruby", "node"
     ]
 
-    /// Commands that are always blocked regardless of arguments.
-    /// These are checked using extracted command name to prevent whitespace/quoting bypasses.
     static let alwaysBlockedCommands: Set<String> = [
-        "eval", // Shell builtin that executes arbitrary code
-        "source", // Shell builtin that executes scripts
-        "exec", // Replaces shell process with command
-        "sudo", // Privilege escalation
-        "doas", // Privilege escalation (OpenBSD sudo alternative)
-        "pkexec", // Privilege escalation (PolicyKit)
-        "su" // Switch user
+        "eval",
+        "source",
+        "exec",
+        "sudo",
+        "doas",
+        "pkexec",
+        "su"
     ]
-
-    // MARK: - Initialization
 
     init(
         allowedCommands: Set<String> = ShellSandbox.defaultAllowed,
@@ -143,22 +104,12 @@ struct ShellSandbox {
         self.blockedPatternRules = blockedPatterns.map(BlockedPatternRule.init)
     }
 
-    // MARK: - Validation
-
-    /// Result of command validation
     enum ValidationResult: Equatable {
-        case allowed // In allowlist, can execute
-        case requiresApproval // Not in allowlist, needs user approval
-        case blocked(reason: String) // In blocklist, always denied
+        case allowed
+        case requiresApproval
+        case blocked(reason: String)
     }
 
-    /// Validates a shell command for execution.
-    ///
-    /// Splits the command on `;`, `&&`, `||`, and `|` to validate each component.
-    /// All components must pass validation for the command to be allowed.
-    ///
-    /// - Parameter command: The shell command to validate
-    /// - Returns: Validation result indicating if execution is allowed
     func validate(_ command: String) -> ValidationResult {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -166,27 +117,20 @@ struct ShellSandbox {
             return .blocked(reason: "Empty command")
         }
 
-        // Block embedded newlines - they act as command separators in shells
-        // and could be used to bypass per-command validation
         if trimmed.contains("\n") || trimmed.contains("\r") {
             return .blocked(reason: "Embedded newlines not allowed in commands")
         }
 
-        // Block command substitution syntax (security critical)
-        // These are interpreted by shells and can execute arbitrary commands
         if let substitutionReason = checkCommandSubstitution(trimmed) {
             return .blocked(reason: substitutionReason)
         }
 
-        // Check for blocked patterns first (entire command string)
         if let blockedReason = checkBlockedPatterns(trimmed) {
             return .blocked(reason: blockedReason)
         }
 
-        // Split command into components
         let components = splitCommand(trimmed)
 
-        // Validate each component
         var anyRequiresApproval = false
 
         for component in components {
@@ -205,10 +149,6 @@ struct ShellSandbox {
         return anyRequiresApproval ? .requiresApproval : .allowed
     }
 
-    /// Validates a working directory for command execution.
-    ///
-    /// - Parameter path: The working directory path
-    /// - Returns: true if the path is allowed for command execution
     func isWorkingDirectoryAllowed(_ path: String) -> Bool {
         guard restrictToProjectDirectory, let projectRoot else {
             return true
@@ -220,23 +160,16 @@ struct ShellSandbox {
         return Self.pathComponents(pathComponents, startWith: rootComponents)
     }
 
-    /// Extracts the base command name from a command string.
-    ///
-    /// - Parameter command: The full command string
-    /// - Returns: The base command name (first word)
     func extractCommandName(_ command: String) -> String? {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Handle commands that start with environment variable assignments
         let firstCommandWord = trimmed.split(whereSeparator: { $0.isWhitespace }).first { word in
-            // Skip environment variable assignments (KEY=value)
             !(word.contains("=") && !word.hasPrefix("-"))
         }
 
         guard let firstCommandWord else { return nil }
         let firstWord = String(firstCommandWord)
 
-        // Handle path-qualified commands like /usr/bin/git
         if firstWord.contains("/") {
             return URL(fileURLWithPath: firstWord).lastPathComponent
         }
@@ -244,18 +177,14 @@ struct ShellSandbox {
         return firstWord
     }
 
-    // MARK: - Private Helpers
-
     private func checkBlockedPatterns(_ command: String) -> String? {
         let lowercased = command.lowercased()
 
         for rule in blockedPatternRules {
-            // Check exact match or contains
             if lowercased.contains(rule.lowercasedPattern) {
                 return "Blocked pattern: \(rule.pattern)"
             }
 
-            // Check regex patterns
             if let regex = rule.regex {
                 let range = NSRange(command.startIndex..., in: command)
                 if regex.firstMatch(in: command, options: [], range: range) != nil {
@@ -267,16 +196,7 @@ struct ShellSandbox {
         return nil
     }
 
-    /// Checks for command substitution and process substitution syntax that could execute arbitrary commands.
-    ///
-    /// Since commands are executed via `/bin/zsh -c`, backticks, $(), <(), and >() are interpreted
-    /// by the shell and can execute arbitrary nested commands, bypassing validation.
-    ///
-    /// - Parameter command: The command string to check
-    /// - Returns: A reason string if dangerous substitution is detected, nil otherwise
     private func checkCommandSubstitution(_ command: String) -> String? {
-        // Track quote state to avoid false positives in single-quoted strings
-        // (single quotes prevent substitution in shells)
         var inSingleQuote = false
         var inDoubleQuote = false
         var index = command.startIndex
@@ -284,34 +204,28 @@ struct ShellSandbox {
         while index < command.endIndex {
             let char = command[index]
 
-            // Skip backslash-escaped characters (only outside single quotes — backslash is literal in single quotes)
             if char == "\\", !inSingleQuote {
                 index = command.index(index, offsetBy: 2, limitedBy: command.endIndex) ?? command.endIndex
                 continue
             }
 
-            // Toggle single quote state (only when not inside double quotes)
             if char == "'", !inDoubleQuote {
                 inSingleQuote.toggle()
                 index = command.index(after: index)
                 continue
             }
 
-            // Toggle double quote state (only when not inside single quotes)
             if char == "\"", !inSingleQuote {
                 inDoubleQuote.toggle()
                 index = command.index(after: index)
                 continue
             }
 
-            // Only check for substitution outside single quotes
             if !inSingleQuote {
-                // Check for backtick command substitution
                 if char == "`" {
                     return "Command substitution (backticks) not allowed"
                 }
 
-                // Check for $() command substitution
                 if char == "$", command.index(after: index) < command.endIndex {
                     let nextChar = command[command.index(after: index)]
                     if nextChar == "(" {
@@ -319,7 +233,6 @@ struct ShellSandbox {
                     }
                 }
 
-                // Check for process substitution <() and >()
                 if char == "<" || char == ">", command.index(after: index) < command.endIndex {
                     let nextChar = command[command.index(after: index)]
                     if nextChar == "(" {
@@ -335,9 +248,6 @@ struct ShellSandbox {
     }
 
     private func splitCommand(_ command: String) -> [String] {
-        // Split on command separators: ; && || |
-        // Properly handles escape sequences within quoted strings
-
         var components: [String] = []
         var current = ""
         var inSingleQuote = false
@@ -348,7 +258,6 @@ struct ShellSandbox {
         while index < command.endIndex {
             let char = command[index]
 
-            // Handle escape sequences (backslash)
             if isEscaped {
                 current.append(char)
                 isEscaped = false
@@ -356,7 +265,6 @@ struct ShellSandbox {
                 continue
             }
 
-            // Check for backslash escape (only meaningful in double quotes or unquoted)
             if char == "\\", !inSingleQuote {
                 isEscaped = true
                 current.append(char)
@@ -364,7 +272,6 @@ struct ShellSandbox {
                 continue
             }
 
-            // Track quote state
             if char == "'", !inDoubleQuote {
                 inSingleQuote.toggle()
                 current.append(char)
@@ -378,9 +285,7 @@ struct ShellSandbox {
                 continue
             }
 
-            // Only split if not in quotes
             if !inSingleQuote, !inDoubleQuote {
-                // Check for && or ||
                 if index < command.index(before: command.endIndex) {
                     let nextChar = command[command.index(after: index)]
                     if (char == "&" && nextChar == "&") || (char == "|" && nextChar == "|") {
@@ -393,7 +298,6 @@ struct ShellSandbox {
                     }
                 }
 
-                // Check for ; or |
                 if char == ";" || char == "|" {
                     if !current.trimmingCharacters(in: .whitespaces).isEmpty {
                         components.append(current.trimmingCharacters(in: .whitespaces))
@@ -408,7 +312,6 @@ struct ShellSandbox {
             index = command.index(after: index)
         }
 
-        // Add remaining content
         if !current.trimmingCharacters(in: .whitespaces).isEmpty {
             components.append(current.trimmingCharacters(in: .whitespaces))
         }
@@ -417,37 +320,29 @@ struct ShellSandbox {
     }
 
     private func validateComponent(_ component: String) -> ValidationResult {
-        // Check blocked patterns for this component
         if let blockedReason = checkBlockedPatterns(component) {
             return .blocked(reason: blockedReason)
         }
 
-        // Extract command name
         guard let commandName = extractCommandName(component) else {
             return .blocked(reason: "Cannot determine command")
         }
 
-        // Check against always-blocked commands using extracted name
-        // This prevents bypasses via whitespace variants (tabs) or quoting
         if Self.alwaysBlockedCommands.contains(commandName.lowercased()) {
             return .blocked(reason: "Command always blocked: \(commandName)")
         }
 
-        // Check if in allowed list
         if allowedCommands.contains(commandName) {
-            // Even allowed commands need approval if they have dangerous flags
             if hasDangerousFlags(component, command: commandName) {
                 return .requiresApproval
             }
             return .allowed
         }
 
-        // Interpreter commands always require approval (arbitrary code execution risk)
         if Self.requiresApprovalCommands.contains(commandName.lowercased()) {
             return .requiresApproval
         }
 
-        // Not in allowed list
         if allowUnlistedCommands {
             return .requiresApproval
         } else {
@@ -455,8 +350,6 @@ struct ShellSandbox {
         }
     }
 
-    /// Read-only subcommands of allowlisted tools that can otherwise run project code (scripts,
-    /// hooks, build plugins). Anything else needs approval.
     private static let readOnlySubcommands: [String: Set<String>] = [
         "git": [
             "status", "log", "diff", "show", "blame", "rev-parse", "ls-files", "ls-tree",
@@ -470,15 +363,12 @@ struct ShellSandbox {
         "xcodebuild": ["-version", "-showsdks", "-list", "-help", "-usage"]
     ]
 
-    /// Whether an allowlisted command would run some other program or project code, which the
-    /// allowlist must not wave through (for example `env python3 -c ...` or `find -exec`).
     private func runsOtherCode(_ component: String, command: String) -> Bool {
-        // A redirection can write any file, outside the approval checks of the file tools.
         if Self.hasOutputRedirection(component) {
             return true
         }
         guard let tokens = Self.shellWords(component) else {
-            return true // Quoting the classifier cannot interpret
+            return true
         }
         guard let commandIndex = tokens.firstIndex(where: { $0 == command || $0.hasSuffix("/\(command)") }) else {
             return true
@@ -487,7 +377,6 @@ struct ShellSandbox {
 
         switch command {
         case "env":
-            // env VAR=value ... COMMAND runs COMMAND; printing the environment is fine.
             return arguments.contains { !$0.hasPrefix("-") && !$0.contains("=") }
         case "find":
             let executing: Set = ["-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprintf", "-fls"]
@@ -497,7 +386,6 @@ struct ShellSandbox {
         case "fd":
             return arguments.contains { ["-x", "--exec", "-X", "--exec-batch"].contains($0) }
         case "git":
-            // Configuration overrides (`-c x=y`, `-cx=y`) can point git at any program.
             if arguments.contains(where: { $0.hasPrefix("-c") || $0.hasPrefix("--config-env") || $0.hasPrefix("--exec-path") }) {
                 return true
             }
@@ -514,8 +402,6 @@ struct ShellSandbox {
         }
     }
 
-    /// Splits a command into words the way the shell does for quotes and backslashes, or nil when
-    /// the quoting is unbalanced.
     static func shellWords(_ command: String) -> [String]? {
         var words: [String] = []
         var current = ""
@@ -562,7 +448,6 @@ struct ShellSandbox {
         return words
     }
 
-    /// Whether a `>` outside quotes redirects output to a file (including `>>`, `&>`, `2>`).
     static func hasOutputRedirection(_ command: String) -> Bool {
         var quote: Character?
         var escaped = false
@@ -594,35 +479,29 @@ struct ShellSandbox {
         }
         let lowercased = fullCommand.lowercased()
 
-        // Dangerous flags for specific commands
         switch command {
         case "git":
-            // git push --force, git reset --hard, etc.
             return lowercased.contains("--force") ||
                 lowercased.contains("-f ") ||
                 lowercased.hasSuffix("-f") ||
                 lowercased.contains("reset --hard") ||
                 lowercased.contains("clean -fd") ||
                 lowercased.contains("checkout .") ||
-                lowercased.contains("push") // Pushes require approval
+                lowercased.contains("push")
 
         case "rm":
-            // Any recursive or force flags
             return lowercased.contains("-r") ||
                 lowercased.contains("-f") ||
                 lowercased.contains("--recursive") ||
                 lowercased.contains("--force")
 
         case "chmod", "chown":
-            // Any permission changes require approval
             return true
 
         case "mv", "cp":
-            // Moving/copying over existing files
             return lowercased.contains("-f") || lowercased.contains("--force")
 
         case "python", "python3", "ruby", "node":
-            // -c/-e flags allow arbitrary inline code execution
             return lowercased.contains(" -c ") || lowercased.hasSuffix(" -c") ||
                 lowercased.contains(" -e ") || lowercased.hasSuffix(" -e")
 
@@ -640,25 +519,19 @@ struct ShellSandbox {
     }
 
     private static func pathComponents(_ pathComponents: [String], startWith directoryComponents: [String]) -> Bool {
-        // Path must have at least as many components as directory
         guard pathComponents.count >= directoryComponents.count else {
             return false
         }
 
-        // Check that all directory components match the start of path components
         return pathComponents.starts(with: directoryComponents)
     }
 }
 
-// MARK: - Convenience Extensions
-
 extension ShellSandbox {
-    /// Creates a sandbox with custom allowed commands added to defaults.
     static func withAdditionalAllowed(_ commands: Set<String>) -> ShellSandbox {
         ShellSandbox(allowedCommands: defaultAllowed.union(commands))
     }
 
-    /// Creates a sandbox with custom blocked patterns added to defaults.
     static func withAdditionalBlocked(_ patterns: [String]) -> ShellSandbox {
         ShellSandbox(blockedPatterns: defaultBlocked + patterns)
     }

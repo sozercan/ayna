@@ -1,15 +1,8 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  ChatMessageList.swift
-//  ayna
-//
-//  Extracted from MacChatView.swift - Message list/scroll view component
-//
 
 import SwiftUI
 
-/// The scrollable message list area showing conversation messages
 struct ChatMessageList: View {
     let displayableItems: [ChatTranscriptItem]
     let conversation: Conversation
@@ -69,7 +62,6 @@ struct ChatMessageList: View {
                         }
                     }
 
-                    // Anchor for scroll position detection
                     Color.clear
                         .frame(height: 1)
                         .id("bottom")
@@ -148,7 +140,6 @@ struct ChatMessageList: View {
                     }
                 }
             )
-            // Overlay scroll-to-bottom button inside ScrollViewReader so we can use proxy
             .overlay(alignment: .bottom) {
                 MacScrollToBottomButton(
                     isVisible: showScrollToBottom && !isGenerating,

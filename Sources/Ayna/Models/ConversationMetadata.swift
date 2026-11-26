@@ -1,10 +1,3 @@
-//
-//  ConversationMetadata.swift
-//  ayna
-//
-//  Lightweight persisted conversation list metadata.
-//
-
 import Foundation
 
 struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
@@ -22,7 +15,6 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
     var lastMessagePreview: String
     var searchableText: String
     var requiresBackfill: Bool
-    /// Attachment files this conversation owns; nil in sidecars written before it was recorded.
     var attachmentPaths: [String]?
 
     init(
@@ -103,8 +95,6 @@ struct ConversationMetadata: Identifiable, Codable, Equatable, Sendable {
         lastMessagePreview = decodedPreview ?? ""
         searchableText = decodedSearchText ?? title
         attachmentPaths = try container.decodeIfPresent([String].self, forKey: .attachmentPaths)
-        // Sidecars written before attachment paths were recorded are rebuilt once from the full
-        // record, so deleting an unopened conversation can still remove its files.
         requiresBackfill = messageCount > 0
             && (decodedPreview == nil || decodedSearchText == nil || attachmentPaths == nil)
     }

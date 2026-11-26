@@ -15,7 +15,6 @@ class AynaUITestCase: XCTestCase {
             application.launch()
             application.activate()
 
-            // Wait for the main window to appear before querying children
             let window = application.windows.firstMatch
             XCTAssertTrue(window.waitForExistence(timeout: 10), "App window did not appear in time")
 
@@ -36,7 +35,6 @@ class AynaUITestCase: XCTestCase {
     }
 }
 
-/// Central place to keep the accessibility identifiers we rely on in UI tests.
 enum TestIdentifiers {
     enum Sidebar {
         static let searchField = "sidebar.searchField"

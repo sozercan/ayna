@@ -1,15 +1,8 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  AgentsSettingsSection.swift
-//  Ayna
-//
-//  Settings UI for native agentic tools configuration.
-//
 
 import SwiftUI
 
-/// Settings section for agentic tools configuration
 struct AgentsSettingsSection: View {
     @Bindable private var settingsStore = AgentSettingsStore.shared
 
@@ -19,7 +12,6 @@ struct AgentsSettingsSection: View {
 
     var body: some View {
         Form {
-            // Enable/Disable Section
             Section {
                 Toggle("Enable Agentic Tools", isOn: $settingsStore.settings.isEnabled)
                     .help("Allow AI to read files, write code, and run commands")
@@ -30,7 +22,6 @@ struct AgentsSettingsSection: View {
                     .foregroundStyle(.secondary)
             }
 
-            // Permission Settings
             Section("Default Permissions") {
                 permissionPicker(for: "read_file", label: "Read Files")
                 permissionPicker(for: "write_file", label: "Write Files")
@@ -41,7 +32,6 @@ struct AgentsSettingsSection: View {
                 permissionPicker(for: "git_context", label: "Git Context")
                 permissionPicker(for: "project_context", label: "Project Context")
                 permissionPicker(for: "update_tasks", label: "Task List")
-                // web_fetch has no approval step, so it is either allowed or not.
                 permissionPicker(for: "web_fetch", label: "Web Fetch", levels: [.automatic, .denied])
             }
 
@@ -59,7 +49,6 @@ struct AgentsSettingsSection: View {
                     .foregroundStyle(.secondary)
             }
 
-            // Safety Settings
             Section("Safety") {
                 Toggle(
                     "Require approval outside project",
@@ -84,7 +73,6 @@ struct AgentsSettingsSection: View {
                 .help("Maximum time a single command can run")
             }
 
-            // Approval Settings
             Section("Approval Behavior") {
                 Toggle(
                     "Remember approvals across sessions",
@@ -101,7 +89,6 @@ struct AgentsSettingsSection: View {
                 .help("Auto-deny pending approvals after this time")
             }
 
-            // Project Settings
             Section {
                 HStack {
                     Text("Project Root")
@@ -136,7 +123,6 @@ struct AgentsSettingsSection: View {
                     .foregroundStyle(.secondary)
             }
 
-            // Reset
             Section {
                 Button("Reset to Defaults", role: .destructive) {
                     showResetConfirmation = true
@@ -162,8 +148,6 @@ struct AgentsSettingsSection: View {
         .onChange(of: settingsStore.settings.additionalBlockedPatterns) { loadCommandLists() }
         .onDisappear(perform: commitCommandLists)
     }
-
-    // MARK: - Helpers
 
     private func loadCommandLists() {
         allowedCommandsText = settingsStore.settings.additionalAllowedCommands.joined(separator: ", ")
@@ -247,8 +231,6 @@ struct AgentsSettingsSection: View {
         }
     }
 }
-
-// MARK: - Preview
 
 #Preview {
     AgentsSettingsSection()

@@ -1,22 +1,13 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  MacChatView+ImageGeneration.swift
-//  ayna
-//
-//  Image generation and multi-model messaging methods extracted from MacChatView.
-//
 
 import SwiftUI
-
-// MARK: - Image Generation & Multi-Model Messaging
 
 extension MacChatView {
     func generateImage(prompt: String, model: String) {
         let coordinator = imageGenerationCoordinator
         let operationID = coordinator.beginOperation()
 
-        // Create placeholder assistant message with a known ID
         let messageId = UUID()
         let placeholderMessage = Message(
             id: messageId,
@@ -36,10 +27,8 @@ extension MacChatView {
             }
         }
 
-        // Resolve edit sources (cheap, no disk I/O): attached images, else the previous image.
         let editContext = ImageEditContext.resolve(in: currentConversation)
 
-        // Own source-image loading and the eventual transport under one logical request.
         let task = Task { @MainActor in
             let onComplete: @Sendable (Data) -> Void = { imageData in
                 coordinator.schedule(for: operationID) {
@@ -138,14 +127,12 @@ extension MacChatView {
             recoverySuggestion: ErrorPresenter.recoverySuggestion(for: error)
         )
 
-        // Remove the empty assistant placeholder message since we show error in banner
         conversationManager.removeMessage(conversationId: conversation.id, messageId: messageId)
         if let conversation = conversationManager.conversation(byId: conversation.id) {
             conversationManager.save(conversation)
         }
     }
 
-    /// Generates images from multiple models in parallel for comparison
     func generateMultiModelImages(prompt: String, models: [String]) {
         let coordinator = imageGenerationCoordinator
         let operationID = coordinator.beginOperation()
@@ -155,7 +142,6 @@ extension MacChatView {
             return
         }
 
-        // Resolve edit sources (cheap, no disk I/O): attached images, else the previous image.
         let editContext = ImageEditContext.resolve(in: currentConversation)
 
         let userMessageId = conversation.messages.last(where: { $0.role == .user })?.id ?? UUID()
@@ -187,7 +173,6 @@ extension MacChatView {
         let messageIdsByModel = messageIds
         let counter = MainActorCompletionCounter(total: models.count)
 
-        // Own source-image loading and every child transport under one batch operation.
         let task = Task { @MainActor in
             var sourceImages: [OpenAIImageService.SourceImage] = []
             var sourceImageError: Error?
@@ -425,8 +410,6 @@ extension MacChatView {
         }.value
     }
 
-    // MARK: - Multi-Model Message Sending
-
     func sendMultiModelMessage(
         userMessageId: UUID,
         models: [String],
@@ -451,17 +434,14 @@ extension MacChatView {
 
         let messageIdsByModel = responsePlan.messageIDsByModel
 
-        // Prepare messages for API
         var messagesToSend = updatedConversation.getEffectiveHistory()
         if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
 
-        // Capture necessary values for closures
         let conversationId = conversation.id
 
-        // Send to all models in parallel under this view's owner-specific operation.
         let coordinator = toolChainCoordinator
         activeAssistantMessageID = nil
         activeMultiModelResponseGroupID = responseGroupId
@@ -483,7 +463,6 @@ extension MacChatView {
                     else { return }
 
                     conversationManager.conversations[convIndex].messages[msgIndex].content += chunk
-                    // Persist during streaming so content isn't lost on quit
                     conversationManager.save(conversationManager.conversations[convIndex])
                 }
             },
@@ -492,7 +471,6 @@ extension MacChatView {
                     guard let messageId = messageIdsByModel[model] else { return }
                     multiModelReasoningBuffer.finish(for: messageId)
 
-                    // Update response group status
                     if let convIndex = conversationManager.conversations.firstIndex(where: {
                            $0.id == conversationId
                        }),
@@ -524,7 +502,6 @@ extension MacChatView {
                     guard let messageId = messageIdsByModel[model] else { return }
                     multiModelReasoningBuffer.finish(for: messageId)
 
-                    // Update response group status to failed
                     if let convIndex = conversationManager.conversations.firstIndex(where: {
                            $0.id == conversationId
                        }),
@@ -553,7 +530,6 @@ extension MacChatView {
                           })
                     else { return }
 
-                    // Store as pending tool call (will be activated on selection)
                     let anyCodableArgs = argumentsWrapper.value.reduce(into: [String: AnyCodable]()) { result, pair in
                         result[pair.key] = AnyCodable(pair.value)
                     }

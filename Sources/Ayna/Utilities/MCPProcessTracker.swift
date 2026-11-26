@@ -1,24 +1,16 @@
 // swiftformat:options --ifdef no-indent
-//
-//  MCPProcessTracker.swift
-//  ayna
-//
-//  Created on 11/21/25.
-//
 
 #if os(macOS)
 import Darwin
 import Foundation
 import os
 
-/// Tracks spawned MCP server subprocesses so we can clean them up after crashes or force quits.
 final class MCPProcessTracker: Sendable {
     static let shared = MCPProcessTracker()
 
     private let storageURL: URL
     private let lock: OSAllocatedUnfairLock<[String: pid_t]>
 
-    /// Per-environment pid file, so dev and test runs never touch production state.
     static var defaultStorageURL: URL {
         RuntimeEnvironment.defaultApplicationSupportDirectoryURL.appendingPathComponent("mcp-processes.json")
     }
@@ -30,7 +22,6 @@ final class MCPProcessTracker: Sendable {
         }
         storageURL = Self.defaultStorageURL
 
-        // Load initial state
         var initialPIDs: [String: pid_t] = [:]
         if !storageURL.path.isEmpty {
             do {

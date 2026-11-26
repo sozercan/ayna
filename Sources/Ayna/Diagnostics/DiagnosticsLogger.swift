@@ -1,10 +1,3 @@
-//
-//  DiagnosticsLogger.swift
-//  ayna
-//
-//  Created on 11/14/25.
-//
-
 import Foundation
 import os.log
 
@@ -60,8 +53,6 @@ struct Breadcrumb: Codable, Identifiable {
     }
 }
 
-/// Recent diagnostics kept in memory only. Metadata can hold file paths, commands, and error
-/// text, so it is never written to disk.
 actor BreadcrumbStore {
     static let shared = BreadcrumbStore()
 
@@ -69,7 +60,6 @@ actor BreadcrumbStore {
     private var entries: [Breadcrumb] = []
 
     private init(fileManager: FileManager = .default) {
-        // Earlier versions rewrote this file in plaintext as the app logged; remove it.
         if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             try? fileManager.removeItem(at: appSupport.appendingPathComponent("Ayna/breadcrumbs.json"))
         }
@@ -145,12 +135,9 @@ enum DiagnosticsLogger {
             let metaString = metadata
                 .map { "\($0.key)=\($0.value)" }
                 .joined(separator: " ")
-            // Metadata carries paths, commands, and error text: redacted unless a debugger is attached.
             logger.log(level: level, "\(message, privacy: .public) [\(metaString, privacy: .private)]")
         }
 
-        // Persisting high-frequency logs (e.g. streaming debug) can be noisy and expensive.
-        // By default, we only record breadcrumbs for info+.
         if level != .debug {
             Task {
                 await BreadcrumbStore.shared.record(
@@ -196,14 +183,7 @@ private extension OSLogType {
     }
 }
 
-// MARK: - ErrorPresenter
-
-/// Converts low-level errors into user-facing messages.
-///
-/// Important: Never include secrets (API keys/tokens) in returned strings.
 enum ErrorPresenter {
-    // MARK: - Public API
-
     static func userMessage(for error: Error) -> String {
         if let localizedError = error as? LocalizedError,
            let description = localizedError.errorDescription
@@ -359,8 +339,6 @@ enum ErrorPresenter {
         case dismiss
     }
 
-    // MARK: - URLError Handling
-
     private static func userMessage(for urlError: URLError) -> String {
         switch urlError.code {
         case .timedOut:
@@ -401,30 +379,20 @@ enum ErrorPresenter {
         }
     }
 
-    // MARK: - AynaError Categorization
-
-    // Note: AynaError is not part of all app targets today, so we avoid
-    // directly referencing it here and use heuristics based on message text.
-
-    // MARK: - Sanitization
-
     private static func sanitizeUserFacingMessage(_ message: String) -> String {
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "An unexpected error occurred" }
 
-        // OpenAI invalid-key errors can include part of the key.
         let lower = trimmed.lowercased()
         if lower.contains("incorrect api key provided") || lower.contains("invalid api key") {
             return "Invalid API key"
         }
 
-        // Redact common token formats if they appear.
         var redacted = trimmed
         redacted = redact(pattern: #"sk-(?:proj-)?[A-Za-z0-9]{16,}"#, in: redacted, replacement: "[REDACTED_API_KEY]")
         redacted = redact(pattern: #"ghp_[A-Za-z0-9]{20,}"#, in: redacted, replacement: "[REDACTED_TOKEN]")
         redacted = redact(pattern: #"(?i)bearer\s+[A-Za-z0-9._\-]+"#, in: redacted, replacement: "Bearer [REDACTED_TOKEN]")
 
-        // If it's mostly a help-text wall, keep it short.
         if redacted.lowercased().contains("platform.openai.com/account/api-keys") {
             return "Invalid API key"
         }

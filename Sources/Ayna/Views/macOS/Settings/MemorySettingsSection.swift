@@ -1,15 +1,7 @@
 #if os(macOS)
-//
-    //  MemorySettingsSection.swift
-    //  ayna
-//
-    //  Created on 12/25/25.
-//
 
     import SwiftUI
 
-    /// Memory settings section for macOS Settings view.
-    /// Allows users to manage memory facts, view summaries, and configure memory options.
     struct MemorySettingsSection: View {
         @Bindable private var memoryService = UserMemoryService.shared
         @Bindable private var summaryService = ConversationSummaryService.shared
@@ -69,8 +61,6 @@
             }
         }
 
-        // MARK: - Enable Section
-
         private var enableSection: some View {
             Section {
                 Toggle("Enable Memory", isOn: Binding(
@@ -91,8 +81,6 @@
                 Text("Memory allows Ayna to remember information about you across sessions. Say \"remember that...\" to store facts.")
             }
         }
-
-        // MARK: - Facts Section
 
         private var factsSection: some View {
             Section {
@@ -168,8 +156,6 @@
             .padding(.vertical, 4)
         }
 
-        // MARK: - Summaries Section
-
         private var summariesSection: some View {
             Section {
                 if !memoryProvider.isMemoryEnabled {
@@ -209,8 +195,6 @@
             }
         }
 
-        // MARK: - Privacy Section
-
         private var privacySection: some View {
             Section {
                 Toggle("Session Metadata", isOn: Binding(
@@ -232,8 +216,6 @@
             }
         }
 
-        // MARK: - Danger Zone Section
-
         private var dangerZoneSection: some View {
             Section {
                 Button("Clear All Memory", role: .destructive) {
@@ -244,8 +226,6 @@
                 Text("Danger Zone")
             }
         }
-
-        // MARK: - Fact Editor Sheet
 
         private var factEditorSheet: some View {
             VStack(spacing: Spacing.lg) {
@@ -275,8 +255,6 @@
             .padding()
             .frame(width: 400)
         }
-
-        // MARK: - Actions
 
         private func saveFact() {
             let content = newFactContent.trimmingCharacters(in: .whitespacesAndNewlines)

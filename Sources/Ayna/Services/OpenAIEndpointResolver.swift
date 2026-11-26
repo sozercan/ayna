@@ -1,17 +1,6 @@
-//
-//  OpenAIEndpointResolver.swift
-//  ayna
-//
-//  Created on 11/24/25.
-//
-
 import Foundation
 
-/// Stateless helper that resolves API endpoint URLs for various providers.
-/// Extracts the complex URL-building logic from AIService for better testability.
 enum OpenAIEndpointResolver {
-    // MARK: - Configuration
-
     struct EndpointConfig {
         let modelName: String
         let provider: AIProvider
@@ -31,43 +20,36 @@ enum OpenAIEndpointResolver {
         }
     }
 
-    // MARK: - Default Endpoints
-
     private static let openAIChatURL = "https://api.openai.com/v1/chat/completions"
     private static let openAIResponsesURL = "https://api.openai.com/v1/responses"
     private static let openAIImagesURL = "https://api.openai.com/v1/images/generations"
     private static let openAIImageEditsURL = "https://api.openai.com/v1/images/edits"
 
-    // MARK: - Public API
-
-    /// Resolves the chat completions endpoint URL.
     static func chatCompletionsURL(for config: EndpointConfig) throws -> String {
         switch config.provider {
         case .openai:
             try resolveOpenAIChatURL(config)
         case .appleIntelligence:
-            "" // Not used for Apple Intelligence
+            ""
         case .anthropic:
-            "" // Anthropic uses its own endpoint resolver
+            ""
         }
     }
 
-    /// Resolves the responses API endpoint URL.
     static func responsesURL(for config: EndpointConfig) throws -> String {
         switch config.provider {
         case .openai:
             try resolveOpenAIResponsesURL(config)
         case .appleIntelligence:
-            "" // Not used for Apple Intelligence
+            ""
         case .anthropic:
-            "" // Anthropic uses its own endpoint resolver
+            ""
         }
     }
 
-    /// Resolves the image generation endpoint URL.
     static func imageGenerationURL(for config: EndpointConfig) throws -> String {
         guard config.provider == .openai else {
-            return "" // Only OpenAI-compatible providers support image generation
+            return ""
         }
 
         guard let customEndpoint = config.customEndpoint,
@@ -89,10 +71,9 @@ enum OpenAIEndpointResolver {
         return appendPathIfNeeded(validatedEndpoint, path: "/v1/images/generations")
     }
 
-    /// Resolves the image editing endpoint URL.
     static func imageEditURL(for config: EndpointConfig) throws -> String {
         guard config.provider == .openai else {
-            return "" // Only OpenAI supports image editing
+            return ""
         }
 
         guard let customEndpoint = config.customEndpoint,
@@ -114,15 +95,11 @@ enum OpenAIEndpointResolver {
         return appendPathIfNeeded(validatedEndpoint, path: "/v1/images/edits")
     }
 
-    /// Checks if the given endpoint is an Azure OpenAI endpoint.
     static func isAzureEndpoint(_ endpoint: String?) -> Bool {
         guard let endpoint, let url = URL(string: endpoint), let host = url.host?.lowercased() else { return false }
         return host == "openai.azure.com" || host.hasSuffix(".openai.azure.com")
     }
 
-    /// Returns whether a custom OpenAI-compatible endpoint should require an API key.
-    /// OpenAI-hosted and Azure OpenAI endpoints require keys; other custom endpoints
-    /// may rely on local or network-level authentication and can omit provider auth.
     static func customEndpointRequiresAPIKey(_ endpoint: String?) -> Bool {
         if isAzureEndpoint(endpoint) {
             return true
@@ -136,8 +113,6 @@ enum OpenAIEndpointResolver {
 
         return host == "api.openai.com" || host.hasSuffix(".openai.com")
     }
-
-    // MARK: - Private Helpers
 
     private static func resolveOpenAIChatURL(_ config: EndpointConfig) throws -> String {
         guard let customEndpoint = config.customEndpoint,
@@ -177,8 +152,6 @@ enum OpenAIEndpointResolver {
 
         return appendPathIfNeeded(validatedEndpoint, path: "/v1/responses")
     }
-
-    // MARK: - URL Building Helpers
 
     private static func sanitizedBaseEndpoint(_ endpoint: String) -> String {
         endpoint
@@ -234,7 +207,6 @@ enum OpenAIEndpointResolver {
         apiVersion: String
     ) -> String {
         let cleanBase = sanitizedBaseEndpoint(baseEndpoint)
-        // Azure OpenAI Responses API doesn't use the /v1/ prefix
         return "\(cleanBase)/openai/responses?api-version=\(apiVersion)"
     }
 
@@ -263,7 +235,6 @@ enum OpenAIEndpointResolver {
         if cleanBase.hasSuffix(path) {
             return cleanBase
         }
-        // Strip partial prefix overlap (e.g. cleanBase ending in /v1 when path is /v1/chat/completions)
         for length in stride(from: path.count - 1, through: 1, by: -1) {
             let prefix = String(path.prefix(length))
             if cleanBase.hasSuffix(prefix) {

@@ -32,8 +32,6 @@ struct TavilyServiceTests {
         return service
     }
 
-    // MARK: - Configuration Tests
-
     @Test("isConfigured returns false when API key empty")
     func isConfiguredReturnsFalseWhenAPIKeyEmpty() {
         let service = makeService(apiKey: "")
@@ -63,14 +61,11 @@ struct TavilyServiceTests {
         #expect(service.isAvailable)
     }
 
-    // MARK: - Search Success Tests
-
     @Test("Search success decodes response", .timeLimit(.minutes(1)))
     func searchSuccessDecodesResponse() async throws {
         let service = makeService()
 
         TavilyMockURLProtocol.requestHandler = { request in
-            // Verify request structure
             #expect(request.url?.absoluteString == "https://api.tavily.com/search")
             #expect(request.httpMethod == "POST")
             #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
@@ -123,7 +118,6 @@ struct TavilyServiceTests {
         var capturedBody: [String: Any]?
 
         TavilyMockURLProtocol.requestHandler = { request in
-            // Try httpBody first, then httpBodyStream
             var bodyData = request.httpBody
             if bodyData == nil, let stream = request.httpBodyStream {
                 stream.open()
@@ -178,7 +172,6 @@ struct TavilyServiceTests {
         var capturedMaxResults: Int?
 
         TavilyMockURLProtocol.requestHandler = { request in
-            // Try httpBody first, then httpBodyStream
             var bodyData = request.httpBody
             if bodyData == nil, let stream = request.httpBodyStream {
                 stream.open()
@@ -211,16 +204,12 @@ struct TavilyServiceTests {
             return (response, body)
         }
 
-        // Test upper bound clamping (25 -> 20)
         _ = try await service.search(query: "test", maxResults: 25)
         #expect(capturedMaxResults == 20)
 
-        // Test lower bound clamping (0 -> 1)
         _ = try await service.search(query: "test", maxResults: 0)
         #expect(capturedMaxResults == 1)
     }
-
-    // MARK: - Error Handling Tests
 
     @Test("Search throws notConfigured when API key missing")
     func searchThrowsNotConfiguredWhenAPIKeyMissing() async {
@@ -313,8 +302,6 @@ struct TavilyServiceTests {
         }
     }
 
-    // MARK: - Tool Call Execution Tests
-
     @Test("Execute tool call returns formatted results")
     func executeToolCallReturnsFormattedResults() async {
         let service = makeService()
@@ -368,7 +355,6 @@ struct TavilyServiceTests {
         var capturedBody: [String: Any]?
 
         TavilyMockURLProtocol.requestHandler = { request in
-            // Try httpBody first, then httpBodyStream
             var bodyData = request.httpBody
             if bodyData == nil, let stream = request.httpBodyStream {
                 stream.open()
@@ -424,8 +410,6 @@ struct TavilyServiceTests {
         #expect(result.hasPrefix("Error searching the web:"))
     }
 
-    // MARK: - Tool Definition Tests
-
     @Test("Tool definition matches OpenAI function schema")
     func toolDefinitionMatchesOpenAIFunctionSchema() {
         let service = makeService()
@@ -453,12 +437,10 @@ struct TavilyServiceTests {
             return
         }
 
-        // Verify required properties
         #expect(properties["query"] != nil)
         #expect(properties["topic"] != nil)
         #expect(properties["max_results"] != nil)
 
-        // Verify required array
         guard let required = parameters["required"] as? [String] else {
             Issue.record("Missing required array")
             return
@@ -471,8 +453,6 @@ struct TavilyServiceTests {
     func toolNameConstant() {
         #expect(TavilyService.toolName == "web_search")
     }
-
-    // MARK: - Response Formatting Tests
 
     @Test("Formatted for model with answer and results")
     func formattedForModelWithAnswerAndResults() {
@@ -599,11 +579,8 @@ struct TavilyServiceTests {
 
         let formatted = response.formattedForModel()
 
-        // Full content should now be included (no truncation)
         #expect(formatted.contains(longContent))
     }
-
-    // MARK: - Citation Reference Tests
 
     @Test("toCitationReferences converts results")
     func toCitationReferencesConvertsResults() {
@@ -643,7 +620,6 @@ struct TavilyServiceTests {
         #expect(citations[1].number == 2)
         #expect(citations[1].title == "Second Result")
         #expect(citations[1].url == "https://example.com/2")
-        // When no favicon is provided, Google's favicon service URL is generated
         #expect(citations[1].favicon == "https://www.google.com/s2/favicons?domain=example.com&sz=64")
     }
 
@@ -727,12 +703,10 @@ struct TavilyServiceTests {
 
         let (result, citations) = await service.executeToolCallWithCitations(arguments: ["query": "swift programming"])
 
-        // Verify formatted result
         #expect(result.contains("**Answer:**"))
         #expect(result.contains("Swift is a programming language."))
         #expect(result.contains("• Swift.org"))
 
-        // Verify citations
         #expect(citations.count == 2)
         #expect(citations[0].number == 1)
         #expect(citations[0].title == "Swift.org")
@@ -740,7 +714,6 @@ struct TavilyServiceTests {
         #expect(citations[0].favicon == "https://swift.org/favicon.ico")
         #expect(citations[1].number == 2)
         #expect(citations[1].title == "Apple Developer")
-        // When no favicon is provided, Google's favicon service URL is generated
         #expect(citations[1].favicon == "https://www.google.com/s2/favicons?domain=developer.apple.com&sz=64")
     }
 
@@ -768,8 +741,6 @@ struct TavilyServiceTests {
         #expect(citations.isEmpty)
     }
 
-    // MARK: - API Key Persistence Tests
-
     @Test("API key is saved to keychain")
     func apiKeyIsSavedToKeychain() throws {
         let service = makeService(apiKey: "")
@@ -782,7 +753,6 @@ struct TavilyServiceTests {
 
     @Test("Empty API key removes from keychain")
     func emptyAPIKeyRemovesFromKeychain() throws {
-        // First set a key
         try keychain.setString("tvly-existing-key", for: "tavily_api_key")
 
         let service = makeService(apiKey: "tvly-existing-key")
@@ -792,8 +762,6 @@ struct TavilyServiceTests {
         #expect(storedKey == nil)
     }
 }
-
-// MARK: - Mock URL Protocol for Tavily Tests
 
 private final class TavilyMockURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?

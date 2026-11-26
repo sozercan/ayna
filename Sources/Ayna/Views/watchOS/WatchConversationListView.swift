@@ -1,17 +1,9 @@
 #if os(watchOS)
-//
-    //  WatchConversationListView.swift
-    //  Ayna Watch App
-//
-    //  Created on 11/29/25.
-//
 
     #if os(watchOS)
 
         import SwiftUI
 
-        /// iMessage-style conversation list for Watch
-        /// Shows avatar, title, preview, and timestamp for each conversation
         struct WatchConversationListView: View {
             @EnvironmentObject var conversationStore: WatchConversationStore
             @EnvironmentObject var connectivityService: WatchConnectivityService
@@ -77,14 +69,11 @@
             }
         }
 
-        /// Single conversation row in the list
-        /// Mimics iMessage style with avatar, title, preview, and time
         struct ConversationRowView: View {
             let conversation: WatchConversation
 
             var body: some View {
                 HStack(spacing: 10) {
-                    // Avatar with first letter
                     ZStack {
                         Circle()
                             .fill(Color.blue.gradient)

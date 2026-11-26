@@ -6,8 +6,6 @@ extension Notification.Name {
     static let watchSyncContextDidChange = Notification.Name("watchSyncContextDidChange")
 }
 
-/// Centralizes access to UserDefaults so tests can swap in isolated suites
-/// without mutating the real application preferences.
 private final class DefaultsState: @unchecked Sendable {
     private var overriddenDefaults: UserDefaults?
     private let lock = OSAllocatedUnfairLock()
@@ -52,8 +50,6 @@ enum AppPreferences {
         state.storage()
     }
 
-    /// The global system prompt used by conversations with `.inheritGlobal` mode.
-    /// Returns an empty string by default (no system prompt).
     static var globalSystemPrompt: String {
         get { storage.string(forKey: globalSystemPromptKey) ?? "" }
         set {
@@ -63,31 +59,20 @@ enum AppPreferences {
         }
     }
 
-    // MARK: - Attach from App (macOS only)
-
-    /// Whether the "Attach from App" feature is enabled.
-    /// When enabled, a global hotkey can be used to capture context from other apps.
     static var attachFromAppEnabled: Bool {
         get { storage.bool(forKey: attachFromAppEnabledKey) }
         set { storage.set(newValue, forKey: attachFromAppEnabledKey) }
     }
 
-    /// The hotkey string for "Attach from App" (e.g., "⌘⇧Space").
     static var attachFromAppHotkey: String {
         get { storage.string(forKey: attachFromAppHotkeyKey) ?? "⌘⇧Space" }
         set { storage.set(newValue, forKey: attachFromAppHotkeyKey) }
     }
 
-    // MARK: - Multi-Model Selection
-
-    /// Whether multi-model selection is enabled in the model selector.
-    /// When enabled, users can select multiple models to compare responses.
-    /// When disabled, only single-model selection is allowed.
     static var multiModelSelectionEnabled: Bool {
         get {
-            // UserDefaults.bool returns false if key doesn't exist, so check explicitly
             if storage.object(forKey: multiModelSelectionEnabledKey) == nil {
-                return true // Default to enabled
+                return true
             }
             return storage.bool(forKey: multiModelSelectionEnabledKey)
         }

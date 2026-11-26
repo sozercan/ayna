@@ -1,11 +1,3 @@
-//
-//  ConversationPersistenceCoordinator.swift
-//  ayna
-//
-//  Created on 11/24/25.
-//
-
-// This legacy coordinator remains in one file while its persistence state machine is stabilized.
 // swiftlint:disable file_length
 
 import Foundation
@@ -39,7 +31,6 @@ extension EncryptedConversationStore: ConversationStoreAdapter {
     }
 }
 
-// The full name distinguishes manager reconciliation state from store transaction state.
 // swiftlint:disable:next type_name
 struct ConversationPersistenceReconciliationState: Sendable {
     let dirtyIds: Set<UUID>
@@ -101,7 +92,6 @@ private final class OperationOverridingConversationStore: ConversationStoreAdapt
     }
 }
 
-// The full name identifies the compatibility boundary that erases concrete store errors.
 // swiftlint:disable:next type_name
 private struct ConversationPersistenceCompatibilityError: LocalizedError {
     let message: String
@@ -145,7 +135,6 @@ private final class PersistenceAttemptErrorBox {
     var error: (any Error)?
 }
 
-/// Opaque identity for the repair responsibility created by a destructive operation.
 struct ConversationSnapshotRepairToken: Hashable, Sendable {
     fileprivate enum Kind: Hashable, Sendable {
         case delete(UUID)
@@ -168,14 +157,12 @@ struct ConversationSnapshotRepairToken: Hashable, Sendable {
     }
 }
 
-/// Whether the current repair responsibility is durable, retryable, or obsolete.
 enum ConversationSnapshotSettlementResult: Equatable, Sendable {
     case settled
     case failed
     case superseded
 }
 
-/// A prompt operation receipt plus the token used to settle any compensating repair.
 struct DestructivePersistenceReceipt<Value: Sendable>: Sendable {
     fileprivate let receipt: PersistenceReceipt<Value>
     let repairToken: ConversationSnapshotRepairToken
@@ -245,7 +232,6 @@ final class ConversationPersistenceCoordinator {
         var isScheduled: Bool
     }
 
-    /// A proposal chain shares the durable state from before any uncommitted proposal wrote.
     private struct ProposedSaveIntent {
         let token: UInt64
         let chainRoot: UInt64
@@ -299,9 +285,6 @@ final class ConversationPersistenceCoordinator {
     private var rewriteCoveredTokens: [UUID: UInt64] = [:]
     private var repairDeletedIDs: Set<UUID> = []
 
-    // Compatibility state for the pre-reliability coordinator API. New app code uses
-    // receipts below; these fields keep the existing performance regression suite and
-    // lazy-hydration manager behavior source-compatible during the transition.
     private var compatibilitySuppressedSaveIDs: Set<UUID> = []
     private var compatibilityDeletingIDs: Set<UUID> = []
     private var compatibilityDeletionGenerations: [UUID: UInt64] = [:]
@@ -309,7 +292,6 @@ final class ConversationPersistenceCoordinator {
     private var compatibilityClearGeneration: UInt64 = 0
     private var compatibilityActiveClearCount = 0
     private var compatibilityActiveClearOperation: CompatibilityClearOperation?
-    // Retain the newest result after completion so waiters on an older overlapping clear can observe it.
     private var compatibilityLatestClearObservation: CompatibilityClearObservation?
 
     private var ioTail = Task { @MainActor in }
@@ -340,7 +322,6 @@ final class ConversationPersistenceCoordinator {
         durableSnapshotObserver = observer
     }
 
-    /// Called with each conversation once it is written to disk.
     func observeDurableSaves(
         _ observer: @escaping @MainActor @Sendable (Conversation) -> Void
     ) {
@@ -350,8 +331,6 @@ final class ConversationPersistenceCoordinator {
     func durableConversations() -> [Conversation] {
         ordered(storageSnapshot)
     }
-
-    // MARK: - Compatibility API
 
     @discardableResult
     func enqueueSave(
@@ -596,8 +575,6 @@ final class ConversationPersistenceCoordinator {
     ) -> PersistenceReceipt<ConversationSaveResult>? {
         let token = nextToken()
         let id = conversation.id
-        // A normal edit refines the current desired state; it does not discharge an
-        // inherited destructive repair responsibility.
         let repairRoot = dirty[id]?.repairRoot
         let root = repairRoot ?? token
 
@@ -877,7 +854,6 @@ final class ConversationPersistenceCoordinator {
         }
 
         ensureRewriteScheduled()
-        // The tuple is local transition state and is destructured immediately below.
         // swiftlint:disable:next large_tuple
         let pendingIntents = dirty.compactMap { id, intent -> (UUID, UInt64, DesiredState)? in
             guard proposedSaves[id] == nil,
@@ -908,8 +884,6 @@ final class ConversationPersistenceCoordinator {
         return PersistenceReceipt(task: task)
     }
 
-    /// Waits for the repair attempt already associated with a destructive operation.
-    /// When `retryIfNeeded` is true, schedules at most one new attempt before waiting.
     func settleCurrentSnapshot(
         for repairToken: ConversationSnapshotRepairToken,
         retryIfNeeded: Bool = false
@@ -1164,8 +1138,6 @@ final class ConversationPersistenceCoordinator {
             return .superseded
         }
 
-        // Physical success is not committed until the receipt reconciles. Retaining the
-        // intent lets a newer proposal inherit this chain's true pre-proposal durable state.
         guard let error else {
             return .saved
         }
@@ -1192,7 +1164,6 @@ final class ConversationPersistenceCoordinator {
         return .failed(error)
     }
 
-    /// Capture after FIFO predecessors finish so an older accepted save can become the baseline.
     private func capturePriorDurableState(for id: UUID, chainRoot: UInt64) {
         guard var proposed = proposedSaves[id], proposed.chainRoot == chainRoot,
               proposed.priorDurable == nil
@@ -1204,7 +1175,6 @@ final class ConversationPersistenceCoordinator {
         proposedSaves[id] = proposed
     }
 
-    /// Restore storage before the failed proposal receipt can let its caller decline the UI commit.
     private func compensateFailedProposedSave(id: UUID, token: UInt64) async -> String? {
         guard let proposed = proposedSaves[id], proposed.token == token,
               latestClearToken <= token,

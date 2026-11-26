@@ -1,11 +1,5 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  MacContentView.swift
-//  ayna
-//
-//  Created on 11/2/25.
-//
 
 import Combine
 import CoreSpotlight
@@ -79,7 +73,6 @@ struct MacContentView: View {
                 }
             }
 
-            // Deep link error banner overlay
             if let errorMessage = deepLinkManager.errorMessage {
                 VStack {
                     ErrorBannerView(
@@ -94,7 +87,6 @@ struct MacContentView: View {
                 .animation(.easeInOut(duration: 0.3), value: deepLinkManager.errorMessage)
             }
         }
-        // Add model confirmation sheet
         .sheet(isPresented: .init(
             get: { presentedAddModelRequest != nil },
             set: { newValue in
@@ -122,7 +114,6 @@ struct MacContentView: View {
                 presentedAddModelRequest = deepLinkManager.pendingAddModel
             }
         }
-        // Process pending chat after add-model sheet is dismissed (unified flow)
         .onChange(of: deepLinkManager.pendingAddModel) { oldValue, newValue in
             updatePresentedAddModel(from: oldValue, to: newValue)
             guard oldValue != nil, newValue == nil else { return }
@@ -183,8 +174,6 @@ struct MacContentView: View {
     }
 }
 
-// MARK: - Add Model Confirmation Sheet
-
 private struct AddModelConfirmationSheet: View {
     let request: AddModelRequest
     let onCancel: () -> Void
@@ -193,7 +182,6 @@ private struct AddModelConfirmationSheet: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            // Header
             VStack(spacing: 12) {
                 Image(systemName: "plus.circle.fill")
                     .font(.system(size: 48))
@@ -208,7 +196,6 @@ private struct AddModelConfirmationSheet: View {
                     .multilineTextAlignment(.center)
             }
 
-            // Model details
             VStack(alignment: .leading, spacing: 12) {
                 DetailRow(label: "Name", value: request.name)
                 DetailRow(label: "Provider", value: request.displayProvider)
@@ -226,7 +213,6 @@ private struct AddModelConfirmationSheet: View {
             .background(Color.secondary.opacity(0.1))
             .clipShape(.rect(cornerRadius: 8))
 
-            // Warning
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.yellow)
@@ -235,7 +221,6 @@ private struct AddModelConfirmationSheet: View {
                     .foregroundStyle(.secondary)
             }
 
-            // Actions
             HStack(spacing: 16) {
                 Button("Cancel") {
                     onCancel()

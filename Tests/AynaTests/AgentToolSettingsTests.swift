@@ -7,7 +7,6 @@ import Testing
     @Suite("Agent tool settings", .serialized)
     @MainActor
     struct AgentToolSettingsTests {
-        /// A project root under /tmp, which is not a protected path, so only settings decide approval.
         private func makeRoot() throws -> URL {
             let root = URL(fileURLWithPath: "/tmp").appendingPathComponent("AynaAgentSettings-\(UUID().uuidString)")
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -58,7 +57,6 @@ import Testing
             try await service.writeFile(path: "notes/out.txt", content: "done", conversationId: UUID())
 
             #expect(permissionService.pendingApprovals.isEmpty)
-            // Relative paths start at the project root, not the app's working directory.
             #expect(try String(contentsOf: root.appendingPathComponent("notes/out.txt"), encoding: .utf8) == "done")
         }
 
@@ -187,7 +185,6 @@ import Testing
 
         @Test(.timeLimit(.minutes(1)))
         func `Remembering the edit pre-read does not approve the edit`() async throws {
-            // The temporary directory is under protected /var, so the pre-read asks too.
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("AynaPreRead-\(UUID().uuidString)")
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: directory) }
@@ -342,7 +339,6 @@ struct MCPToolNamingTests {
         #expect(both[first.id] == "a_b__read_file")
         #expect(both[second.id] == "a_b__read_file_2")
 
-        // The first server disconnects: the second keeps its alias instead of taking the first's.
         let rediscovered = tool("read_file", server: "a_b")
         let afterDisconnect = naming.assign([rediscovered], reserved: ["read_file"])
         #expect(afterDisconnect[rediscovered.id] == "a_b__read_file_2")

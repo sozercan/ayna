@@ -1,15 +1,8 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  ToolExecutionIndicator.swift
-//  ayna
-//
-//  Extracted from MacChatView/MacNewChatView - Tool execution status indicator
-//
 
 import SwiftUI
 
-/// Displays the current tool execution status during AI response generation
 struct ToolExecutionIndicator: View {
     let toolName: String
 

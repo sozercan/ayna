@@ -1,10 +1,3 @@
-//
-//  WatchConnectivityLifecycleSupport.swift
-//  Ayna
-//
-//  FIFO callback and legacy-operation lifecycle helpers.
-//
-
 import Foundation
 
 struct WatchSessionActivationToken: Equatable, Sendable {

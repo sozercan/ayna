@@ -1,34 +1,9 @@
-//
-//  BuiltinToolService.swift
-//  Ayna
-//
-//  Central service for all native agentic tool operations.
-//  Provides file operations and shell execution with security validation.
-//
-
 import Foundation
 import os.log
 
-// MARK: - Builtin Tool Service
-
-// Central service for all native tool operations.
-//
-// Available tools:
-// - `read_file`: Read file contents
-// - `write_file`: Create/overwrite file
-// - `edit_file`: Search/replace edit
-// - `list_directory`: List files in directory
-// - `search_files`: Grep-like search
-// - `run_command`: Execute shell command
-// - `git_context`: Read branch, status, and recent commits
-// - `project_context`: Read project type and AI context files (AGENTS.md, CLAUDE.md, ...)
-// - `update_tasks`: Replace the conversation's task list shown above the composer
-//
-// Uses dependency injection via SwiftUI Environment.
 #if os(macOS)
     import Darwin
 
-    /// Thread-safe accumulator for pipe data from Process stdout/stderr.
     private final class PipeAccumulator: @unchecked Sendable {
         private let lock = NSLock()
         private let maxSize: Int
@@ -69,7 +44,6 @@ import os.log
         }
     }
 
-    /// Owns subprocess startup, completion, and TERM-to-KILL escalation as one atomic state.
     private final class ProcessExecutionController: @unchecked Sendable {
         private struct State {
             var process: CommandSubprocess?
@@ -99,7 +73,6 @@ import os.log
                 return nil
             }
             do {
-                // Keep installation and startup atomic with cancellation.
                 let process = try CommandSubprocess.start(
                     command: command,
                     workingDirectory: workingDirectory,
@@ -171,9 +144,6 @@ import os.log
             guard let process, process.isRunning else { return }
             process.terminate()
 
-            // `Process.terminate()` only sends SIGTERM. Commands may trap or ignore it,
-            // which would otherwise leave `waitUntilExit()` and the awaiting tool task
-            // suspended forever. Escalate to SIGKILL after a short grace period.
             let processEscalationGate = processEscalationGate
             Task.detached { [weak self] in
                 await processEscalationGate()
@@ -196,8 +166,6 @@ import os.log
 
     @Observable @MainActor
     final class BuiltinToolService {
-        // MARK: - Properties
-
         private let permissionService: PermissionService
         private var shellSandbox: ShellSandbox
         private(set) var pathValidator: PathValidator
@@ -207,36 +175,26 @@ import os.log
         private let subprocessSignal: CommandSubprocess.SignalProcess
         private(set) var projectRoot: URL?
 
-        /// Whether the service is enabled
         var isEnabled: Bool = true
 
-        /// Timeout for shell commands in seconds
         var commandTimeoutSeconds: Int = 30
 
-        /// Per-tool permission levels from Agent settings. Missing tools ask every time.
         var toolPermissions: [String: PermissionLevel] = AgentSettings.default.defaultPermissions
 
-        /// Whether writes outside the project root need approval (only applies with a root set).
         var requireApprovalOutsideProject = true
 
-        /// Maximum file size to read (10 MB)
         let maxReadSize: Int = 10 * 1024 * 1024
 
-        /// Maximum command output size to accumulate (10 MB)
         let maxOutputSize: Int = 10_485_760
 
-        /// Maximum search results
         private let maxSearchResults: Int = 100
 
-        /// Reused formatter for directory listings to avoid allocating one per entry.
         private let fileSizeFormatter: ByteCountFormatter = {
             let formatter = ByteCountFormatter()
             formatter.allowedUnits = [.useKB, .useMB, .useGB]
             formatter.countStyle = .file
             return formatter
         }()
-
-        // MARK: - Tool Names
 
         enum ToolName {
             static let readFile = "read_file"
@@ -249,8 +207,6 @@ import os.log
             static let projectContext = "project_context"
             static let updateTasks = "update_tasks"
         }
-
-        // MARK: - Initialization
 
         init(
             permissionService: PermissionService,
@@ -273,8 +229,6 @@ import os.log
             self.subprocessSignal = subprocessSignal
         }
 
-        /// Applies Agent settings: enablement, timeouts, permission levels, project root, and
-        /// the extra allowed commands and blocked patterns.
         func apply(_ settings: AgentSettings) {
             isEnabled = settings.isEnabled
             commandTimeoutSeconds = settings.commandTimeoutSeconds
@@ -297,16 +251,10 @@ import os.log
             )
         }
 
-        // MARK: - Permission Gate
-
-        /// Folder that relative tool paths and commands start from: the project root when set,
-        /// otherwise the home folder (the app's own working directory is `/`).
         var baseDirectory: URL {
             projectRoot ?? FileManager.default.homeDirectoryForCurrentUser
         }
 
-        /// Anchors a relative path at `baseDirectory`. Paths starting with `/`, `~` or `$` are
-        /// left for `PathValidator.expandPath`, so expansion still happens exactly once.
         func anchoredPath(_ path: String) -> String {
             guard !path.hasPrefix("/"), !path.hasPrefix("~"), !path.hasPrefix("$") else { return path }
             let base = baseDirectory.path
@@ -314,8 +262,6 @@ import os.log
             return (base as NSString).appendingPathComponent(path)
         }
 
-        /// Asks for approval according to the tool's permission level. `riskReason` is set when a
-        /// path or sandbox check needs approval whatever the level (except Denied, which refuses).
         func authorize(
             tool: String,
             description: String,
@@ -329,8 +275,6 @@ import os.log
             guard level != .denied else {
                 throw ToolExecutionError.permissionDenied(tool: tool, reason: "Set to Denied in Agent settings")
             }
-            // Ask Once remembers every approval for the session; Ask Always only remembers when
-            // the user picks "Allow & Remember". Automatic asks only for risky paths or commands.
             let rememberedForSession = permissionService.checkPermission(
                 tool: tool,
                 details: details,
@@ -349,7 +293,6 @@ import os.log
             guard approved else {
                 throw ToolExecutionError.permissionDenied(tool: tool, reason: "User denied")
             }
-            // Settings may have changed while the card was waiting.
             guard isEnabled else {
                 throw ToolExecutionError.serviceDisabled
             }
@@ -361,14 +304,6 @@ import os.log
             }
         }
 
-        // MARK: - File Operations
-
-        /// Reads a file and returns its contents.
-        ///
-        /// - Parameters:
-        ///   - path: The file path to read
-        ///   - conversationId: The conversation requesting this operation
-        /// - Returns: The file contents as a string
         func readFile(path: String, conversationId: UUID) async throws -> String {
             guard isEnabled else {
                 throw ToolExecutionError.serviceDisabled
@@ -382,8 +317,6 @@ import os.log
             return try await readFile(at: resolvedURL, displayPath: path, conversationId: conversationId)
         }
 
-        /// Validates, approves if needed, and reads an already-resolved file URL. The URL is
-        /// never re-expanded, so literal `$` or `~` in a resolved path cannot redirect the read.
         private func readFile(
             at resolvedURL: URL,
             displayPath path: String,
@@ -399,17 +332,12 @@ import os.log
             case .allowed:
                 riskReason = nil
             }
-            // edit_file reads through here too; its own permission level governs the write
-            // below, so only a sensitive path needs approval for that read.
             if tool == ToolName.readFile || riskReason != nil {
                 try await authorize(
                     tool: tool,
                     description: tool == ToolName.readFile ? "Read file" : "Read file before editing",
-                    // The pre-read gets its own approval identity, so "Allow & Remember" on it
-                    // can never stand in for approving the edit.
                     details: tool == ToolName.readFile ? resolvedURL.path : "\(resolvedURL.path) (read before editing)",
                     riskReason: riskReason,
-                    // Approving this read must not count as approving the edit itself.
                     remembersApproval: tool == ToolName.readFile,
                     conversationId: conversationId
                 )
@@ -419,7 +347,6 @@ import os.log
                 throw ToolExecutionError.fileNotFound(path: path)
             }
 
-            // Check file size
             do {
                 let attributes = try FileManager.default.attributesOfItem(atPath: resolvedURL.path)
                 if let size = attributes[.size] as? Int, size > maxReadSize {
@@ -434,11 +361,9 @@ import os.log
                 throw ToolExecutionError.fileNotReadable(path: path, underlying: error.localizedDescription)
             }
 
-            // Read contents
             do {
                 let data = try Data(contentsOf: resolvedURL)
 
-                // Check if binary
                 if isBinaryData(data) {
                     throw ToolExecutionError.binaryFileUnsupported(path: path)
                 }
@@ -456,12 +381,6 @@ import os.log
             }
         }
 
-        /// Writes content to a file.
-        ///
-        /// - Parameters:
-        ///   - path: The file path to write
-        ///   - content: The content to write
-        ///   - conversationId: The conversation requesting this operation
         func writeFile(path: String, content: String, conversationId: UUID) async throws {
             guard isEnabled else {
                 throw ToolExecutionError.serviceDisabled
@@ -470,7 +389,6 @@ import os.log
             log(.info, "write_file requested", metadata: ["path": path])
             let path = anchoredPath(path)
 
-            // Validate path
             let validation = pathValidator.validate(
                 path,
                 operation: .write,
@@ -486,12 +404,8 @@ import os.log
                 requiresApprovalReason = nil
             }
 
-            // Bind the approval to the file the path resolves to now, so a symlink
-            // retargeted while approval is pending cannot redirect the write.
             let approvedTarget = resolvedTargetURL(for: path)
 
-            // Approvals (including remembered ones) are keyed by the resolved target,
-            // so retargeting a symlink between calls requires fresh approval.
             try await authorize(
                 tool: ToolName.writeFile,
                 description: requiresApprovalReason == nil ? "Create/overwrite file" : "Write file",
@@ -500,10 +414,8 @@ import os.log
                 conversationId: conversationId
             )
 
-            // Re-resolve at operation time and refuse if the target moved (TOCTOU)
             let url = try requireUnchangedTarget(approvedTarget, for: path)
 
-            // Re-validate the resolved path to catch symlink changes
             let revalidation = pathValidator.validate(
                 url: url,
                 operation: .write,
@@ -515,11 +427,9 @@ import os.log
             case let .requiresApproval(reason) where requiresApprovalReason == nil:
                 throw ToolExecutionError.invalidPath(path: path, reason: "Path changed after approval (re-resolution requires new approval): \(reason)")
             case .requiresApproval, .allowed:
-                // The target is unchanged and was approved in this category.
                 break
             }
 
-            // Create parent directories if needed
             let parentDir = url.deletingLastPathComponent()
             do {
                 try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
@@ -529,7 +439,6 @@ import os.log
 
             try Task.checkCancellation()
 
-            // Write file
             do {
                 try content.write(to: url, atomically: true, encoding: .utf8)
                 log(.info, "write_file completed", metadata: ["path": path, "size": "\(content.count)"])
@@ -538,10 +447,7 @@ import os.log
             }
         }
 
-        /// Resolves the file a write or edit will touch: the file itself (following symlinks)
-        /// when it exists, otherwise the parent directory's resolved path plus the filename.
         private func resolvedTargetURL(for path: String) -> URL {
-            // Same expansion as PathValidator, so the target is the path that was validated.
             let expandedURL = URL(fileURLWithPath: PathValidator.expandPath(path))
             if FileManager.default.fileExists(atPath: expandedURL.path) {
                 return expandedURL.resolvingSymlinksInPath().standardized
@@ -550,7 +456,6 @@ import os.log
                 .appendingPathComponent(expandedURL.lastPathComponent).standardized
         }
 
-        /// Re-resolves `path` and throws if it no longer points at the target that was approved.
         private func requireUnchangedTarget(_ approvedTarget: URL, for path: String) throws -> URL {
             let currentTarget = resolvedTargetURL(for: path)
             guard currentTarget.path == approvedTarget.path else {
@@ -562,13 +467,6 @@ import os.log
             return currentTarget
         }
 
-        /// Performs a search-and-replace edit on a file.
-        ///
-        /// - Parameters:
-        ///   - path: File path
-        ///   - oldText: Text to find (must match EXACTLY, including whitespace)
-        ///   - newText: Replacement text
-        ///   - conversationId: The conversation requesting this operation
         func editFile(path: String, oldText: String, newText: String, conversationId: UUID) async throws {
             guard isEnabled else {
                 throw ToolExecutionError.serviceDisabled
@@ -577,23 +475,17 @@ import os.log
             log(.info, "edit_file requested", metadata: ["path": path])
             let path = anchoredPath(path)
 
-            // Validate inputs
             guard !oldText.isEmpty else {
                 throw ToolExecutionError.emptySearchText
             }
 
-            // No-op if oldText == newText
             if oldText == newText {
                 log(.info, "edit_file no-op: oldText == newText", metadata: ["path": path])
                 return
             }
 
-            // Bind the edit to the file the path resolves to now; the content read
-            // below and the approval both refer to this target.
             let approvedTarget = resolvedTargetURL(for: path)
 
-            // Read through the captured target (not the mutable path), then confirm the
-            // path still points there, so the content we edit comes from the file we write.
             let currentContent = try await readFile(
                 at: approvedTarget,
                 displayPath: path,
@@ -602,7 +494,6 @@ import os.log
             )
             _ = try requireUnchangedTarget(approvedTarget, for: path)
 
-            // Find occurrences
             let occurrences = currentContent.ranges(of: oldText)
 
             if occurrences.isEmpty {
@@ -613,13 +504,10 @@ import os.log
                 throw ToolExecutionError.editAmbiguous(path: path, matchCount: occurrences.count)
             }
 
-            // Create new content
             let newContent = currentContent.replacingOccurrences(of: oldText, with: newText)
 
-            // Generate diff preview
             let diffPreview = generateDiffPreview(oldText: oldText, newText: newText)
 
-            // Validate path for write
             let validation = pathValidator.validate(
                 path,
                 operation: .write,
@@ -635,8 +523,6 @@ import os.log
                 editApprovalReason = nil
             }
 
-            // Keyed by the resolved target, like write_file, so remembered approvals
-            // cannot follow a retargeted symlink to a different file.
             try await authorize(
                 tool: ToolName.editFile,
                 description: "Edit file",
@@ -646,10 +532,8 @@ import os.log
                 conversationId: conversationId
             )
 
-            // Re-resolve at operation time and refuse if the target moved (TOCTOU)
             let url = try requireUnchangedTarget(approvedTarget, for: path)
 
-            // Re-validate the resolved path to catch symlink changes
             let revalidation = pathValidator.validate(
                 url: url,
                 operation: .write,
@@ -661,13 +545,11 @@ import os.log
             case let .requiresApproval(reason) where editApprovalReason == nil:
                 throw ToolExecutionError.invalidPath(path: path, reason: "Path changed after approval (re-resolution requires new approval): \(reason)")
             case .requiresApproval, .allowed:
-                // The target is unchanged and was approved in this category.
                 break
             }
 
             try Task.checkCancellation()
 
-            // Write updated content
             do {
                 try newContent.write(to: url, atomically: true, encoding: .utf8)
                 log(.info, "edit_file completed", metadata: ["path": path])
@@ -676,12 +558,6 @@ import os.log
             }
         }
 
-        /// Lists files in a directory.
-        ///
-        /// - Parameters:
-        ///   - path: The directory path
-        ///   - conversationId: The conversation requesting this operation
-        /// - Returns: Array of file entries
         func listDirectory(path: String, conversationId: UUID) async throws -> [FileEntry] {
             guard isEnabled else {
                 throw ToolExecutionError.serviceDisabled
@@ -690,8 +566,6 @@ import os.log
             log(.info, "list_directory requested", metadata: ["path": path])
             let path = anchoredPath(path)
 
-            // Validate and approve the resolved directory, then list that same directory, so a
-            // symlink retargeted after approval cannot reuse it.
             guard let resolvedURL = pathValidator.canonicalize(path) else {
                 throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path")
             }
@@ -712,7 +586,6 @@ import os.log
                 conversationId: conversationId
             )
 
-            // List contents
             do {
                 let contents = try FileManager.default.contentsOfDirectory(
                     at: resolvedURL,
@@ -739,13 +612,6 @@ import os.log
             }
         }
 
-        /// Searches for a pattern in files.
-        ///
-        /// - Parameters:
-        ///   - pattern: The search pattern (regex supported)
-        ///   - path: The directory to search in
-        ///   - conversationId: The conversation requesting this operation
-        /// - Returns: Array of search results
         func searchFiles(pattern: String, path: String, conversationId: UUID) async throws -> [SearchResult] {
             guard isEnabled else {
                 throw ToolExecutionError.serviceDisabled
@@ -754,7 +620,6 @@ import os.log
             log(.info, "search_files requested", metadata: ["pattern": pattern, "path": path])
             let path = anchoredPath(path)
 
-            // Approve and search the resolved root, so a retargeted symlink cannot reuse it.
             guard let resolvedURL = pathValidator.canonicalize(path) else {
                 throw ToolExecutionError.invalidPath(path: path, reason: "Cannot resolve path")
             }
@@ -776,7 +641,6 @@ import os.log
                 conversationId: conversationId
             )
 
-            // Create regex
             let regex: NSRegularExpression
             do {
                 regex = try NSRegularExpression(pattern: pattern, options: [])
@@ -787,7 +651,6 @@ import os.log
             var results: [SearchResult] = []
             results.reserveCapacity(maxSearchResults)
 
-            // Search recursively
             let enumerator = FileManager.default.enumerator(
                 at: resolvedURL,
                 includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
@@ -804,19 +667,15 @@ import os.log
                     continue
                 }
 
-                // Files that would need approval on their own (credentials, keys, protected
-                // paths) are only searched when the user already approved the search root.
                 if validation.isAllowed, !pathValidator.validate(url: fileURL, operation: .read).isAllowed {
                     continue
                 }
 
-                // Read file
                 guard let data = try? Data(contentsOf: fileURL),
                       !isBinaryData(data),
                       let content = String(data: data, encoding: .utf8)
                 else { continue }
 
-                // Search for matches
                 let lines = content.components(separatedBy: .newlines)
                 for (lineNumber, line) in lines.enumerated() {
                     let range = NSRange(line.startIndex..., in: line)
@@ -840,13 +699,6 @@ import os.log
             return results
         }
 
-        /// Executes a shell command.
-        ///
-        /// - Parameters:
-        ///   - command: The command to execute
-        ///   - workingDirectory: Optional working directory
-        ///   - conversationId: The conversation requesting this operation
-        /// - Returns: Command execution result
         func runCommand(command: String, workingDirectory: String?, conversationId: UUID) async throws -> CommandResult {
             guard isEnabled else {
                 throw ToolExecutionError.serviceDisabled
@@ -854,7 +706,6 @@ import os.log
 
             log(.info, "run_command requested", metadata: ["command": command])
 
-            // Validate command with sandbox
             let validation = shellSandbox.validate(command)
             switch validation {
             case let .blocked(reason):
@@ -863,7 +714,6 @@ import os.log
                 break
             }
 
-            // Validate working directory if provided
             let workingDirectory = workingDirectory.map(anchoredPath)
             if let workingDirectory {
                 if !shellSandbox.isWorkingDirectoryAllowed(workingDirectory) {
@@ -874,8 +724,6 @@ import os.log
                 }
             }
 
-            // Capture the directory now: the approval names it, and a project-root change while the
-            // card waits must not move the command elsewhere.
             let workingDir = Self.canonicalDirectory(
                 workingDirectory.map { URL(fileURLWithPath: PathValidator.expandPath($0)) } ?? baseDirectory
             )
@@ -890,12 +738,10 @@ import os.log
 
             try Task.checkCancellation()
 
-            // Patterns added while the card waited still apply.
             if case let .blocked(reason) = shellSandbox.validate(command) {
                 throw ToolExecutionError.sandboxBlocked(command: command, reason: reason)
             }
 
-            // Execute command off the main thread to prevent UI freezes
             let startTime = Date()
             let timeoutSeconds = commandTimeoutSeconds
 
@@ -932,8 +778,6 @@ import os.log
             return result
         }
 
-        /// Approval identity for a command: the command and where it runs, so a remembered approval
-        /// never carries over to another directory.
         static func commandApprovalDetails(_ command: String, in directory: URL) -> String {
             "\(command)\n(in \(canonicalDirectory(directory).path))"
         }
@@ -942,7 +786,6 @@ import os.log
             url.resolvingSymlinksInPath().standardized
         }
 
-        /// Executes a shell command in a subprocess with timeout and cancellation support.
         private func executeProcess(
             command: String,
             workingDir: URL?,
@@ -974,15 +817,9 @@ import os.log
                                 do {
                                     try await Task.sleep(for: .seconds(timeoutSeconds))
                                     processHolder.timeout()
-                                } catch {
-                                    // Cancelled - expected when process completes normally
-                                }
+                                } catch {}
                             }
 
-                            // Read both pipes concurrently to avoid deadlock (Apple TN2050).
-                            // Sequential reads can deadlock if one pipe fills its buffer
-                            // while we're blocked reading the other.
-                            // Use readabilityHandler to drain pipes as data arrives.
                             let stdoutAccumulator = PipeAccumulator(maxSize: self.maxOutputSize)
                             let stderrAccumulator = PipeAccumulator(maxSize: self.maxOutputSize)
 
@@ -1007,8 +844,6 @@ import os.log
                             processHolder.didReap(process)
                             timeoutTask.cancel()
 
-                            // Drain only bytes already buffered. A descendant retaining a write end
-                            // must never make post-exit cleanup block indefinitely.
                             process.standardOutput.readabilityHandler = nil
                             process.standardError.readabilityHandler = nil
                             let remaining = process.drainAvailableOutput()
@@ -1065,15 +900,6 @@ import os.log
             }
         }
 
-        // MARK: - Tool Call Execution
-
-        /// Executes a tool call and returns the result as a string.
-        ///
-        /// - Parameters:
-        ///   - toolName: The name of the tool to execute
-        ///   - arguments: The arguments dictionary
-        ///   - conversationId: The conversation requesting this operation
-        /// - Returns: The result string to return to the model
         func executeToolCall(
             toolName: String,
             arguments: [String: Any],
@@ -1162,11 +988,8 @@ import os.log
         }
     }
 
-    // MARK: - Private Helpers (Extension)
-
     extension BuiltinToolService {
         func isBinaryData(_ data: Data) -> Bool {
-            // Check for null bytes in first 8KB (common binary indicator)
             let checkLength = min(data.count, 8192)
             return data.prefix(checkLength).contains(0)
         }

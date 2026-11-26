@@ -1,7 +1,6 @@
 import Foundation
 import os
 
-/// Handles deterministic configuration when the app is launched from UI tests.
 enum UITestEnvironment {
     private static let defaultModel = "ui-test-model"
 
@@ -9,7 +8,6 @@ enum UITestEnvironment {
         RuntimeEnvironment.isUITesting
     }
 
-    /// Call once during app initialization to swap out side-effectful dependencies.
     @MainActor
     static func configureIfNeeded() {
         guard isEnabled else { return }
@@ -26,7 +24,6 @@ enum UITestEnvironment {
         clearConversationArtifacts()
     }
 
-    /// Conversation manager used when the app is running in UI tests.
     @MainActor
     static func makeConversationManager() -> ConversationManager {
         let store = EncryptedConversationStore(
@@ -37,7 +34,6 @@ enum UITestEnvironment {
         return ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
     }
 
-    /// Skip heavy background work (e.g., MCP connections) while UI tests run.
     static var shouldSkipMCPInitialization: Bool {
         isEnabled
     }
@@ -61,7 +57,6 @@ enum UITestEnvironment {
     private static func configureAIService() {
         let service = AIService.shared
 
-        // Always ensure test model exists - add it if not present
         if !service.customModels.contains(defaultModel) {
             service.customModels.insert(defaultModel, at: 0)
         }
@@ -69,9 +64,7 @@ enum UITestEnvironment {
         service.modelProviders[defaultModel] = .openai
         service.modelEndpointTypes[defaultModel] = .chatCompletions
 
-        // Always set selected model to test model for deterministic tests
         service.selectedModel = defaultModel
-        // Set API key for the test model if not already configured
         if service.modelAPIKeys[defaultModel]?.isEmpty ?? true {
             service.modelAPIKeys[defaultModel] = "ui-test-api-key"
         }

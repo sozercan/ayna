@@ -1,13 +1,5 @@
-//
-//  ToolExecutionResult.swift
-//  ayna
-//
-//  Shared result data for one completed provider-requested tool call.
-//
-
 import Foundation
 
-/// The completed output and display metadata for one provider-requested tool call.
 struct ToolExecutionResult: Sendable {
     let callID: String
     let toolName: String
@@ -29,7 +21,6 @@ struct ToolExecutionResult: Sendable {
         self.citations = citations
     }
 
-    /// Creates the persisted tool-result message used as provider history.
     func makeMessage() -> Message {
         var message = Message(role: .tool, content: output)
         message.toolCalls = [
@@ -43,7 +34,6 @@ struct ToolExecutionResult: Sendable {
         return message
     }
 
-    /// Combines citation lists in callback registration order and assigns stable numbers.
     static func combinedCitations(from results: [ToolExecutionResult]) -> [CitationReference] {
         results
             .flatMap(\.citations)

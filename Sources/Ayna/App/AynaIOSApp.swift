@@ -1,11 +1,5 @@
 // swiftformat:options --ifdef no-indent
 #if os(iOS)
-//
-//  AynaIOSApp.swift
-//  ayna
-//
-//  Created on 11/22/25.
-//
 
 import os
 import SwiftUI
@@ -13,7 +7,6 @@ import SwiftUI
 import WatchConnectivity
 #endif
 
-/// Activity type for Handoff from Apple Watch
 private let handoffActivityType = "com.sertacozercan.ayna.conversation"
 
 @main
@@ -23,11 +16,9 @@ struct AynaIOSApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        // Register defaults and configure UI test environment if needed
         AppPreferences.registerDefaults()
         UITestEnvironment.configureIfNeeded()
 
-        // Configure attachment loader
         Message.attachmentLoader = { path in
             AttachmentStorage.shared.load(path: path)
         }
@@ -37,7 +28,6 @@ struct AynaIOSApp: App {
 
         _aiService = StateObject(wrappedValue: AIService.shared)
 
-        // Initialize conversation manager (use test store in UI test mode)
         let manager: ConversationManager = if UITestEnvironment.isEnabled {
             UITestEnvironment.makeConversationManager()
         } else {
@@ -60,10 +50,8 @@ struct AynaIOSApp: App {
                     Task {
                         await conversationManager.loadingTask?.value
 
-                        // Handle incoming deep links.
                         await DeepLinkManager.shared.handle(url: url)
 
-                        // Handle the chat request that became ready during this URL.
                         if let chatRequest = DeepLinkManager.shared.consumeNextReadyChat() {
                             _ = conversationManager.startConversation(
                                 model: chatRequest.model,
@@ -77,13 +65,11 @@ struct AynaIOSApp: App {
                     handleHandoff(activity)
                 }
                 .task {
-                    // Skip WatchConnectivity setup during UI tests
                     guard !UITestEnvironment.isEnabled else { return }
                     await setupWatchConnectivity()
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     if newPhase == .background {
-                        // Save memory and flush pending conversation saves when app goes to background
                         Task { @MainActor in
                             await conversationManager.flushPendingSaves()
                             await MemoryContextProvider.shared.saveAll()
@@ -95,13 +81,10 @@ struct AynaIOSApp: App {
 
     @MainActor
     private func setupWatchConnectivity() async {
-        // Wait for conversations to load before syncing
         await conversationManager.loadingTask?.value
 
-        // Configure WatchConnectivity to sync with Apple Watch
         WatchConnectivityService.shared.configure(with: conversationManager)
 
-        // Trigger initial sync of settings and conversations (now that they're loaded)
         WatchConnectivityService.shared.syncConversationsToWatch(conversationManager.conversations)
     }
 
@@ -119,7 +102,6 @@ struct AynaIOSApp: App {
             return
         }
 
-        // Check if the conversation exists
         if conversationManager.conversations.contains(where: { $0.id == conversationId }) {
             conversationManager.selectedConversationId = conversationId
             DiagnosticsLogger.log(

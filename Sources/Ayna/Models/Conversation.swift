@@ -1,10 +1,3 @@
-//
-//  Conversation.swift
-//  ayna
-//
-//  Created on 11/2/25.
-//
-
 import Foundation
 import UniformTypeIdentifiers
 
@@ -14,16 +7,10 @@ extension UTType {
     )
 }
 
-/// Defines how the system prompt is resolved for a conversation.
 enum SystemPromptMode: Equatable, Sendable {
-    /// Use the global system prompt from AppPreferences
     case inheritGlobal
-    /// Use a custom system prompt specific to this conversation
     case custom(String)
-    /// No system prompt at all
     case disabled
-
-    // MARK: - Codable
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -76,16 +63,12 @@ struct Conversation: Identifiable, Equatable, Sendable {
     var systemPromptMode: SystemPromptMode
     var temperature: Double
 
-    // Multi-model support
     var multiModelEnabled: Bool
-    var activeModels: [String] // Models selected for parallel queries
-    var responseGroups: [ResponseGroup] // Track all response groups
+    var activeModels: [String]
+    var responseGroups: [ResponseGroup]
 
-    /// Deep link support - transient, not persisted
-    /// When set, the chat view should auto-send this prompt on load
     var pendingAutoSendPrompt: String?
 
-    /// Lightweight list preview from metadata sidecars. Transient, not persisted.
     var metadataPreview: String?
 
     init(
@@ -115,8 +98,6 @@ struct Conversation: Identifiable, Equatable, Sendable {
         self.responseGroups = responseGroups
         self.metadataPreview = metadataPreview
     }
-
-    // MARK: - Codable
 
     private enum CodingKeys: String, CodingKey {
         case id, title, messages, createdAt, updatedAt, model
@@ -149,7 +130,6 @@ struct Conversation: Identifiable, Equatable, Sendable {
             }
         }
         temperature = try container.decode(Double.self, forKey: .temperature)
-        // Provide defaults for new multi-model fields (backward compatibility)
         multiModelEnabled = try container.decodeIfPresent(Bool.self, forKey: .multiModelEnabled) ?? false
         activeModels = try container.decodeIfPresent([String].self, forKey: .activeModels) ?? []
         responseGroups = try container.decodeIfPresent([ResponseGroup].self, forKey: .responseGroups) ?? []
@@ -169,10 +149,6 @@ struct Conversation: Identifiable, Equatable, Sendable {
         }
     }
 
-    // MARK: - Multi-Model Support
-
-    /// Get the effective message history for API requests.
-    /// This linearizes each response group to one terminal, meaningful response.
     func getEffectiveHistory() -> [Message] {
         var messagesByID: [UUID: Message] = [:]
         for message in messages where messagesByID[message.id] == nil {
@@ -292,19 +268,16 @@ struct Conversation: Identifiable, Equatable, Sendable {
         updatedAt = Date()
     }
 
-    /// Add a response group for multi-model responses.
     mutating func addResponseGroup(_ group: ResponseGroup) {
         responseGroups.append(group)
         updatedAt = Date()
     }
 
-    /// Select a response from a response group
     mutating func selectResponse(in groupId: UUID, messageId: UUID) {
         if let index = responseGroups.firstIndex(where: { $0.id == groupId }) {
             let previousSelection = responseGroups[index].selectedResponseId
             responseGroups[index].selectResponse(messageId)
 
-            // Mark messages accordingly
             for msgIndex in messages.indices where messages[msgIndex].responseGroupId == groupId {
                 let isNewSelection = messages[msgIndex].id == messageId
                 let wasPreviousSelection = messages[msgIndex].id == previousSelection
@@ -312,12 +285,10 @@ struct Conversation: Identifiable, Equatable, Sendable {
                 messages[msgIndex].isSelectedResponse = isNewSelection
 
                 #if !os(watchOS)
-                    // If this is the selected message and it has pending tool calls, activate them
                     if isNewSelection, let pendingCalls = messages[msgIndex].pendingToolCalls {
                         messages[msgIndex].toolCalls = pendingCalls
                         messages[msgIndex].pendingToolCalls = nil
                     }
-                    // Clear tool calls from previous selection to prevent confusion
                     if wasPreviousSelection, previousSelection != nil {
                         messages[msgIndex].toolCalls = nil
                     }
@@ -328,12 +299,10 @@ struct Conversation: Identifiable, Equatable, Sendable {
         }
     }
 
-    /// Get a response group by ID
     func getResponseGroup(_ groupId: UUID) -> ResponseGroup? {
         responseGroups.first { $0.id == groupId }
     }
 
-    /// Update a response group
     mutating func updateResponseGroup(_ group: ResponseGroup) {
         if let index = responseGroups.firstIndex(where: { $0.id == group.id }) {
             responseGroups[index] = group
@@ -387,7 +356,6 @@ extension Message {
 extension Conversation: Codable {}
 
 extension Conversation {
-    /// Relative AttachmentStorage paths of the files this conversation's messages own.
     var attachmentPaths: [String] {
         var paths: Set<String> = []
         for message in messages {

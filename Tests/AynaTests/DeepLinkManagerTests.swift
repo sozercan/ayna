@@ -7,15 +7,10 @@ import Testing
 @MainActor
 struct DeepLinkManagerTests {
     init() {
-        // Use in-memory keychain to avoid polluting the real Keychain during tests
         AIService.keychain = InMemoryKeychainStorage()
     }
 
-    // MARK: - Helper
-
-    /// Creates a fresh manager with its own AIService instance for test isolation
     private func makeManager() -> (manager: DeepLinkManager, service: AIService) {
-        // Create a dedicated service instance for this test - NOT the shared singleton
         let service = AIService()
         service.customModels = []
         service.modelProviders = [:]
@@ -50,8 +45,6 @@ struct DeepLinkManagerTests {
         manager.cancelAddModel(expectedRequestID: requestID)
     }
 
-    // MARK: - URL Parsing Tests
-
     @Test("Parse add-model with all parameters")
     func parseAddModelWithAllParameters() async throws {
         let (manager, _) = makeManager()
@@ -77,8 +70,8 @@ struct DeepLinkManagerTests {
 
         #expect(manager.pendingAddModel != nil)
         #expect(manager.pendingAddModel?.name == "my-model")
-        #expect(manager.pendingAddModel?.provider == .openai) // Default
-        #expect(manager.pendingAddModel?.endpointType == .chatCompletions) // Default
+        #expect(manager.pendingAddModel?.provider == .openai)
+        #expect(manager.pendingAddModel?.endpointType == .chatCompletions)
         #expect(manager.pendingAddModel?.endpoint == nil)
         #expect(manager.pendingAddModel?.apiKey == nil)
         #expect(manager.errorMessage == nil)
@@ -142,8 +135,6 @@ struct DeepLinkManagerTests {
         #expect(manager.errorMessage?.contains("type") ?? false)
     }
 
-    // MARK: - Provider Parsing Tests
-
     @Test("Parse provider OpenAI")
     func parseProviderOpenAI() async throws {
         let (manager, _) = makeManager()
@@ -167,8 +158,6 @@ struct DeepLinkManagerTests {
         await manager.handle(url: url)
         #expect(manager.pendingAddModel?.provider == .openai)
     }
-
-    // MARK: - Endpoint Type Parsing Tests
 
     @Test("Parse endpoint type chat")
     func parseEndpointTypeChat() async throws {
@@ -209,8 +198,6 @@ struct DeepLinkManagerTests {
         await manager.handle(url: url)
         #expect(manager.pendingAddModel?.endpointType == .imageGeneration)
     }
-
-    // MARK: - Chat URL Tests
 
     @Test("Parse chat with all parameters")
     func parseChatWithAllParameters() async throws {
@@ -267,8 +254,6 @@ struct DeepLinkManagerTests {
         #expect(manager.pendingChat?.systemPrompt == nil)
         #expect(manager.errorMessage == nil)
     }
-
-    // MARK: - Pending Chat Consumption Tests
 
     @Test("Unified chat remains pending before add-model confirmation")
     func unifiedChatRemainsPendingBeforeAddModelConfirmation() async throws {
@@ -631,8 +616,6 @@ struct DeepLinkManagerTests {
         withExtendedLifetime(cancellation) {}
     }
 
-    // MARK: - Invalid URL Tests
-
     @Test("Invalid scheme shows error")
     func invalidSchemeShowsError() async throws {
         let (manager, _) = makeManager()
@@ -657,8 +640,6 @@ struct DeepLinkManagerTests {
         #expect(manager.errorMessage != nil)
         #expect(manager.errorMessage?.contains("Unknown action") ?? false)
     }
-
-    // MARK: - Confirm/Cancel Tests
 
     @Test("Confirm add model adds model")
     func confirmAddModelAddsModel() async throws {
@@ -718,12 +699,10 @@ struct DeepLinkManagerTests {
     @Test("Confirm add model duplicate shows error")
     func confirmAddModelDuplicateShowsError() async throws {
         let (manager, _) = makeManager()
-        // Add first model
         let url1 = try #require(URL(string: "ayna://add-model?name=duplicate-model"))
         await manager.handle(url: url1)
         try confirmPendingModel(in: manager)
 
-        // Try to add duplicate
         let url2 = try #require(URL(string: "ayna://add-model?name=duplicate-model"))
         await manager.handle(url: url2)
         try confirmPendingModel(in: manager)
@@ -731,8 +710,6 @@ struct DeepLinkManagerTests {
         #expect(manager.errorMessage != nil)
         #expect(manager.errorMessage?.contains("already exists") ?? false)
     }
-
-    // MARK: - Error Handling Tests
 
     @Test("Dismiss error clears error")
     func dismissErrorClearsError() async throws {
@@ -748,8 +725,6 @@ struct DeepLinkManagerTests {
         #expect(manager.errorRecoverySuggestion == nil)
     }
 
-    // MARK: - Main Action Tests
-
     @Test("Main action creates chat request")
     func mainActionCreatesChatRequest() async throws {
         let (manager, _) = makeManager()
@@ -762,8 +737,6 @@ struct DeepLinkManagerTests {
         #expect(manager.pendingChat?.prompt == nil)
         #expect(manager.errorMessage == nil)
     }
-
-    // MARK: - Display Property Tests
 
     @Test("Show add model confirmation property")
     func showAddModelConfirmationProperty() async throws {
@@ -790,8 +763,6 @@ struct DeepLinkManagerTests {
         #expect(manager.pendingAddModel?.displayEndpointType == APIEndpointType.responses.displayName)
     }
 
-    // MARK: - URL Encoding Tests
-
     @Test("URL encoded parameters are parsed correctly")
     func urlEncodedParametersAreParsedCorrectly() async throws {
         let (manager, _) = makeManager()
@@ -812,17 +783,13 @@ struct DeepLinkManagerTests {
         #expect(manager.pendingAddModel?.name == "gpt-4o-2024-05-13")
     }
 
-    // MARK: - Unified Add+Chat Flow Tests
-
     @Test("Unified flow chat with model config shows add confirmation")
     func unifiedFlowChatWithModelConfigShowsAddConfirmation() async throws {
         let (manager, _) = makeManager()
-        // Model doesn't exist, should show add confirmation
         let url = try #require(URL(string: "ayna://chat?model=new-model&provider=openai&endpoint=https://api.test.com&prompt=Hello"))
 
         await manager.handle(url: url)
 
-        // Should have both pending add model AND pending chat
         #expect(manager.pendingAddModel != nil)
         #expect(manager.pendingChat != nil)
         #expect(manager.pendingAddModel?.name == "new-model")
@@ -843,12 +810,10 @@ struct DeepLinkManagerTests {
 
         try confirmPendingModel(in: manager)
 
-        // Model should be added
         #expect(service.customModels.contains("unified-model"))
         #expect(service.modelProviders["unified-model"] == .anthropic)
         #expect(service.modelAPIKeys["unified-model"] == "test-key")
 
-        // Add model confirmation cleared, and chat released exactly once
         #expect(manager.pendingAddModel == nil)
         let chat = try consumeExactlyOne(from: manager)
         #expect(chat.prompt == "Test prompt")
@@ -866,7 +831,6 @@ struct DeepLinkManagerTests {
 
         try cancelPendingModel(in: manager)
 
-        // Both should be cleared
         #expect(manager.pendingAddModel == nil)
         #expect(manager.pendingChat == nil)
         #expect(!service.customModels.contains("cancel-model"))
@@ -875,14 +839,11 @@ struct DeepLinkManagerTests {
     @Test("Unified flow existing model skips add confirmation")
     func unifiedFlowExistingModelSkipsAddConfirmation() async throws {
         let (manager, service) = makeManager()
-        // First add a model
         service.customModels.append("existing-model")
 
-        // Now try unified flow with same model name
         let url = try #require(URL(string: "ayna://chat?model=existing-model&provider=openai&prompt=Hello"))
         await manager.handle(url: url)
 
-        // Should skip add confirmation since model exists
         #expect(manager.pendingAddModel == nil)
         #expect(manager.pendingChat != nil)
         #expect(manager.pendingChat?.model == "existing-model")
@@ -916,7 +877,6 @@ struct DeepLinkManagerTests {
 
         await manager.handle(url: url)
 
-        // Verify modelConfig is set on the chat request
         #expect(manager.pendingChat?.modelConfig != nil)
         #expect(manager.pendingChat?.modelConfig?.name == "config-test")
         #expect(manager.pendingChat?.modelConfig?.provider == .anthropic)
@@ -956,7 +916,6 @@ struct DeepLinkManagerTests {
 
         await manager.handle(url: url)
 
-        // No config params, so no add model flow
         #expect(manager.pendingAddModel == nil)
         #expect(manager.pendingChat != nil)
         #expect(manager.pendingChat?.modelConfig == nil)

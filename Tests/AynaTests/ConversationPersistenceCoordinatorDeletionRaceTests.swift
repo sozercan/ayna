@@ -198,9 +198,7 @@ struct CoordinatorDeletionRaceTests {
         do {
             try await clearTask.value
             Issue.record("Expected clear to fail")
-        } catch {
-            // The compatibility API intentionally erases the store's concrete error type.
-        }
+        } catch {}
 
         await deleteGate.waitUntilStarted()
         await #expect(throws: CancellationError.self) {
@@ -375,9 +373,7 @@ struct CoordinatorDeletionRaceTests {
         do {
             try await clearTask.value
             Issue.record("Expected clear to fail")
-        } catch {
-            // The compatibility API intentionally erases the store's concrete error type.
-        }
+        } catch {}
         await deleteGate.waitUntilStarted()
         await #expect(throws: CancellationError.self) {
             try await firstDelete.value
@@ -443,9 +439,7 @@ struct CoordinatorDeletionRaceTests {
         do {
             try await clearTask.value
             Issue.record("Expected clear to fail")
-        } catch {
-            // The compatibility API intentionally erases the store's concrete error type.
-        }
+        } catch {}
         await deleteGate.waitUntilFirstStarted()
 
         let firstDeleteGeneration = await coordinator.deletionGeneration(for: conversation.id)

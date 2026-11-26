@@ -1,26 +1,10 @@
-//
-//  AnthropicProvider.swift
-//  ayna
-//
-//  Created on 1/30/26.
-//
-
 import Foundation
 import os
 
-/// Thread-safe mutable flag for use in @Sendable closures
 private final class SendableFlag: @unchecked Sendable {
     var value = false
 }
 
-/// Provider implementation for Anthropic (Claude) API
-///
-/// Handles:
-/// - Direct Anthropic API (api.anthropic.com)
-/// - Custom endpoints (Azure, proxies)
-/// - Extended thinking with streaming thinking blocks
-/// - Tool use for MCP integration
-/// - Vision/image attachments
 @MainActor
 final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     let providerType: AIProvider = .anthropic
@@ -30,8 +14,6 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     private var currentRequestBuildTask: Task<Void, Never>?
     private var currentStreamTask: Task<Void, Never>?
     private var currentDataTask: URLSessionDataTask?
-    /// Advances when a request starts or is cancelled, so a retry waiting out its backoff can
-    /// tell that it no longer belongs to the current request.
     private var requestGeneration: UInt64 = 0
 
     private struct StreamProcessingResult: Sendable {
@@ -65,7 +47,6 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         callbacks: AIProviderStreamCallbacks
     ) {
         requestGeneration &+= 1
-        // Resolve endpoint URL
         let url: URL
         do {
             url = try AnthropicEndpointResolver.messagesURL(customEndpoint: config.customEndpoint)
@@ -91,17 +72,14 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             return
         }
 
-        // Determine beta headers based on model
         var betaHeaders: [String] = []
         if let thinkingBudget = config.thinkingBudget, thinkingBudget >= 1024 {
-            // Enable interleaved thinking for Claude 4+ models
             let model = config.model.lowercased()
             if model.contains("claude-4") || model.contains("claude-opus-4") || model.contains("claude-sonnet-4") {
                 betaHeaders.append("interleaved-thinking-2025-05-14")
             }
         }
 
-        // Build request configuration
         let requestConfig = AnthropicRequestConfig(
             model: config.model,
             apiKey: config.apiKey,
@@ -147,7 +125,6 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             self.currentRequestBuildTask = nil
 
             var timedRequest = request
-            // Streaming: maximum gap between bytes. Non-streaming waits for the whole reply.
             timedRequest.timeoutInterval = stream ? 120 : 600
 
             DiagnosticsLogger.log(
@@ -179,8 +156,6 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         currentDataTask?.cancel()
         currentDataTask = nil
     }
-
-    // MARK: - Streaming Response
 
     private func streamResponse(
         request: URLRequest,
@@ -298,15 +273,13 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         var lastUpdateTime = CFAbsoluteTimeGetCurrent()
         var hasReceivedData = false
 
-        // Maximum line length to prevent OOM from malformed streams without newlines
-        let maxLineLength = 65536 // 64KB
+        let maxLineLength = 65536
 
         for try await byte in bytes {
             try Task.checkCancellation()
             hasReceivedData = true
             buffer.append(byte)
 
-            // Prevent unbounded buffer growth from malformed streams
             if buffer.count > maxLineLength {
                 throw AynaError.apiError(message: "Malformed stream: line exceeds maximum length")
             }
@@ -380,8 +353,6 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         return false
     }
 
-    // MARK: - Non-Streaming Response
-
     private func nonStreamResponse(
         request: URLRequest,
         callbacks: AIProviderStreamCallbacks,
@@ -393,7 +364,6 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             return
         }
 
-        // Cancel any previous data task
         currentDataTask?.cancel()
 
         let task = urlSession.dataTask(with: request) { [weak self] data, response, error in
@@ -543,8 +513,6 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         }
     }
 
-    // MARK: - Circuit Breaker
-
     private nonisolated func checkCircuitBreaker(key: String) -> String? {
         let circuitGate = NetworkCircuitBreaker.shouldAllowRequest(key: key)
         guard !circuitGate.allowed else { return nil }
@@ -553,8 +521,6 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             ? "Anthropic service temporarily unavailable. Please try again in \(seconds)s."
             : "Anthropic service temporarily unavailable. Please try again shortly."
     }
-
-    // MARK: - Error Handling
 
     private nonisolated func handleHTTPError(bytes: URLSession.AsyncBytes, statusCode: Int) async -> String {
         var errorData = Data(capacity: 4096)
@@ -565,9 +531,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
                     break
                 }
             }
-        } catch {
-            // Ignore errors reading error body
-        }
+        } catch {}
 
         if !errorData.isEmpty {
             return extractAPIErrorMessage(from: errorData, statusCode: statusCode)
@@ -599,11 +563,9 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
 
     private nonisolated func extractAPIErrorMessage(from data: Data, statusCode: Int) -> String {
         if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            // Anthropic error format: {"type": "error", "error": {"type": "...", "message": "..."}}
             if let errorObj = json["error"] as? [String: Any],
                let message = errorObj["message"] as? String
             {
-                // Add Anthropic prefix for clarity
                 if statusCode == 401 {
                     return "Anthropic API key invalid or missing."
                 }
@@ -644,7 +606,6 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
                     callbacks.onError(AynaError.apiError(message:
                         "Network connection was lost. The Anthropic server may have rejected the request."))
                 } else if error is CancellationError {
-                    // Task was cancelled, don't report as error
                 } else {
                     callbacks.onError(error)
                 }
@@ -666,8 +627,6 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             }
         }
     }
-
-    // MARK: - Retry Logic
 
     private func shouldRetry(error: Error, attempt: Int, hasReceivedData: Bool = false) -> Bool {
         AIRetryPolicy.shouldRetry(error: error, attempt: attempt, hasReceivedData: hasReceivedData)

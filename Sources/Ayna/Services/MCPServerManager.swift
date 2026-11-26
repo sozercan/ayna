@@ -1,10 +1,3 @@
-//
-//  MCPServerManager.swift
-//  ayna
-//
-//  Created on 11/3/25.
-//
-
 #if os(macOS)
     import Combine
     import Foundation
@@ -129,7 +122,6 @@
     }
 
     // swiftlint:disable type_body_length
-    /// Manages multiple MCP server connections and tool discovery
     @MainActor
     class MCPServerManager: ObservableObject {
         static let shared = MCPServerManager()
@@ -154,14 +146,12 @@
         private var discoveryBatchTask: ManagedMCPTask?
         private var discoveryBatchGeneration: UInt64 = 0
 
-        // Optimization: Cache enabled tools and their OpenAI function format
         private var cachedEnabledTools: [MCPTool] = []
         private var cachedOpenAIFunctions: [[String: Any]] = []
-        private var toolLookup: [String: MCPTool] = [:] // O(1) lookup by model-facing name
+        private var toolLookup: [String: MCPTool] = [:]
         private var exposedToolNames: [UUID: String] = [:]
         private var toolNaming = MCPToolNaming()
 
-        /// Tool names Ayna serves itself; an MCP tool with one of these names gets a server prefix.
         static var reservedToolNames: Set<String> {
             BuiltinToolService.toolNames.union([WebSearchCoordinator.toolName, WebFetchService.toolName])
         }
@@ -185,8 +175,6 @@
             initializeStatusEntries()
             MCPProcessTracker.shared.cleanupOrphanedProcesses()
         }
-
-        // MARK: - Server Configuration Management
 
         func addServerConfig(_ config: MCPServerConfig) {
             serverConfigs.append(config)
@@ -217,12 +205,10 @@
                 setStatus(for: config, state: nil)
             }
 
-            // Invalidate cache when server configs change
             invalidateToolCache()
 
             let requiresRestart = shouldRestartServer(previousConfig: previousConfig, updatedConfig: config)
 
-            // Handle connection state changes
             if wasEnabled, !config.enabled {
                 disconnectServer(previousConfig.name)
                 setStatus(for: config, state: .disabled)
@@ -253,7 +239,6 @@
 
         private func loadServerConfigs() {
             guard let data = AppPreferences.storage.data(forKey: "mcp_server_configs") else {
-                // First launch: use default configs
                 DiagnosticsLogger.log(
                     .mcpServerManager,
                     level: .info,
@@ -266,10 +251,7 @@
 
             do {
                 let decoded = try JSONDecoder().decode([MCPServerConfig].self, from: data)
-                // Validate that all configs have proper string dictionaries for env
                 let validatedConfigs = decoded.map { config -> MCPServerConfig in
-                    // Ensure env is a proper [String: String] dictionary
-                    // Filter out any non-string values that might have been corrupted
                     var validEnv: [String: String] = [:]
                     for (key, value) in config.env where !key.isEmpty {
                         validEnv[key] = value
@@ -303,7 +285,6 @@
                     level: .error,
                     message: "Clearing corrupted MCP config data and resetting to defaults"
                 )
-                // Clear corrupted data and use defaults
                 AppPreferences.storage.removeObject(forKey: "mcp_server_configs")
                 serverConfigs = defaultServerConfigs()
                 saveServerConfigs()
@@ -311,11 +292,8 @@
         }
 
         private func defaultServerConfigs() -> [MCPServerConfig] {
-            // No default servers - users add their own
             []
         }
-
-        // MARK: - Connection Management
 
         func connectToServer(_ requestedConfig: MCPServerConfig, autoDisableOnFailure: Bool = true) async {
             guard let config = currentConfig(matching: requestedConfig) else { return }
@@ -687,8 +665,6 @@
             }
         }
 
-        // MARK: - Tool Discovery
-
         func discoverAllTools() async {
             discoveryBatchTask?.task.cancel()
             discoveryBatchGeneration &+= 1
@@ -1015,8 +991,6 @@
             scheduleReconnect(for: config, generation: generation)
         }
 
-        // MARK: - Tool Execution
-
         nonisolated func executeTool(name: String, arguments: [String: Any]) async throws -> String {
             struct ToolExecutionContext: @unchecked Sendable {
                 let service: MCPServicing
@@ -1029,12 +1003,9 @@
             }
 
             let context = try await MainActor.run { () throws -> ToolExecutionContext in
-                // `name` is the model-facing name, which may carry a `server__` prefix.
                 if !isToolCacheValid {
                     refreshToolCache()
                 }
-                // Aliases are bound to one server and tool for the session (MCPToolNaming), so a
-                // stale alias finds its own tool or nothing, never a different server's tool.
                 guard let tool = toolLookup[name] else {
                     throw MCPManagerError.toolNotFound(name)
                 }
@@ -1060,8 +1031,6 @@
             }
         }
 
-        // MARK: - Server Status
-
         func isServerConnected(_ serverName: String) -> Bool {
             if case .connected? = serverStatuses[serverName]?.state {
                 return true
@@ -1082,9 +1051,6 @@
             serverStatuses[serverName]
         }
 
-        // MARK: - Tool Helpers
-
-        /// Returns all tools from enabled servers (cached for performance)
         func getEnabledTools() -> [MCPTool] {
             if !isToolCacheValid {
                 refreshToolCache()
@@ -1092,7 +1058,6 @@
             return cachedEnabledTools
         }
 
-        /// Returns enabled tools in OpenAI function format (cached for performance)
         func getEnabledToolsAsOpenAIFunctions() -> [[String: Any]] {
             if !isToolCacheValid {
                 refreshToolCache()
@@ -1106,7 +1071,6 @@
             return cachedOpenAIFunctions
         }
 
-        /// Refresh the enabled tools cache
         private func refreshToolCache() {
             let enabledServerNames = Set(serverConfigs.lazy.filter(\.enabled).map(\.name))
             cachedEnabledTools = availableTools.filter { tool in
@@ -1117,13 +1081,11 @@
                 cachedEnabledTools.map { (exposedToolNames[$0.id] ?? $0.name, $0) },
                 uniquingKeysWith: { first, _ in first }
             )
-            cachedOpenAIFunctions = [] // Invalidate OpenAI format cache
+            cachedOpenAIFunctions = []
             isToolCacheValid = true
             isOpenAIFunctionCacheValid = false
         }
     }
-
-    // MARK: - Errors
 
     enum MCPManagerError: LocalizedError {
         case toolNotFound(String)
@@ -1139,12 +1101,9 @@
         }
     }
 
-    // MARK: - Status Helpers
-
     private extension MCPServerManager {
         func initializeStatusEntries() {
             let now = Date()
-            // Server names are not enforced to be unique; keep the first entry instead of trapping.
             serverStatuses = Dictionary(
                 serverConfigs.map { config in
                     (

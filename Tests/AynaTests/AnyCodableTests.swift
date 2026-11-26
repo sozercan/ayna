@@ -1,10 +1,3 @@
-//
-//  AnyCodableTests.swift
-//  AynaTests
-//
-//  Focused regression tests for NSNumber encoding.
-//
-
 @testable import Ayna
 import Foundation
 import Testing

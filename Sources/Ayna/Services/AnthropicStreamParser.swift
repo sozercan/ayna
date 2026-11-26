@@ -1,20 +1,12 @@
-//
-//  AnthropicStreamParser.swift
-//  ayna
-//
-//  Created on 1/30/26.
-//
-
 import Foundation
 import os
 
 private enum AnthropicStreamParserLimits {
     static let initialBlockBufferCapacity = 1024
-    static let maxToolInputSize = 10_485_760 // 10MB
-    static let maxSignatureSize = 65_536 // 64KB
+    static let maxToolInputSize = 10_485_760
+    static let maxSignatureSize = 65_536
 }
 
-/// Result from parsing Anthropic SSE events
 struct AnthropicStreamResult: Sendable {
     let shouldComplete: Bool
     let content: String?
@@ -33,14 +25,12 @@ struct AnthropicStreamResult: Sendable {
     }
 }
 
-/// Represents a parsed tool call from the stream
 struct AnthropicToolCall: Sendable {
     let id: String
     let name: String
     let input: [String: AnyCodable]
 }
 
-/// Content block types in Anthropic responses
 enum AnthropicContentBlockType: String {
     case text
     case thinking
@@ -48,7 +38,6 @@ enum AnthropicContentBlockType: String {
     case toolUse = "tool_use"
 }
 
-/// State for tracking a content block during streaming
 struct AnthropicBlockState {
     let type: AnthropicContentBlockType
     var buffer: Data
@@ -63,40 +52,14 @@ struct AnthropicBlockState {
     }
 }
 
-/// Parser for Anthropic SSE (Server-Sent Events) streaming responses.
-///
-/// Handles Anthropic's two-line SSE format:
-/// ```
-/// event: message_start
-/// data: {"type": "message_start", ...}
-/// ```
-///
-/// Supports:
-/// - Text content streaming
-/// - Extended thinking blocks
-/// - Interleaved thinking (multiple thinking blocks)
-/// - Tool use with JSON fragment accumulation
-/// - Error events
-///
-/// Note: This parser maintains mutable state and should only be used from a single
-/// task context. `AnthropicProvider` drives it from a single streaming task, ensuring
-/// sequential access to the parser's state.
 final class AnthropicStreamParser {
-    // MARK: - State
-
-    /// Pending event type from the previous line
     private var pendingEventType: String?
 
-    /// Active content blocks being accumulated
     private var activeBlocks: [Int: AnthropicBlockState] = [:]
 
-    /// Stop reason from message_delta
     private(set) var stopReason: String?
 
-    /// Message ID from message_start
     private(set) var messageId: String?
-
-    // MARK: - Callbacks
 
     typealias ChunkCallback = @Sendable (String) -> Void
     typealias ReasoningCallback = @Sendable (String) -> Void
@@ -109,8 +72,6 @@ final class AnthropicStreamParser {
     private let onToolCallRequested: ToolCallCallback?
     private let onComplete: CompleteCallback?
     private let onError: ErrorCallback?
-
-    // MARK: - Initialization
 
     init(
         onChunk: ChunkCallback? = nil,
@@ -126,21 +87,13 @@ final class AnthropicStreamParser {
         self.onError = onError
     }
 
-    // MARK: - Public API
-
-    /// Process a single line from the SSE stream.
-    ///
-    /// - Parameter line: The raw line from the stream
-    /// - Returns: Result indicating whether to complete and any extracted data
     func processLine(_ line: String) -> AnthropicStreamResult {
         let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Skip empty lines
         guard !trimmedLine.isEmpty else {
             return .empty
         }
 
-        // Handle event: lines
         if trimmedLine.hasPrefix(Self.eventFieldPrefix) {
             var eventType = trimmedLine.dropFirst(Self.eventFieldPrefix.count)
             if eventType.first == " " {
@@ -150,7 +103,6 @@ final class AnthropicStreamParser {
             return .empty
         }
 
-        // Handle data: lines
         if trimmedLine.hasPrefix(Self.dataFieldPrefix) {
             var dataValue = trimmedLine.dropFirst(Self.dataFieldPrefix.count)
             if dataValue.first == " " {
@@ -158,7 +110,6 @@ final class AnthropicStreamParser {
             }
             let dataString = String(dataValue)
 
-            // Skip empty data
             if dataString.trimmingCharacters(in: .whitespaces).isEmpty {
                 pendingEventType = nil
                 return .empty
@@ -172,17 +123,11 @@ final class AnthropicStreamParser {
         return .empty
     }
 
-    /// Process a single UTF-8 SSE line without converting the full line to `String`.
-    ///
-    /// Byte-oriented stream readers can use this to avoid `Data -> String -> Data`
-    /// round trips for each Anthropic content delta.
     func processLine(_ lineData: Data) -> AnthropicStreamResult {
         guard let trimmedRange = Self.asciiTrimmedRange(in: lineData) else {
             return .empty
         }
 
-        // Handle event: lines. Only the event name becomes a String because it is
-        // carried as parser state for the following data line.
         if Self.hasPrefix(Self.eventLinePrefix, in: lineData, range: trimmedRange) {
             let eventStart = Self.fieldValueStart(
                 after: Self.eventLinePrefix,
@@ -193,7 +138,6 @@ final class AnthropicStreamParser {
             return .empty
         }
 
-        // Handle data: lines by passing the JSON payload bytes straight to JSONSerialization.
         if Self.hasPrefix(Self.dataLinePrefix, in: lineData, range: trimmedRange) {
             let dataStart = Self.fieldValueStart(
                 after: Self.dataLinePrefix,
@@ -264,15 +208,12 @@ final class AnthropicStreamParser {
         }
     }
 
-    /// Reset the parser state for a new stream.
     func reset() {
         pendingEventType = nil
         activeBlocks.removeAll()
         stopReason = nil
         messageId = nil
     }
-
-    // MARK: - Private Methods
 
     private func processDataLine(_ data: Data, eventType: String?) -> AnthropicStreamResult {
         guard !data.isEmpty,
@@ -310,7 +251,6 @@ final class AnthropicStreamParser {
             )
 
         case "ping":
-            // Keep-alive, ignore
             return .empty
 
         case "error":
@@ -320,8 +260,6 @@ final class AnthropicStreamParser {
             return .empty
         }
     }
-
-    // MARK: - Event Handlers
 
     private func handleMessageStart(_ json: [String: Any]) -> AnthropicStreamResult {
         if let message = json["message"] as? [String: Any] {
@@ -342,7 +280,6 @@ final class AnthropicStreamParser {
 
         var state = AnthropicBlockState(type: blockType)
 
-        // For tool_use, capture the tool name and ID
         if blockType == .toolUse {
             state.toolName = contentBlock["name"] as? String
             state.toolId = contentBlock["id"] as? String
@@ -378,7 +315,6 @@ final class AnthropicStreamParser {
             }
 
         case "input_json_delta":
-            // Accumulate tool input JSON
             if let partialJson = delta["partial_json"] as? String,
                let partialData = partialJson.data(using: .utf8)
             {
@@ -388,7 +324,6 @@ final class AnthropicStreamParser {
             }
 
         case "signature_delta":
-            // Accumulate signature for redacted thinking
             if let signature = delta["signature"] as? String,
                let sigData = signature.data(using: .utf8)
             {
@@ -419,20 +354,16 @@ final class AnthropicStreamParser {
 
         var toolCall: AnthropicToolCall?
 
-        // If this was a tool_use block, parse the accumulated JSON
         if state.type == .toolUse,
            let toolId = state.toolId,
            let toolName = state.toolName
         {
             if state.buffer.isEmpty {
-                // Empty input, use empty object
                 toolCall = AnthropicToolCall(id: toolId, name: toolName, input: [:])
             } else if let inputJson = try? JSONSerialization.jsonObject(with: state.buffer) as? [String: Any] {
-                // Convert [String: Any] to [String: AnyCodable] for Sendable safety
                 let codableInput = inputJson.mapValues { AnyCodable($0) }
                 toolCall = AnthropicToolCall(id: toolId, name: toolName, input: codableInput)
             } else {
-                // JSON parse failure
                 let bufferPreview = String(data: state.buffer.prefix(200), encoding: .utf8) ?? ""
                 DiagnosticsLogger.log(
                     .aiService,
@@ -440,7 +371,6 @@ final class AnthropicStreamParser {
                     message: "Failed to parse tool input JSON",
                     metadata: ["toolName": toolName, "bufferPreview": bufferPreview]
                 )
-                // Create synthetic error result
                 toolCall = AnthropicToolCall(
                     id: toolId,
                     name: toolName,
@@ -453,7 +383,6 @@ final class AnthropicStreamParser {
             }
         }
 
-        // Clean up the block state
         activeBlocks.removeValue(forKey: index)
 
         return AnthropicStreamResult(
@@ -494,15 +423,7 @@ final class AnthropicStreamParser {
     }
 }
 
-// MARK: - Convenience Static Methods
-
 extension AnthropicStreamParser {
-    /// Process a single line without callbacks, returning the result.
-    ///
-    /// - Parameters:
-    ///   - line: The raw line from the stream
-    ///   - parser: An existing parser instance (for state tracking)
-    /// - Returns: The parse result
     static func processLine(_ line: String, parser: AnthropicStreamParser) -> AnthropicStreamResult {
         parser.processLine(line)
     }

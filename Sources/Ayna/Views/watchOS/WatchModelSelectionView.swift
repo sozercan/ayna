@@ -1,10 +1,4 @@
 #if os(watchOS)
-//
-    //  WatchModelSelectionView.swift
-    //  Ayna Watch App
-//
-    //  Created on 11/29/25.
-//
 
     #if os(watchOS)
 
@@ -23,7 +17,6 @@
                 self.conversationId = conversationId
             }
 
-            /// Filter models to only show those usable on watchOS
             private var watchUsableModels: [String] {
                 WatchLiveModelPolicy.usableModels(
                     availableModels: connectivityService.availableModels,
@@ -32,7 +25,6 @@
                 )
             }
 
-            /// Check if a model should show as selected
             private func isModelSelected(_ model: String) -> Bool {
                 if let conversationId,
                    let conversation = conversationStore.conversation(for: conversationId)
@@ -40,7 +32,6 @@
                     return conversation.model == model
                 }
 
-                // If only one model, it's always selected
                 if watchUsableModels.count == 1 {
                     return true
                 }
@@ -76,7 +67,6 @@
                 }
                 .navigationTitle("Models")
                 .onAppear {
-                    // Auto-select if only one model available
                     if WatchModelSelectionCoordinator.shouldAutoSelect(
                            availableModelCount: watchUsableModels.count,
                            conversationID: conversationId

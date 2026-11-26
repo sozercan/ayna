@@ -1,10 +1,5 @@
 import Foundation
 
-/// Groups already-visible chat messages into display rows.
-///
-/// Response-group rows are emitted at the first visible response's position and collect every
-/// later response with the same group id. This matches the chat views' previous display behavior
-/// without re-scanning the whole message list for every group.
 enum DisplayableMessageGrouper {
     enum Item: Identifiable {
         case message(Message)

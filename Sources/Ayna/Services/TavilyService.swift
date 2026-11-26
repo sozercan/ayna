@@ -1,23 +1,12 @@
-//
-//  TavilyService.swift
-//  Ayna
-//
-//  Service for Tavily Web Search API integration.
-//  Provides web search capabilities that models can invoke via function calling.
-//
-
 import Combine
 import Foundation
 import os.log
 
-/// Service for managing Tavily Web Search API integration
 @MainActor
 final class TavilyService: ObservableObject {
     typealias DataLoader = @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
     static let shared = TavilyService()
-
-    // MARK: - Constants
 
     private enum Constants {
         static let apiEndpoint = "https://api.tavily.com/search"
@@ -25,8 +14,6 @@ final class TavilyService: ObservableObject {
         static let defaultsEnabledKey = "tavily_web_search_enabled"
         static let toolName = "web_search"
     }
-
-    // MARK: - Published Properties
 
     @Published var apiKey: String {
         didSet {
@@ -40,24 +27,16 @@ final class TavilyService: ObservableObject {
         }
     }
 
-    // MARK: - Computed Properties
-
-    /// Whether the service is properly configured with an API key
     var isConfigured: Bool {
         !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// Whether web search is available (configured and enabled)
     var isAvailable: Bool {
         isConfigured && isEnabled
     }
 
-    // MARK: - Private Properties
-
     private let keychain: KeychainStoring
     private let dataLoader: DataLoader
-
-    // MARK: - Initialization
 
     convenience init(keychain: KeychainStoring? = nil, urlSession: URLSession = .shared) {
         self.init(keychain: keychain) { request in
@@ -70,10 +49,8 @@ final class TavilyService: ObservableObject {
         self.keychain = effectiveKeychain
         self.dataLoader = dataLoader
 
-        // Load saved API key
         apiKey = (try? effectiveKeychain.string(for: Constants.keychainAPIKey)) ?? ""
 
-        // Load enabled state
         isEnabled = UserDefaults.standard.bool(forKey: Constants.defaultsEnabledKey)
 
         log(.info, "🔍 TavilyService initialized", metadata: [
@@ -82,16 +59,6 @@ final class TavilyService: ObservableObject {
         ])
     }
 
-    // MARK: - Public Methods
-
-    /// Performs a web search using the Tavily API
-    /// - Parameters:
-    ///   - query: The search query
-    ///   - topic: Topic category (general, news, finance)
-    ///   - searchDepth: Search depth (basic or advanced)
-    ///   - maxResults: Maximum number of results (1-20)
-    ///   - includeAnswer: Whether to include AI-generated answer
-    /// - Returns: The search response
     func search(
         query: String,
         topic: TavilyTopic = .general,
@@ -153,7 +120,6 @@ final class TavilyService: ObservableObject {
                     ])
                     return searchResponse
                 } catch {
-                    // Log the raw response for debugging
                     let rawResponse = String(data: data, encoding: .utf8) ?? "<unable to decode>"
                     log(.error, "❌ Failed to decode Tavily response", metadata: [
                         "error": error.localizedDescription,
@@ -175,7 +141,6 @@ final class TavilyService: ObservableObject {
                 if NetworkCircuitBreaker.shouldRecordFailure(statusCode: httpResponse.statusCode) {
                     NetworkCircuitBreaker.recordFailure(key: circuitKey)
                 }
-                // Try to parse error message from response
                 let rawResponse = String(data: data, encoding: .utf8) ?? "<unable to decode>"
                 log(.error, "❌ Tavily API error", metadata: [
                     "statusCode": "\(httpResponse.statusCode)",
@@ -200,17 +165,11 @@ final class TavilyService: ObservableObject {
         }
     }
 
-    /// Executes a web search tool call and returns formatted results for the model
-    /// - Parameter arguments: Tool call arguments from the model
-    /// - Returns: Formatted search results string
     func executeToolCall(arguments: [String: Any]) async -> String {
         let (result, _) = await executeToolCallWithCitations(arguments: arguments)
         return result
     }
 
-    /// Executes a web search tool call and returns both formatted results and citations
-    /// - Parameter arguments: Tool call arguments from the model
-    /// - Returns: Tuple of (formatted search results string, citations for inline display)
     func executeToolCallWithCitations(arguments: [String: Any]) async -> (String, [CitationReference]) {
         guard let query = arguments["query"] as? String else {
             return ("Error: Missing 'query' parameter for web search", [])
@@ -251,7 +210,6 @@ final class TavilyService: ObservableObject {
         }
     }
 
-    /// Returns the OpenAI function tool definition for web search
     func toolDefinition() -> [String: Any] {
         [
             "type": "function",
@@ -283,12 +241,9 @@ final class TavilyService: ObservableObject {
         ]
     }
 
-    /// The tool name used in function calling
     static var toolName: String {
         Constants.toolName
     }
-
-    // MARK: - Private Methods
 
     private func saveAPIKey() {
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -304,8 +259,6 @@ final class TavilyService: ObservableObject {
         DiagnosticsLogger.log(.aiService, level: level, message: message, metadata: metadata)
     }
 }
-
-// MARK: - API Error Response
 
 private struct TavilyAPIError: Codable {
     let detail: TavilyErrorDetail?

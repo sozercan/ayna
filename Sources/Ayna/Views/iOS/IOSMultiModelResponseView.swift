@@ -1,24 +1,15 @@
 // swiftformat:options --ifdef no-indent
 #if os(iOS)
-//
-//  IOSMultiModelResponseView.swift
-//  ayna
-//
-//  Created on 11/25/25.
-//
 
 import Combine
 import SwiftUI
 
-/// A view that displays parallel responses from multiple AI models using a swipeable TabView.
-/// Users can compare responses and select one to continue the conversation.
 struct IOSMultiModelResponseView: View {
     let responseGroupId: UUID
     let responses: [Message]
     let conversation: Conversation
     var onSelectResponse: ((UUID) -> Void)?
     var onRetry: ((Message) -> Void)?
-    /// ID of the response that would be auto-selected if user continues without choosing
     var defaultCandidateId: UUID?
 
     @State private var selectedTab = 0
@@ -207,7 +198,6 @@ struct IOSMultiModelResponseView: View {
     }
 }
 
-/// Individual response card for iOS
 struct IOSMultiModelResponseCard: View {
     let message: Message
     let isSelected: Bool
@@ -244,7 +234,6 @@ struct IOSMultiModelResponseCard: View {
         responseStatus == .failed
     }
 
-    /// Whether this message is an image generation response
     private var isImageGeneration: Bool {
         message.mediaType == .image
     }
@@ -267,14 +256,12 @@ struct IOSMultiModelResponseCard: View {
             }
         }
         .onChange(of: message.imageData) { _, newImageData in
-            // Reload image when imageData changes
             if newImageData != nil {
                 decodedImage = nil
                 loadImageFromPath()
             }
         }
         .onChange(of: message.imagePath) { _, newPath in
-            // Reload image when imagePath changes
             if newPath != nil {
                 decodedImage = nil
                 loadImageFromPath()
@@ -284,7 +271,6 @@ struct IOSMultiModelResponseCard: View {
             let renderPlan = IOSMultiModelMarkdownRenderPlan(content: message.content)
             scheduleParse(for: renderPlan.deferredContent)
 
-            // Load image on appear if needed
             if isImageGeneration, decodedImage == nil {
                 loadImageFromPath()
             }
@@ -374,14 +360,12 @@ struct IOSMultiModelResponseCard: View {
     @ViewBuilder
     private var imageGenerationContent: some View {
         if let image = decodedImage {
-            // Image loaded successfully
             Image(uiImage: image)
                 .resizable()
                 .scaledToFit()
                 .frame(maxWidth: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.lg))
         } else if isStreaming {
-            // Still generating
             VStack(spacing: Spacing.md) {
                 ProgressView()
                     .scaleEffect(1.5)
@@ -394,7 +378,6 @@ struct IOSMultiModelResponseCard: View {
         } else if hasFailed {
             failedStateView
         } else {
-            // Completed but no image data (loading or error)
             VStack(spacing: Spacing.md) {
                 ProgressView()
                 Text("Loading image...")
@@ -442,7 +425,6 @@ struct IOSMultiModelResponseCard: View {
     }
 }
 
-/// iOS model selector for multi-model mode
 struct IOSMultiModelSelector: View {
     @Binding var selectedModels: Set<String>
     let availableModels: [String]
@@ -454,7 +436,6 @@ struct IOSMultiModelSelector: View {
         AppPreferences.multiModelSelectionEnabled
     }
 
-    /// Determines the capability type of currently selected models (if any)
     private var selectedCapabilityType: AIService.ModelCapability? {
         guard let firstSelected = selectedModels.first else { return nil }
         return aiService.getModelCapability(firstSelected)
@@ -492,7 +473,6 @@ struct IOSMultiModelSelector: View {
         let isModelSelected = selectedModels.contains(model)
         let modelCapability = aiService.getModelCapability(model)
 
-        // Disable if max reached OR if mixing capability types (only in multi-model mode)
         let isCapabilityMismatch: Bool = {
             guard let selectedType = selectedCapabilityType else { return false }
             return modelCapability != selectedType
@@ -508,7 +488,6 @@ struct IOSMultiModelSelector: View {
 
                 Spacer()
 
-                // Show capability badge for image gen models
                 if modelCapability == .imageGeneration {
                     Image(systemName: "photo")
                         .font(.caption)
@@ -525,7 +504,6 @@ struct IOSMultiModelSelector: View {
 
     private func toggleModel(_ model: String) {
         if !multiModelEnabled {
-            // Single-select mode: always replace selection
             if selectedModels != [model] {
                 HapticEngine.modelChanged()
             }
@@ -533,7 +511,6 @@ struct IOSMultiModelSelector: View {
             return
         }
 
-        // Multi-select mode
         if selectedModels.contains(model) {
             selectedModels.remove(model)
             HapticEngine.modelChanged()
@@ -543,8 +520,6 @@ struct IOSMultiModelSelector: View {
         }
     }
 }
-
-// MARK: - Previews
 
 #if DEBUG
 struct IOSMultiModelResponseView_Previews: PreviewProvider {

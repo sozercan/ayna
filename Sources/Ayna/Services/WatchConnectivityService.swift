@@ -118,11 +118,8 @@
                 publishConversationsToWatch(conversations, pageCycle: pageCycle)
             }
 
-            /// Loads message history for the most recent metadata-only conversations, then syncs
-            /// again so the Watch receives their bodies. Returns true while that load is pending.
             private func hydrateRecentBodiesBeforeSync() -> Bool {
                 guard bodyHydrationTask == nil else { return true }
-                // Only load histories when a publication can actually reach a Watch.
                 guard let session, session.isPaired, session.isWatchAppInstalled,
                       let conversationManager, conversationManager.isConversationStateAuthoritative
                 else {
@@ -139,7 +136,6 @@
                     for id in pendingIDs {
                         _ = await conversationManager.ensureConversationLoaded(id)
                         if conversationManager.durableSyncSnapshot().bodyUnavailableIDs.contains(id) {
-                            // Leave it manifest-only rather than retrying on every sync.
                             self?.bodyHydrationFailedIDs.insert(id)
                         }
                     }
@@ -537,7 +533,6 @@
                 guard conversationManager.pendingDestructivePersistenceOperations == 0 else {
                     return .retry(for: mutation)
                 }
-                // A delete removes the conversation by ID and needs no history.
                 let isDelete = mutation.fields.contains(.delete)
                 if !isDelete, await !hydrateBeforeWatchEdit(mutation.conversationID, in: conversationManager) {
                     return .retry(for: mutation)
@@ -570,8 +565,6 @@
                     }
 
                 case .deleted:
-                    // A metadata-only placeholder has no messages; it must never become the
-                    // rollback snapshot a failed delete writes back.
                     let deletion = if !conversationManager.isMetadataOnlyConversation(mutation.conversationID),
                                       let existing = conversationManager.conversations.first(where: {
                                           $0.id == mutation.conversationID

@@ -98,7 +98,6 @@ struct MCPServerManagerTests {
         await manager.connectToServer(config)
         primaryService.simulateUnexpectedTermination(error: "boom")
 
-        // Wait for reconnect
         for _ in 0 ..< 20 {
             if reconnectService.connectCallCount > 0 {
                 break
@@ -106,7 +105,6 @@ struct MCPServerManagerTests {
             try? await Task.sleep(for: .milliseconds(100))
         }
 
-        // Wait for state to update to connected since onConnect fires before state update
         for _ in 0 ..< 10 {
             if manager.getServerStatus(config.name)?.state == .connected {
                 break
@@ -148,7 +146,6 @@ struct MCPServerManagerTests {
 
         manager.updateServerConfig(updatedConfig)
 
-        // Wait for restart
         for _ in 0 ..< 20 {
             if restartedService.connectCallCount > 0 {
                 break
@@ -156,7 +153,6 @@ struct MCPServerManagerTests {
             try? await Task.sleep(for: .milliseconds(100))
         }
 
-        // Wait for connection to complete since factory is called before connection finishes
         let timeout = Date().addingTimeInterval(2.0)
         while Date() < timeout {
             if manager.getServerStatus(updatedConfig.name)?.state == .connected {

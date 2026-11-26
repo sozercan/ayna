@@ -1,55 +1,30 @@
-//
-//  WebSearchCoordinator.swift
-//  Ayna
-//
-//  Coordinates web search across providers (Tavily, DuckDuckGo).
-//  Routes to Tavily when configured, falls back to DuckDuckGo (no API key needed).
-//
-
 import Foundation
 import os.log
 
-/// Coordinates web search across providers.
-///
-/// - If Tavily is configured and enabled, uses Tavily (higher quality, AI answers).
-/// - Otherwise, uses DuckDuckGo (free, no API key required).
-/// - If the active provider fails, silently falls back to the other provider.
 @MainActor
 final class WebSearchCoordinator: ObservableObject {
     static let shared = WebSearchCoordinator()
 
-    // MARK: - Constants
-
     nonisolated static let toolName = "web_search"
-
-    // MARK: - Dependencies
 
     private let tavilyService: TavilyService
     private let ddgService: DuckDuckGoSearchService
 
-    // MARK: - Computed Properties
-
-    /// Web search is always available (DuckDuckGo requires no API key)
     var isAvailable: Bool {
         isEnabled
     }
 
-    /// Whether web search is enabled by the user
     var isEnabled: Bool {
         tavilyService.isEnabled
     }
 
-    /// Which provider will be used for the next search
     var activeProvider: WebSearchProvider {
         tavilyService.isConfigured ? .tavily : .duckDuckGo
     }
 
-    /// Whether Tavily is configured (for UI display)
     var isTavilyConfigured: Bool {
         tavilyService.isConfigured
     }
-
-    // MARK: - Initialization
 
     init(
         tavilyService: TavilyService? = nil,
@@ -59,10 +34,6 @@ final class WebSearchCoordinator: ObservableObject {
         self.ddgService = ddgService ?? .shared
     }
 
-    // MARK: - Tool Definition
-
-    /// Returns the OpenAI function tool definition for web search.
-    /// The definition is the same regardless of which provider is active.
     func toolDefinition() -> [String: Any] {
         [
             "type": "function",
@@ -94,15 +65,11 @@ final class WebSearchCoordinator: ObservableObject {
         ]
     }
 
-    // MARK: - Execution
-
-    /// Executes a web search tool call and returns formatted results
     func executeToolCall(arguments: [String: Any]) async -> String {
         let (result, _) = await executeToolCallWithCitations(arguments: arguments)
         return result
     }
 
-    /// Executes a web search tool call and returns both formatted results and citations
     func executeToolCallWithCitations(arguments: [String: Any]) async -> (String, [CitationReference]) {
         guard let query = arguments["query"] as? String else {
             return ("Error: Missing 'query' parameter for web search", [])
@@ -126,7 +93,6 @@ final class WebSearchCoordinator: ObservableObject {
             .basic
         }
 
-        // Try primary provider, then fallback
         let response: WebSearchResponse = if tavilyService.isConfigured {
             await searchWithTavilyFallbackToDDG(
                 query: query,
@@ -146,9 +112,6 @@ final class WebSearchCoordinator: ObservableObject {
         return (formattedResult, citations)
     }
 
-    // MARK: - Private Search Methods
-
-    /// Tries Tavily first, silently falls back to DuckDuckGo on failure
     private func searchWithTavilyFallbackToDDG(
         query: String,
         topic: TavilyTopic,
@@ -175,7 +138,6 @@ final class WebSearchCoordinator: ObservableObject {
         }
     }
 
-    /// Tries DuckDuckGo, returns error response on failure
     private func searchWithDDGFallbackToError(
         query: String,
         maxResults: Int
@@ -208,8 +170,6 @@ final class WebSearchCoordinator: ObservableObject {
             provider: provider
         )
     }
-
-    // MARK: - Logging
 
     private func log(_ level: OSLogType, _ message: String, metadata: [String: String] = [:]) {
         DiagnosticsLogger.log(.aiService, level: level, message: message, metadata: metadata)

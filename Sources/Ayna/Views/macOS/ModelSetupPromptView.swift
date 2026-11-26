@@ -1,11 +1,5 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  ModelSetupPromptView.swift
-//  ayna
-//
-//  Prompt view displayed when no AI models are configured.
-//
 
 import SwiftUI
 

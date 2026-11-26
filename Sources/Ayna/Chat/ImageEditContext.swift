@@ -1,21 +1,8 @@
-//
-//  ImageEditContext.swift
-//  ayna
-//
-//  Chooses the source images for an image-generation request.
-//
-
 import Foundation
 
-/// The images an image request edits instead of generating from scratch.
-///
-/// Images attached to the triggering user message take precedence. Without attachments,
-/// the most recent generated (or selected multi-model) image continues the edit chain.
 struct ImageEditContext: Equatable, Sendable {
     enum Origin: Equatable, Sendable {
-        /// Images the user attached to the prompt; failing to load them is an error.
         case attachments
-        /// The previous generated image; failing to load it falls back to generation.
         case previousImage
     }
 
@@ -29,7 +16,6 @@ struct ImageEditContext: Equatable, Sendable {
     let origin: Origin
     let references: [Reference]
 
-    /// Resolves edit sources for `userMessage`, defaulting to the conversation's latest user message.
     static func resolve(in conversation: Conversation, userMessage: Message? = nil) -> ImageEditContext? {
         let triggeringMessage = userMessage ?? conversation.messages.last(where: { $0.role == .user })
         let attachments = (triggeringMessage?.attachments ?? [])
@@ -57,7 +43,6 @@ struct ImageEditContext: Equatable, Sendable {
         )
     }
 
-    /// Loads every reference. Missing user attachments throw; a missing previous image yields no sources.
     func loadSourceImages(
         loadData: @Sendable (String) async -> Data?
     ) async throws -> [OpenAIImageService.SourceImage] {
@@ -72,7 +57,6 @@ struct ImageEditContext: Equatable, Sendable {
                 guard origin == .attachments else { return [] }
                 throw AynaError.fileOperationFailed(operation: "load", path: reference.fileName)
             }
-            // A previous image may be JPEG or WebP when GPT Image output format was changed.
             let mimeType = origin == .previousImage ? Self.sniffedImageMIMEType(data) ?? reference.mimeType : reference.mimeType
             sourceImages.append(OpenAIImageService.SourceImage(
                 data: data,

@@ -1,10 +1,3 @@
-//
-//  AppContentServiceTests.swift
-//  aynaTests
-//
-//  Tests for AppContentService
-//
-
 #if os(macOS)
     import AppKit
     @testable import Ayna
@@ -18,8 +11,6 @@
         init() {
             service = AppContentService.shared
         }
-
-        // MARK: - Extractor Selection Tests
 
         @Test("Terminal extractor handles Terminal app")
         func terminalExtractorHandlesTerminalApp() {
@@ -37,7 +28,7 @@
 
             #expect(extractor.canHandle(bundleIdentifier: "com.apple.dt.Xcode"))
             #expect(extractor.canHandle(bundleIdentifier: "com.microsoft.VSCode"))
-            #expect(extractor.canHandle(bundleIdentifier: "com.todesktop.230313mzl4w4u92")) // Cursor
+            #expect(extractor.canHandle(bundleIdentifier: "com.todesktop.230313mzl4w4u92"))
             #expect(!extractor.canHandle(bundleIdentifier: "com.apple.Terminal"))
         }
 
@@ -47,7 +38,7 @@
 
             #expect(extractor.canHandle(bundleIdentifier: "com.apple.Safari"))
             #expect(extractor.canHandle(bundleIdentifier: "com.google.Chrome"))
-            #expect(extractor.canHandle(bundleIdentifier: "company.thebrowser.Browser")) // Arc
+            #expect(extractor.canHandle(bundleIdentifier: "company.thebrowser.Browser"))
             #expect(extractor.canHandle(bundleIdentifier: "org.mozilla.firefox"))
             #expect(!extractor.canHandle(bundleIdentifier: "com.apple.dt.Xcode"))
         }
@@ -61,45 +52,33 @@
             #expect(extractor.canHandle(bundleIdentifier: ""))
         }
 
-        // MARK: - Permission Tests
-
         @Test("Extract content returns valid result")
         func extractContentReturnsValidResult() async {
-            // This test will vary based on whether accessibility is enabled
-            // We just verify it doesn't crash
             guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == "Finder" }) else {
-                // Skip test if Finder not running (use Issue.record instead of failing)
                 Issue.record("Finder not running - skipping test")
                 return
             }
 
             let result = await service.extractContent(from: app)
 
-            // Result should be one of the valid states
             switch result {
             case .success, .permissionDenied, .noContentAvailable, .extractionFailed:
-                break // Valid
+                break
             case .noFocusedApp:
                 Issue.record("Should not return noFocusedApp when app is provided")
             }
         }
 
-        // MARK: - Extract From Frontmost Tests
-
         @Test("Extract from frontmost app does not crash")
         func extractFromFrontmostAppDoesNotCrash() async {
-            // This test just verifies the method doesn't crash
             let result = await service.extractFromFrontmostApp()
 
-            // Should return some valid result
             switch result {
             case .success, .permissionDenied, .noFocusedApp, .noContentAvailable, .extractionFailed:
-                break // All are valid outcomes
+                break
             }
         }
     }
-
-    // MARK: - Individual Extractor Tests
 
     @Suite("TerminalExtractor Tests")
     @MainActor

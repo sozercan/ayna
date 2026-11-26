@@ -1,21 +1,10 @@
-//
-//  AnthropicRequestBuilder.swift
-//  ayna
-//
-//  Created on 1/30/26.
-//
-
 import Foundation
 import os
 
-/// Output-length defaults for Anthropic requests.
 enum AnthropicOutputLimits {
-    /// Streaming has no HTTP timeout pressure, so give the model room; non-streaming stays
-    /// small enough to finish within the request timeout.
     static let streamingDefault = 64000
     static let nonStreamingDefault = 16000
 
-    /// Shown at the end of a reply that stopped because it hit `max_tokens`.
     static let cutoffNotice = "\n\n*[Response cut off: the model reached its output limit.]*"
 
     static func defaultMaxTokens(model: String, stream: Bool) -> Int {
@@ -23,8 +12,6 @@ enum AnthropicOutputLimits {
         return min(requested, outputCap(for: model) ?? requested)
     }
 
-    /// Lower output caps of retired models that custom endpoints may still serve. Every model
-    /// on the Claude API today allows at least 64K output tokens.
     private static func outputCap(for model: String) -> Int? {
         let model = model.lowercased()
         if model.contains("claude-3-7") || model.contains("claude-3.7") { return 64000 }
@@ -39,7 +26,6 @@ enum AnthropicOutputLimits {
     }
 }
 
-/// Configuration for Anthropic API requests
 struct AnthropicRequestConfig: Sendable {
     let model: String
     let apiKey: String
@@ -63,39 +49,20 @@ struct AnthropicRequestConfig: Sendable {
         self.maxTokens = maxTokens
         self.budgetTokens = budgetTokens
         self.betaHeaders = betaHeaders
-        // Detect Azure endpoints by URL pattern
         isAzureEndpoint = customEndpoint?.contains(".azure.com") == true ||
             customEndpoint?.contains("azure.") == true
     }
 }
 
-/// Builder for constructing Anthropic API requests.
-///
-/// Handles:
-/// - Message format conversion (OpenAI -> Anthropic)
-/// - System prompt extraction
-/// - Tool conversion (function -> input_schema)
-/// - Image attachment conversion with validation
-/// - Required headers and authentication
 enum AnthropicRequestBuilder {
-    // MARK: - Constants
-
-    /// Maximum number of images per request
     static let maxImagesPerRequest = ChatDraftContent.maximumImageCount
 
-    /// Maximum image size in bytes (3.75 MB)
     static let maxImageSizeBytes = 3_932_160
 
-    /// Supported image MIME types
     static let supportedImageTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"]
 
-    /// Current stable API version
     static let apiVersion = "2023-06-01"
 
-    // MARK: - Public API
-
-    /// Create a configured URLRequest without performing attachment I/O or
-    /// JSON serialization on the caller's actor.
     static func createMessagesRequestAsync(
         url: URL,
         messages: [Message],
@@ -128,16 +95,6 @@ enum AnthropicRequestBuilder {
         }
     }
 
-    /// Create a configured URLRequest for the Anthropic Messages API.
-    ///
-    /// - Parameters:
-    ///   - url: The API endpoint URL
-    ///   - messages: Messages to include
-    ///   - config: Request configuration
-    ///   - stream: Whether to stream the response
-    ///   - tools: Optional tool definitions (OpenAI format)
-    /// - Returns: Configured URLRequest
-    /// - Throws: `AynaError` if validation fails
     static func createMessagesRequest(
         url: URL,
         messages: [Message],
@@ -166,36 +123,19 @@ enum AnthropicRequestBuilder {
         return request
     }
 
-    /// Configure request headers for Anthropic API.
-    ///
-    /// - Parameters:
-    ///   - request: The request to configure (inout)
-    ///   - config: Request configuration
     static func configureHeaders(_ request: inout URLRequest, config: AnthropicRequestConfig) {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        // Use x-api-key for all Anthropic endpoints (both standard and Azure Foundry)
-        // Both platforms require anthropic-version header
         request.setValue(config.apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue(apiVersion, forHTTPHeaderField: "anthropic-version")
 
-        // Add beta headers if any (only for non-Azure endpoints)
         if !config.betaHeaders.isEmpty, !config.isAzureEndpoint {
             let betaValue = config.betaHeaders.joined(separator: ",")
             request.setValue(betaValue, forHTTPHeaderField: "anthropic-beta")
         }
     }
 
-    /// Build the request body for the Messages API.
-    ///
-    /// - Parameters:
-    ///   - messages: Messages to include
-    ///   - config: Request configuration
-    ///   - stream: Whether to stream the response
-    ///   - tools: Optional tool definitions
-    /// - Returns: Dictionary suitable for JSON serialization
-    /// - Throws: `AynaError` if validation fails
     static func buildMessagesBody(
         messages: [Message],
         config: AnthropicRequestConfig,
@@ -203,7 +143,6 @@ enum AnthropicRequestBuilder {
         tools: [[String: Any]]?
     ) throws -> [String: Any] {
         try Task.checkCancellation()
-        // Extract system prompt and convert remaining messages
         let (systemPrompt, anthropicMessages) = try extractSystemAndConvertMessages(messages)
 
         var body: [String: Any] = [
@@ -213,12 +152,10 @@ enum AnthropicRequestBuilder {
             "stream": stream
         ]
 
-        // Add system prompt at top level if present
         if let system = systemPrompt, !system.isEmpty {
             body["system"] = system
         }
 
-        // Add extended thinking if budget_tokens is configured
         if let budgetTokens = config.budgetTokens, budgetTokens >= 1024 {
             body["thinking"] = [
                 "type": "enabled",
@@ -226,7 +163,6 @@ enum AnthropicRequestBuilder {
             ]
         }
 
-        // Convert and add tools if provided
         if let tools, !tools.isEmpty {
             try Task.checkCancellation()
             body["tools"] = convertToolsToAnthropicFormat(tools)
@@ -240,13 +176,6 @@ enum AnthropicRequestBuilder {
         return body
     }
 
-    // MARK: - Message Conversion
-
-    /// Extract system prompt and convert messages to Anthropic format.
-    ///
-    /// - Parameter messages: Original messages
-    /// - Returns: Tuple of (system prompt, converted messages)
-    /// - Throws: `AynaError` if validation fails
     static func extractSystemAndConvertMessages(
         _ messages: [Message]
     ) throws -> (systemPrompt: String?, messages: [[String: Any]]) {
@@ -255,7 +184,6 @@ enum AnthropicRequestBuilder {
         var anthropicMessages: [[String: Any]] = []
         var imageCount = 0
 
-        // Build a set of valid tool_call_ids that have matching tool responses
         var toolResponseIds = Set<String>()
         for message in sanitizedMessages {
             try Task.checkCancellation()
@@ -266,25 +194,20 @@ enum AnthropicRequestBuilder {
 
         for (index, message) in sanitizedMessages.enumerated() {
             try Task.checkCancellation()
-            // Extract system prompt (don't include in messages array)
             if message.role == .system {
                 if systemPrompt == nil {
                     systemPrompt = message.content
                 } else {
-                    // Concatenate multiple system messages
                     systemPrompt = (systemPrompt ?? "") + "\n\n" + message.content
                 }
                 continue
             }
 
-            // Handle tool result messages - convert to Anthropic's tool_result format
             if message.role == .tool {
                 guard let toolCallId = message.toolCalls?.first?.id else {
-                    // Skip tool messages without tool_call_id
                     continue
                 }
 
-                // Verify a preceding assistant message has matching tool_call
                 if index == 0 {
                     continue
                 }
@@ -299,16 +222,15 @@ enum AnthropicRequestBuilder {
                         }
                         break
                     } else if prevMessage.role == .tool {
-                        continue // Skip other tool messages in the sequence
+                        continue
                     } else {
                         break
                     }
                 }
                 if !foundAssistant {
                     continue
-                } // Skip orphaned tool message
+                }
 
-                // Convert to Anthropic tool_result format (user role with tool_result content)
                 let toolResultBlock = buildToolResultContent(
                     toolUseId: toolCallId,
                     content: message.content
@@ -327,12 +249,10 @@ enum AnthropicRequestBuilder {
                 continue
             }
 
-            // For assistant messages with tool_calls, filter to only those with matching tool responses
             if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
                 let validToolCalls = toolCalls.filter { toolResponseIds.contains($0.id) }
 
                 if validToolCalls.isEmpty {
-                    // No valid tool calls - add assistant without tool_calls
                     var modifiedMessage = message
                     modifiedMessage.toolCalls = nil
                     let (converted, msgImageCount) = try convertMessage(modifiedMessage)
@@ -345,7 +265,6 @@ enum AnthropicRequestBuilder {
                     anthropicMessages.append(converted)
                     continue
                 } else if validToolCalls.count < toolCalls.count {
-                    // Some tool calls are orphaned - keep only valid ones
                     var modifiedMessage = message
                     modifiedMessage.toolCalls = validToolCalls
                     let (converted, msgImageCount) = try convertMessage(modifiedMessage)
@@ -358,14 +277,11 @@ enum AnthropicRequestBuilder {
                     anthropicMessages.append(converted)
                     continue
                 }
-                // All tool calls have matching responses - fall through to normal conversion
             }
 
-            // Convert message
             let (converted, msgImageCount) = try convertMessage(message)
             imageCount += msgImageCount
 
-            // Validate image count
             if imageCount > maxImagesPerRequest {
                 throw AynaError.apiError(message: "Too many images: maximum \(maxImagesPerRequest) images per request")
             }
@@ -376,46 +292,34 @@ enum AnthropicRequestBuilder {
         return (systemPrompt, anthropicMessages)
     }
 
-    /// Convert a single message to Anthropic format.
-    ///
-    /// - Parameter message: Message to convert
-    /// - Returns: Tuple of (converted message, image count in this message)
-    /// - Throws: `AynaError` if validation fails
     static func convertMessage(_ message: Message) throws -> (converted: [String: Any], imageCount: Int) {
         try Task.checkCancellation()
         var payload: [String: Any] = [:]
         var imageCount = 0
 
-        // Map role
         let role = switch message.role {
         case .user:
             "user"
         case .assistant:
             "assistant"
         case .system, .tool:
-            // These should be handled elsewhere
             "user"
         }
         payload["role"] = role
 
-        // Check for attachments
         if let attachments = message.attachments, !attachments.isEmpty, message.role == .user {
-            // Build content array with text and images
             var contentArray: [[String: Any]] = []
 
-            // Add images first
             for attachment in attachments where attachment.mimeType.starts(with: "image/") {
                 try Task.checkCancellation()
                 guard let data = attachment.data else { continue }
 
-                // Validate image
                 let imageBlock = try validateAndBuildImageBlock(data: data, fileName: attachment.fileName)
                 try Task.checkCancellation()
                 contentArray.append(imageBlock)
                 imageCount += 1
             }
 
-            // Add text content
             if !message.content.isEmpty {
                 contentArray.append([
                     "type": "text",
@@ -425,15 +329,12 @@ enum AnthropicRequestBuilder {
 
             payload["content"] = contentArray
         } else {
-            // Simple text content
             payload["content"] = message.content
         }
 
-        // Handle assistant messages with tool calls
         if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
             var contentArray: [[String: Any]] = []
 
-            // Add text content if present
             if !message.content.isEmpty {
                 contentArray.append([
                     "type": "text",
@@ -441,7 +342,6 @@ enum AnthropicRequestBuilder {
                 ])
             }
 
-            // Add tool use blocks
             for toolCall in toolCalls {
                 try Task.checkCancellation()
                 var argumentsDict: [String: Any] = [:]
@@ -464,15 +364,6 @@ enum AnthropicRequestBuilder {
         return (payload, imageCount)
     }
 
-    // MARK: - Image Validation
-
-    /// Validate image data and build an Anthropic image content block.
-    ///
-    /// - Parameters:
-    ///   - data: Raw image data
-    ///   - fileName: Optional file name for error messages
-    /// - Returns: Image content block dictionary
-    /// - Throws: `AynaError` if validation fails
     static func validateAndBuildImageBlock(data: Data, fileName _: String?) throws -> [String: Any] {
         try Task.checkCancellation()
         if let validationError = imageValidationError(data: data) {
@@ -486,7 +377,6 @@ enum AnthropicRequestBuilder {
         let encodedData = data.base64EncodedString()
         try Task.checkCancellation()
 
-        // Build image block
         return [
             "type": "image",
             "source": [
@@ -508,31 +398,23 @@ enum AnthropicRequestBuilder {
         return nil
     }
 
-    /// Detect image media type from magic bytes.
-    ///
-    /// - Parameter data: Image data
-    /// - Returns: MIME type string or nil if not recognized
     static func detectImageMediaType(data: Data) -> String? {
         guard data.count >= 12 else { return nil }
 
         let bytes = [UInt8](data.prefix(12))
 
-        // JPEG: FF D8 FF
         if bytes[0] == 0xFF, bytes[1] == 0xD8, bytes[2] == 0xFF {
             return "image/jpeg"
         }
 
-        // PNG: 89 50 4E 47
         if bytes[0] == 0x89, bytes[1] == 0x50, bytes[2] == 0x4E, bytes[3] == 0x47 {
             return "image/png"
         }
 
-        // GIF: 47 49 46 38
         if bytes[0] == 0x47, bytes[1] == 0x49, bytes[2] == 0x46, bytes[3] == 0x38 {
             return "image/gif"
         }
 
-        // WebP: 52 49 46 46 ... 57 45 42 50 (RIFF....WEBP)
         if bytes[0] == 0x52, bytes[1] == 0x49, bytes[2] == 0x46, bytes[3] == 0x46,
            bytes[8] == 0x57, bytes[9] == 0x45, bytes[10] == 0x42, bytes[11] == 0x50
         {
@@ -542,15 +424,6 @@ enum AnthropicRequestBuilder {
         return nil
     }
 
-    // MARK: - Tool Conversion
-
-    /// Convert OpenAI tool format to Anthropic format.
-    ///
-    /// OpenAI: `{type: function, function: {name, description, parameters}}`
-    /// Anthropic: `{name, description, input_schema}`
-    ///
-    /// - Parameter tools: Tools in OpenAI format
-    /// - Returns: Tools in Anthropic format
     static func convertToolsToAnthropicFormat(_ tools: [[String: Any]]) -> [[String: Any]] {
         tools.compactMap { tool -> [String: Any]? in
             guard !Task.isCancelled else { return nil }
@@ -570,7 +443,6 @@ enum AnthropicRequestBuilder {
             if let parameters = function["parameters"] as? [String: Any] {
                 anthropicTool["input_schema"] = parameters
             } else {
-                // Default to empty object schema if no parameters
                 anthropicTool["input_schema"] = ["type": "object", "properties": [:]]
             }
 
@@ -578,15 +450,6 @@ enum AnthropicRequestBuilder {
         }
     }
 
-    // MARK: - Tool Result Building
-
-    /// Build a tool result message for continuing after tool execution.
-    ///
-    /// - Parameters:
-    ///   - toolUseId: The ID of the tool_use block being responded to
-    ///   - content: The tool execution result
-    ///   - isError: Whether the result represents an error
-    /// - Returns: Message content block for the tool result
     static func buildToolResultContent(
         toolUseId: String,
         content: String,

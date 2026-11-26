@@ -1,10 +1,3 @@
-//
-//  AppleIntelligenceService.swift
-//  ayna
-//
-//  Created on 11/6/25.
-//
-
 import Combine
 import Foundation
 import os.log
@@ -187,7 +180,6 @@ enum AppleIntelligenceError: LocalizedError {
 
         private init() {}
 
-        /// Check if Apple Intelligence is available on this device
         var isAvailable: Bool {
             model.isAvailable
         }
@@ -264,7 +256,6 @@ enum AppleIntelligenceError: LocalizedError {
             return entries
         }
 
-        /// Get or create a session for a conversation
         private func getSession(
             conversationId: String,
             systemInstructions: String,
@@ -285,7 +276,6 @@ enum AppleIntelligenceError: LocalizedError {
             return newSession
         }
 
-        /// Clear session for a conversation
         func clearSession(conversationId: String) {
             sessionsLock.lock()
             defer { sessionsLock.unlock() }
@@ -293,7 +283,6 @@ enum AppleIntelligenceError: LocalizedError {
             log("Cleared Apple Intelligence session", metadata: ["conversationId": conversationId])
         }
 
-        /// Clear all sessions
         func clearAllSessions() {
             sessionsLock.lock()
             defer { sessionsLock.unlock() }
@@ -301,7 +290,6 @@ enum AppleIntelligenceError: LocalizedError {
             log("Cleared all Apple Intelligence sessions")
         }
 
-        /// Stream response
         func streamResponse(
             request: AppleIntelligenceRequest,
             onChunk: @escaping @MainActor @Sendable (String) -> Void,
@@ -309,7 +297,6 @@ enum AppleIntelligenceError: LocalizedError {
             onError: @escaping @MainActor @Sendable (Error) -> Void
         ) async {
             guard !Task.isCancelled else { return }
-            // Check availability
             guard isAvailable else {
                 log(
                     "Apple Intelligence stream unavailable",
@@ -326,18 +313,15 @@ enum AppleIntelligenceError: LocalizedError {
 
             for attempt in 1 ... maxRetries {
                 guard !Task.isCancelled else { return }
-                // Get or create session
                 let session = getSession(
                     conversationId: request.conversationID,
                     systemInstructions: request.systemInstructions,
                     history: request.history
                 )
 
-                // Create generation options
                 let options = GenerationOptions(temperature: request.temperature)
 
                 do {
-                    // Stream the response
                     let stream = session.streamResponse(to: request.prompt, options: options)
 
                     var previousContent = ""
@@ -345,8 +329,6 @@ enum AppleIntelligenceError: LocalizedError {
 
                     for try await snapshot in stream {
                         try Task.checkCancellation()
-                        // snapshot.content contains the full response so far, not just the delta
-                        // Calculate the new text by comparing with previous content
                         let currentContent = snapshot.content
                         if currentContent.hasPrefix(previousContent) {
                             let delta = String(currentContent.dropFirst(previousContent.count))
@@ -355,7 +337,6 @@ enum AppleIntelligenceError: LocalizedError {
                                 hasReceivedContent = true
                             }
                         } else {
-                            // If content doesn't have expected prefix, send full content
                             onChunk(currentContent)
                             hasReceivedContent = true
                         }
@@ -413,14 +394,12 @@ enum AppleIntelligenceError: LocalizedError {
             }
         }
 
-        /// Non-streaming response
         func generateResponse(
             request: AppleIntelligenceRequest,
             onComplete: @escaping @MainActor @Sendable (String) -> Void,
             onError: @escaping @MainActor @Sendable (Error) -> Void
         ) async {
             guard !Task.isCancelled else { return }
-            // Check availability
             guard isAvailable else {
                 log(
                     "Apple Intelligence response unavailable",
@@ -433,18 +412,15 @@ enum AppleIntelligenceError: LocalizedError {
 
             log("Generating Apple Intelligence response", metadata: ["conversationId": request.conversationID])
 
-            // Get or create session
             let session = getSession(
                 conversationId: request.conversationID,
                 systemInstructions: request.systemInstructions,
                 history: request.history
             )
 
-            // Create generation options
             let options = GenerationOptions(temperature: request.temperature)
 
             do {
-                // Generate the response
                 let response = try await session.respond(to: request.prompt, options: options)
 
                 try Task.checkCancellation()

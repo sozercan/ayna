@@ -1,11 +1,5 @@
 // swiftformat:options --ifdef no-indent
 #if os(iOS)
-//
-//  IOSContentView.swift
-//  ayna
-//
-//  Created on 11/22/25.
-//
 
 import os.log
 import PhotosUI
@@ -36,7 +30,6 @@ struct IOSContentView: View {
             }
             .navigationSplitViewStyle(.balanced)
 
-            // Deep link error banner overlay
             if let errorMessage = deepLinkManager.errorMessage {
                 VStack {
                     ErrorBannerView(
@@ -51,7 +44,6 @@ struct IOSContentView: View {
                 .animation(.easeInOut(duration: 0.3), value: deepLinkManager.errorMessage)
             }
         }
-        // Add model confirmation alert (iOS style)
         .alert(
             "Add Model",
             isPresented: .init(
@@ -84,7 +76,6 @@ struct IOSContentView: View {
                 presentedAddModelRequest = deepLinkManager.pendingAddModel
             }
         }
-        // Process pending chat after add-model alert is dismissed (unified flow)
         .onChange(of: deepLinkManager.pendingAddModel) { oldValue, newValue in
             updatePresentedAddModel(from: oldValue, to: newValue)
             guard oldValue != nil, newValue == nil else { return }
@@ -151,7 +142,6 @@ struct IOSNewChatView: View {
     @StateObject private var viewModel = IOSChatViewModel.placeholder()
 
     @State private var isFileImporterPresented = false
-    /// Whether the streaming first reply keeps its newest text in view (see StreamingFollowScroll).
     @State private var followsLatest = true
     @State private var readingOffset: CGFloat = 0
     @State private var isAwayFromEnd = false
@@ -160,16 +150,13 @@ struct IOSNewChatView: View {
     @State private var showSettings = false
     @State private var showModelSelector = false
 
-    /// Cached displayable items to properly handle multi-model responses
     @State private var cachedDisplayableItems: [ChatTranscriptItem] = []
 
-    /// Get the pending conversation from the environment's conversation manager
     private var pendingConversation: Conversation? {
         guard let id = viewModel.conversationId else { return nil }
         return conversationManager.conversations.first { $0.id == id }
     }
 
-    /// Updates cached displayable items. Call when messages change or isGenerating changes.
     private func updateDisplayableItems() {
         guard let conversation = pendingConversation else {
             cachedDisplayableItems = []
@@ -193,7 +180,6 @@ struct IOSNewChatView: View {
     private var chatInterface: some View {
         VStack(spacing: 0) {
             if let conversation = pendingConversation {
-                // Show messages while generating (before navigating away)
                 ScrollViewReader { proxy in
                     ScrollView(.vertical, showsIndicators: true) {
                         LazyVStack(spacing: Spacing.messageSpacing) {
@@ -248,7 +234,6 @@ struct IOSNewChatView: View {
                     }
                     .accessibilityIdentifier(TestIdentifiers.ChatView.messagesList)
                     .defaultScrollAnchor(.bottom)
-                    // Tracks the reader's place so it survives the handoff.
                     .onScrollGeometryChange(for: CGFloat.self, of: TranscriptReadingPosition.offset) { _, offset in
                         readingOffset = offset
                     }
@@ -260,8 +245,6 @@ struct IOSNewChatView: View {
                         }
                     }
                     .onChange(of: conversation.updatedAt) {
-                        // Message content, tool metadata, citations, and response status can change
-                        // without changing the message count. Refresh copied display items for all.
                         updateDisplayableItems()
                     }
                     .onChange(of: conversation.messages.last?.content) {
@@ -278,7 +261,6 @@ struct IOSNewChatView: View {
                     }
                     .onChange(of: viewModel.isGenerating) { _, newValue in
                         updateDisplayableItems()
-                        // A new reply (a retry, or the next message) starts following again
                         if newValue, let lastId = conversation.messages.last?.id {
                             followsLatest = true
                             proxy.scrollTo(lastId, anchor: .bottom)
@@ -289,7 +271,6 @@ struct IOSNewChatView: View {
                     }
                 }
             } else {
-                // Empty state - welcome screen
                 welcomeView
             }
 
@@ -374,7 +355,6 @@ struct IOSNewChatView: View {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Done") {
                             showModelSelector = false
-                            // Update primary model if needed
                             if let first = viewModel.selectedModels.first, viewModel.selectedModels.count == 1 {
                                 viewModel.selectedModel = first
                                 aiService.selectedModel = first
@@ -386,18 +366,14 @@ struct IOSNewChatView: View {
             .presentationDetents([.medium])
         }
         .onAppear {
-            // Configure ViewModel with actual environment object
             viewModel.configure(with: conversationManager)
             viewModel.onConversationCreated = { conversationId in
-                // The conversation view replaces this one; a reader who scrolled up keeps
-                // their place there instead of being pulled to the end.
                 if !followsLatest {
                     TranscriptReadingPosition.handOver(readingOffset, in: conversationId)
                 }
                 conversationManager.selectedConversationId = conversationId
             }
 
-            // Reset state when this view appears (new chat requested)
             viewModel.resetForNewChat()
 
             DiagnosticsLogger.log(
@@ -410,8 +386,6 @@ struct IOSNewChatView: View {
             viewModel.cancelOwnedOperations()
         }
     }
-
-    // MARK: - Onboarding View
 
     private var onboardingView: some View {
         VStack(spacing: 24) {
@@ -453,8 +427,6 @@ struct IOSNewChatView: View {
         }
     }
 
-    // MARK: - Welcome View
-
     private var welcomeView: some View {
         VStack(spacing: 24) {
             Spacer()
@@ -479,8 +451,6 @@ struct IOSNewChatView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier(TestIdentifiers.ChatView.emptyState)
     }
-
-    // MARK: - Private Methods
 
     private func scrollToBottom(proxy: ScrollViewProxy, conversation: Conversation) {
         if let lastId = conversation.messages.last?.id {

@@ -19,7 +19,6 @@ extension AIServiceGlobalStateTests {
             defaults.synchronize()
             AppPreferences.use(defaults)
 
-            // Use in-memory keychain to avoid touching the real Keychain in tests
             AIService.keychain = InMemoryKeychainStorage()
             MockURLProtocol.reset()
         }
@@ -706,7 +705,6 @@ extension AIServiceGlobalStateTests {
                     onReasoning: nil
                 )
 
-                // Give time for async callback
                 try? await Task.sleep(for: .milliseconds(100))
             }
         }
@@ -751,7 +749,6 @@ extension AIServiceGlobalStateTests {
                     onReasoning: nil
                 )
 
-                // Give time for async callback
                 try? await Task.sleep(for: .milliseconds(500))
             }
 
@@ -833,7 +830,6 @@ extension AIServiceGlobalStateTests {
                     onReasoning: nil
                 )
 
-                // Give time for async callback
                 try? await Task.sleep(for: .milliseconds(500))
             }
         }
@@ -966,8 +962,6 @@ extension AIServiceGlobalStateTests {
             #expect(!completedMulti.isCancelled)
         }
 
-        // MARK: - Anthropic Integration Tests
-
         private func makeAnthropicService() -> AIService {
             let config = URLSessionConfiguration.ephemeral
             config.protocolClasses = [MockURLProtocol.self]
@@ -1034,7 +1028,6 @@ extension AIServiceGlobalStateTests {
                 try? await Task.sleep(for: .milliseconds(500))
             }
 
-            // Verify request went to Anthropic endpoint
             if let request = capturedRequest {
                 #expect(request.url?.host == "api.anthropic.com")
                 #expect(request.url?.path == "/v1/messages")

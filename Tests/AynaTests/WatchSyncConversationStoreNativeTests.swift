@@ -57,7 +57,6 @@
             var draft = conversation
             draft.messages.append(makeMessage(role: .assistant, content: "Par", model: conversation.model))
             fixture.store.syncDraft(draft)
-            // While streaming, the conversation is already the current one.
             _ = fixture.store.conversation(for: conversation.id)
 
             draft.messages[draft.messages.count - 1].content = "Partial reply"

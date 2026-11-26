@@ -1,65 +1,44 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  SpotlightInputView.swift
-//  ayna
-//
-//  Spotlight-style floating command bar for quick AI queries.
-//
 
 #if os(macOS)
 import SwiftUI
 
-/// State of the Spotlight input panel
 enum SpotlightPanelState {
-    case quickChat // No context attached
-    case pickingWindow // Window picker is expanded
-    case withContext // Context attached, picker collapsed
-    case previewExpanded // Context attached, preview expanded
+    case quickChat
+    case pickingWindow
+    case withContext
+    case previewExpanded
 }
 
-/// The main Spotlight-style input view
 struct SpotlightInputView: View {
-    /// Callback when user submits a question
     let onSubmit: (String, AppContentResult?) -> Void
 
-    /// Callback to dismiss the panel
     let onDismiss: () -> Void
 
-    /// State of the panel
     @State private var panelState: SpotlightPanelState = .quickChat
 
-    /// The user's question input
     @State private var userQuestion: String = ""
 
-    /// Attached content (if any)
     @State private var attachedContent: AppContentResult?
 
-    /// Selected window info
     @State private var selectedWindow: AccessibilityService.WindowInfo?
 
-    /// Available windows grouped by app
     @State private var windowGroups: [AccessibilityService.AppWindowGroup] = []
 
-    /// Expanded apps in the picker
     @State private var expandedApps: Set<String> = []
 
-    /// Loading state for content extraction
     @State private var isExtracting: Bool = false
     @State private var extractionTask: Task<Void, Never>?
 
-    /// Focus state for the text field
     @FocusState private var isTextFieldFocused: Bool
 
-    /// Error message to display
     @State private var errorMessage: String?
 
-    /// Whether accessibility is enabled
     @State private var hasAccessibilityPermission: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
-            // Error banner
             if let error = errorMessage {
                 HStack(spacing: Spacing.sm) {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -82,10 +61,8 @@ struct SpotlightInputView: View {
                 .background(Color.orange.opacity(0.1))
             }
 
-            // Input field
             inputField
 
-            // Context area (picker or attached content)
             contextArea
         }
         .frame(width: 600)
@@ -95,7 +72,6 @@ struct SpotlightInputView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
         .onAppear {
-            // Delay focus slightly to ensure panel is ready
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(100))
                 isTextFieldFocused = true
@@ -107,16 +83,12 @@ struct SpotlightInputView: View {
         }
     }
 
-    // MARK: - Input Field
-
     private var inputField: some View {
         HStack(spacing: Spacing.sm) {
-            // Search icon
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(Theme.textSecondary)
 
-            // Text field
             TextField(placeholderText, text: $userQuestion)
                 .textFieldStyle(.plain)
                 .font(.system(size: 17))
@@ -125,7 +97,6 @@ struct SpotlightInputView: View {
                     submitQuestion()
                 }
 
-            // Send hint
             if !userQuestion.isEmpty {
                 Text("⏎")
                     .font(.system(size: 12, weight: .medium))
@@ -153,8 +124,6 @@ struct SpotlightInputView: View {
         }
     }
 
-    // MARK: - Context Area
-
     @ViewBuilder
     private var contextArea: some View {
         switch panelState {
@@ -169,11 +138,8 @@ struct SpotlightInputView: View {
         }
     }
 
-    // MARK: - Attach Button
-
     private var attachButton: some View {
         Button {
-            // Check/prompt for accessibility permission when user clicks attach
             let hasPermission = AccessibilityService.shared.checkPermission(prompt: true)
             hasAccessibilityPermission = hasPermission
 
@@ -181,7 +147,6 @@ struct SpotlightInputView: View {
                 panelState = .pickingWindow
             }
 
-            // Load windows (will show appropriate UI based on permission)
             if hasPermission {
                 loadWindows()
             } else {
@@ -205,11 +170,8 @@ struct SpotlightInputView: View {
         .background(Theme.backgroundSecondary.opacity(0.5))
     }
 
-    // MARK: - Window Picker
-
     private var windowPicker: some View {
         VStack(spacing: 0) {
-            // Header
             HStack {
                 Text("Working with")
                     .font(.system(size: 12, weight: .medium))
@@ -236,7 +198,6 @@ struct SpotlightInputView: View {
 
             Divider()
 
-            // Window list
             if windowGroups.isEmpty {
                 emptyWindowsView
             } else {
@@ -255,7 +216,6 @@ struct SpotlightInputView: View {
 
     private func appGroupRow(_ group: AccessibilityService.AppWindowGroup) -> some View {
         VStack(spacing: 0) {
-            // App header row
             Button {
                 withAnimation(.easeOut(duration: 0.15)) {
                     if expandedApps.contains(group.id) {
@@ -266,7 +226,6 @@ struct SpotlightInputView: View {
                 }
             } label: {
                 HStack(spacing: Spacing.sm) {
-                    // App icon
                     if let icon = group.appIcon {
                         Image(nsImage: icon)
                             .resizable()
@@ -278,14 +237,12 @@ struct SpotlightInputView: View {
                             .foregroundStyle(Theme.textSecondary)
                     }
 
-                    // App name
                     Text(group.appName)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Theme.textPrimary)
 
                     Spacer()
 
-                    // Expand indicator
                     Image(systemName: expandedApps.contains(group.id) ? "chevron.down" : "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Theme.textTertiary)
@@ -302,7 +259,6 @@ struct SpotlightInputView: View {
             .buttonStyle(.plain)
             .frame(minHeight: 32)
 
-            // Windows (when expanded)
             if expandedApps.contains(group.id) {
                 ForEach(group.windows) { window in
                     windowRow(window)
@@ -316,7 +272,6 @@ struct SpotlightInputView: View {
             selectWindow(window)
         } label: {
             HStack(spacing: Spacing.sm) {
-                // Indent + icon
                 Rectangle()
                     .fill(Color.clear)
                     .frame(width: 20)
@@ -326,7 +281,6 @@ struct SpotlightInputView: View {
                     .foregroundStyle(Theme.textTertiary)
                     .frame(width: 16)
 
-                // Window title
                 Text(window.title)
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.textPrimary)
@@ -353,7 +307,6 @@ struct SpotlightInputView: View {
     private var emptyWindowsView: some View {
         VStack(spacing: Spacing.sm) {
             if !hasAccessibilityPermission {
-                // No accessibility permission
                 Image(systemName: "lock.shield")
                     .font(.system(size: 24))
                     .foregroundStyle(Theme.textTertiary)
@@ -373,7 +326,6 @@ struct SpotlightInputView: View {
                 .controlSize(.small)
                 .padding(.top, Spacing.xs)
             } else {
-                // Has permission but no windows
                 Image(systemName: "macwindow")
                     .font(.system(size: 24))
                     .foregroundStyle(Theme.textTertiary)
@@ -391,13 +343,10 @@ struct SpotlightInputView: View {
         .padding(.vertical, Spacing.xl)
     }
 
-    // MARK: - Attached Context Bar
-
     @ViewBuilder
     private var attachedContextBar: some View {
         if let content = attachedContent?.content {
             HStack(spacing: Spacing.sm) {
-                // App icon
                 if let icon = content.appIcon {
                     Image(nsImage: icon)
                         .resizable()
@@ -409,7 +358,6 @@ struct SpotlightInputView: View {
                         .foregroundStyle(Theme.textSecondary)
                 }
 
-                // App name and window
                 Text(content.appName)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.textPrimary)
@@ -426,7 +374,6 @@ struct SpotlightInputView: View {
 
                 Spacer()
 
-                // Expand button
                 Button {
                     withAnimation(.easeOut(duration: 0.2)) {
                         panelState = .previewExpanded
@@ -438,7 +385,6 @@ struct SpotlightInputView: View {
                 }
                 .buttonStyle(.plain)
 
-                // Remove button
                 Button {
                     removeContext()
                 } label: {
@@ -454,15 +400,11 @@ struct SpotlightInputView: View {
         }
     }
 
-    // MARK: - Attached Context with Preview
-
     @ViewBuilder
     private var attachedContextWithPreview: some View {
         if let content = attachedContent?.content {
             VStack(spacing: 0) {
-                // Header bar
                 HStack(spacing: Spacing.sm) {
-                    // App icon
                     if let icon = content.appIcon {
                         Image(nsImage: icon)
                             .resizable()
@@ -485,7 +427,6 @@ struct SpotlightInputView: View {
 
                     Spacer()
 
-                    // Collapse button
                     Button {
                         withAnimation(.easeOut(duration: 0.2)) {
                             panelState = .withContext
@@ -497,7 +438,6 @@ struct SpotlightInputView: View {
                     }
                     .buttonStyle(.plain)
 
-                    // Remove button
                     Button {
                         removeContext()
                     } label: {
@@ -511,7 +451,6 @@ struct SpotlightInputView: View {
                 .padding(.vertical, Spacing.sm)
                 .background(Theme.backgroundSecondary.opacity(0.5))
 
-                // Content preview
                 ScrollView {
                     Text(content.forPreview.content)
                         .font(.system(size: 11, design: .monospaced))
@@ -525,8 +464,6 @@ struct SpotlightInputView: View {
             }
         }
     }
-
-    // MARK: - Actions
 
     private func checkAccessibilityAndLoadWindows() {
         hasAccessibilityPermission = AccessibilityService.shared.checkPermission(prompt: false)
@@ -556,7 +493,6 @@ struct SpotlightInputView: View {
             ]
         )
 
-        // Auto-expand first app with windows
         if let firstGroup = windowGroups.first {
             expandedApps.insert(firstGroup.id)
         }
@@ -573,7 +509,6 @@ struct SpotlightInputView: View {
             await MainActor.run {
                 isExtracting = false
 
-                // Handle extraction result
                 switch result {
                 case .success:
                     attachedContent = result
@@ -608,8 +543,6 @@ struct SpotlightInputView: View {
     }
 }
 
-// MARK: - Visual Effect Blur
-
 struct VisualEffectBlur: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     let blendingMode: NSVisualEffectView.BlendingMode
@@ -627,8 +560,6 @@ struct VisualEffectBlur: NSViewRepresentable {
         nsView.blendingMode = blendingMode
     }
 }
-
-// MARK: - Preview
 
 #Preview("Quick Chat") {
     SpotlightInputView(

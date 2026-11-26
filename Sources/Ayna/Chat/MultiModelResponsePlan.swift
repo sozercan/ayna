@@ -1,13 +1,5 @@
-//
-//  MultiModelResponsePlan.swift
-//  ayna
-//
-//  Plans the placeholder messages and response group for a multi-model turn.
-//
-
 import Foundation
 
-/// Immutable setup for a multi-model response turn.
 struct MultiModelResponsePlan: Equatable, Sendable {
     let responseGroup: ResponseGroup
     let placeholderMessages: [Message]
@@ -59,7 +51,6 @@ struct MultiModelResponsePlan: Equatable, Sendable {
     }
 }
 
-/// Pure text-display state shared by multi-model response cards.
 struct MultiModelResponseContentPlan: Equatable, Sendable {
     let reasoning: String?
     let showsTypingIndicator: Bool

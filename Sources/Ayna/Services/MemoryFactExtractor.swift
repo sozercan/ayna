@@ -1,29 +1,15 @@
-//
-//  MemoryFactExtractor.swift
-//  Ayna
-//
-//  Opt-in extraction of durable facts about the user from their conversations.
-//
-
 import Foundation
 
-/// Reads what the user said in a conversation once it goes quiet and stores durable facts
-/// about them (preferences, background, ongoing projects) as inferred memory.
-///
-/// Apple Intelligence is used when it is available, so nothing leaves the device; otherwise the
-/// conversation's own model, which already received these messages, does the extraction.
 @MainActor
 final class MemoryFactExtractor {
     typealias Generate = @MainActor (_ prompt: String, _ conversationModel: String) async throws -> String
 
     static let shared = MemoryFactExtractor()
 
-    /// Quiet period after the last save before a conversation is examined.
     static let defaultIdleDelay: Duration = .seconds(60)
     static let maximumFactsPerPass = 3
     static let maximumFactLength = 200
     private static let maximumPromptCharacters = 3000
-    /// Known facts listed in the prompt; deduplication still checks every fact.
     private static let maximumKnownFactCharacters = 1500
 
     private let idleDelay: Duration
@@ -31,7 +17,6 @@ final class MemoryFactExtractor {
     private let existingFacts: @MainActor () -> [UserMemoryFact]
     private let storeFact: @MainActor (String) -> Void
     private var idleTasks: [UUID: Task<Void, Never>] = [:]
-    /// User messages already examined, per conversation, so each is read once per launch.
     private var examinedMessageIDs: [UUID: Set<UUID>] = [:]
 
     init(
@@ -46,7 +31,6 @@ final class MemoryFactExtractor {
         self.storeFact = storeFact ?? { _ = UserMemoryService.shared.addFact($0, source: .inferred) }
     }
 
-    /// Restarts the quiet-period timer for a conversation that was just saved.
     func conversationDidSave(_ conversation: Conversation) {
         idleTasks[conversation.id]?.cancel()
         let idleDelay = idleDelay
@@ -57,7 +41,6 @@ final class MemoryFactExtractor {
                 return
             }
             await self?.extract(from: conversation)
-            // A replacement timer may already sit in this slot; only the current task clears it.
             guard !Task.isCancelled else { return }
             self?.idleTasks[conversation.id] = nil
         }
@@ -73,7 +56,6 @@ final class MemoryFactExtractor {
         idleTasks.removeAll()
     }
 
-    /// Examines the conversation's not-yet-examined user messages and stores new facts.
     func extract(from conversation: Conversation) async {
         guard AIService.shared.getModelCapability(conversation.model) != .imageGeneration else { return }
         let examined = examinedMessageIDs[conversation.id, default: []]
@@ -98,12 +80,9 @@ final class MemoryFactExtractor {
             )
             return
         }
-        // Cancelled while generating (conversation deleted, memory cleared, extraction off).
         guard !Task.isCancelled else { return }
-        // Only messages that made it into the prompt count as read; the rest go in a later pass.
         examinedMessageIDs[conversation.id, default: []].formUnion(request.includedMessageIDs)
 
-        // Facts may have changed while the model was answering (another pass, manual edits).
         let known = existingFacts().map(\.content)
         var stored: [String] = []
         for fact in Self.parseFacts(response) where !Self.isDuplicate(fact, of: known + stored) {
@@ -120,8 +99,6 @@ final class MemoryFactExtractor {
         }
     }
 
-    // MARK: - Prompt and parsing
-
     static let instructions = """
     You extract durable facts about a user from messages they wrote to an assistant. \
     A durable fact stays true for months: their name, job, location, tools they use, lasting \
@@ -129,7 +106,6 @@ final class MemoryFactExtractor {
     people. Never include secrets such as passwords, keys, or financial or health details.
     """
 
-    /// Builds the prompt from the newest messages that fit, truncating one that alone is too long.
     static func prompt(
         userMessages: [Message],
         existingFacts: [String]
@@ -146,7 +122,6 @@ final class MemoryFactExtractor {
             messages = entry + messages
             included.append(message.id)
         }
-        // Bounded so a long fact list cannot push the request past a small on-device context.
         var knownLines: [String] = []
         var knownLength = 0
         for fact in existingFacts {
@@ -170,7 +145,6 @@ final class MemoryFactExtractor {
         return (prompt, included)
     }
 
-    /// Reads the JSON array from a reply, tolerating surrounding text or a code fence.
     static func parseFacts(_ response: String) -> [String] {
         guard let start = response.firstIndex(of: "["),
               let end = response.lastIndex(of: "]"),
@@ -198,8 +172,6 @@ final class MemoryFactExtractor {
             return overlap > 0.6
         }
     }
-
-    // MARK: - Generation
 
     private static func defaultGenerate(prompt: String, conversationModel: String) async throws -> String {
         #if canImport(FoundationModels) && !os(watchOS)
@@ -254,14 +226,12 @@ final class MemoryFactExtractor {
                 )
             }
         } onCancel: {
-            // Stop the remote request and resume the caller, which then stores nothing.
             Task { @MainActor in reply.request?.cancel() }
             reply.finish(CancellationError())
         }
     }
 }
 
-/// Collects one reply and resumes its continuation exactly once.
 private final class ExtractionReply: @unchecked Sendable {
     private let lock = NSLock()
     private var text = ""

@@ -1,10 +1,4 @@
 #if os(macOS)
-//
-    //  MacSidebarView.swift
-    //  ayna
-//
-    //  Created on 11/2/25.
-//
 
     import Combine
     import SwiftUI
@@ -39,12 +33,9 @@
                 return
             }
 
-            // Publish fast in-memory matches immediately while the bounded full-text
-            // cache checks metadata-only conversations in the background.
             searchResults = conversationManager.searchConversations(query: query)
 
             searchTask = Task {
-                // Debounce
                 try? await Task.sleep(for: .milliseconds(300))
                 guard !Task.isCancelled else { return }
 
@@ -61,7 +52,6 @@
 
         var body: some View {
             VStack(spacing: 0) {
-                // Search Box - iMessage style with liquid glass on macOS 26+
                 HStack(spacing: Spacing.sm) {
                     Button {
                         isSearchFieldFocused = true
@@ -115,7 +105,6 @@
                     }
                 }
 
-                // Conversation List
                 if filteredConversations.isEmpty {
                     VStack(spacing: Spacing.md) {
                         Spacer()
@@ -138,10 +127,9 @@
                                     VStack(spacing: 0) {
                                         ConversationRow(conversation: conversation)
 
-                                        // Add divider between conversations (not after the last one in section)
                                         if index < section.conversations.count - 1 {
                                             Divider()
-                                                .padding(.leading, 64) // Align with text, past the avatar (44 + 12 + 8)
+                                                .padding(.leading, 64)
                                         }
                                     }
                                     .tag(conversation.id)
@@ -188,7 +176,6 @@
                     .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationList)
                     .scrollContentBackground(.hidden)
                     .onChange(of: selectedConversations) { _, newSelection in
-                        // Keep single selection in sync for chat view
                         if let firstId = newSelection.first, newSelection.count == 1 {
                             selectedConversationId = firstId
                         }
@@ -196,7 +183,6 @@
                     .onDeleteCommand(perform: handleDeleteCommand)
                 }
             }
-            // Apply translucent background - on macOS 26+ use clear for glass effects, otherwise material
             .modifier(SidebarBackgroundStyle())
             .onReceive(NotificationCenter.default.publisher(for: .newConversationRequested)) { _ in
                 selectedConversationId = nil
@@ -270,7 +256,6 @@
             }
         }
 
-        /// Generate a consistent color based on conversation ID for unique avatars
         private var avatarColor: Color {
             let hash = conversation.id.hashValue
             let hue = Double(abs(hash) % 360) / 360.0
@@ -279,7 +264,6 @@
 
         var body: some View {
             HStack(spacing: Spacing.md) {
-                // Avatar - unique color per conversation based on ID hash
                 Circle()
                     .fill(
                         LinearGradient(
@@ -305,7 +289,6 @@
                     }
 
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
-                    // Title row with timestamp
                     HStack {
                         Text(conversation.title)
                             .font(Typography.body.weight(.semibold))
@@ -317,7 +300,6 @@
                             .foregroundStyle(Theme.textSecondary)
                     }
 
-                    // Message preview
                     Text(lastMessagePreview)
                         .font(Typography.caption)
                         .foregroundStyle(Theme.textSecondary)
@@ -331,10 +313,6 @@
         }
     }
 
-    // MARK: - iMessage Style Modifiers
-
-    /// A view modifier that applies appropriate background for the sidebar
-    /// Uses clear background on macOS 26+ to allow glass effects, falls back to material on earlier versions
     private struct SidebarBackgroundStyle: ViewModifier {
         func body(content: Content) -> some View {
             if #available(macOS 26.0, *) {
@@ -347,8 +325,6 @@
         }
     }
 
-    /// A view modifier that applies iMessage-style capsule background for the search bar
-    /// Uses glassEffect on macOS 26+, falls back to material fill on earlier versions
     private struct IMessageSearchBarStyle: ViewModifier {
         func body(content: Content) -> some View {
             #if compiler(>=6.2)

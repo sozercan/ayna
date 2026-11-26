@@ -1,11 +1,5 @@
 // swiftformat:options --ifdef no-indent
 #if os(iOS)
-//
-//  IOSSettingsView.swift
-//  ayna
-//
-//  Created on 11/22/25.
-//
 
 import os.log
 import SwiftUI
@@ -51,8 +45,6 @@ struct IOSSettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                // MARK: - General
-
                 Section("General") {
                     Toggle("Auto-Generate Titles", isOn: $autoGenerateTitle)
                         .accessibilityIdentifier(TestIdentifiers.Settings.autoGenerateTitleToggle)
@@ -90,8 +82,6 @@ struct IOSSettingsView: View {
                     .accessibilityIdentifier(TestIdentifiers.Settings.clearConversationsButton)
                 }
 
-                // MARK: - Tools
-
                 Section("Tools") {
                     NavigationLink {
                         IOSToolsSettingsView()
@@ -107,8 +97,6 @@ struct IOSSettingsView: View {
                     .accessibilityIdentifier("settings.tools.link")
                 }
 
-                // MARK: - Memory
-
                 Section("Memory") {
                     NavigationLink {
                         IOSMemorySettingsView()
@@ -123,8 +111,6 @@ struct IOSSettingsView: View {
                     }
                     .accessibilityIdentifier("settings.memory.link")
                 }
-
-                // MARK: - Models
 
                 Section("Models") {
                     ForEach(aiService.customModels, id: \.self) { model in
@@ -244,7 +230,6 @@ struct IOSSettingsView: View {
             aiService.modelAPIKeys.removeValue(forKey: model)
             aiService.modelEndpointTypes.removeValue(forKey: model)
 
-            // If we removed the selected model, select the first available one
             if aiService.selectedModel == model, let first = aiService.customModels.first {
                 aiService.selectedModel = first
             }
@@ -252,7 +237,6 @@ struct IOSSettingsView: View {
     }
 
     private func duplicateModel(_ model: String) {
-        // Generate a unique name by appending "Copy" or "Copy N"
         var newName = "\(model) Copy"
         var copyNumber = 2
         while aiService.customModels.contains(newName) {
@@ -267,10 +251,8 @@ struct IOSSettingsView: View {
             metadata: ["original": model, "duplicate": newName]
         )
 
-        // Add the new model
         aiService.customModels.append(newName)
 
-        // Copy all settings from the original model
         if let provider = aiService.modelProviders[model] {
             aiService.modelProviders[newName] = provider
         }
@@ -517,7 +499,6 @@ struct IOSModelEditView: View {
             }
             aiService.customModels.append(trimmedName)
         } else if isRename {
-            // Check if new name already exists
             if aiService.customModels.contains(trimmedName) {
                 DiagnosticsLogger.log(
                     .aiService,
@@ -528,18 +509,15 @@ struct IOSModelEditView: View {
                 return
             }
 
-            // Update the model list: replace old name with new name
             if let index = aiService.customModels.firstIndex(of: originalModelName) {
                 aiService.customModels[index] = trimmedName
             }
 
-            // Remove old model settings
             aiService.modelProviders.removeValue(forKey: originalModelName)
             aiService.modelAPIKeys.removeValue(forKey: originalModelName)
             aiService.modelEndpoints.removeValue(forKey: originalModelName)
             aiService.modelEndpointTypes.removeValue(forKey: originalModelName)
 
-            // Update selected model if it was the renamed one
             if aiService.selectedModel == originalModelName {
                 aiService.selectedModel = trimmedName
             }
@@ -564,25 +542,19 @@ struct IOSModelEditView: View {
             }
         }
 
-        // If this is the first model, select it
         if aiService.customModels.count == 1 {
             aiService.selectedModel = trimmedName
         }
     }
 }
 
-// MARK: - Tools Settings View
-
-/// iOS view for managing tools (Web Search, Web Fetch)
 struct IOSToolsSettingsView: View {
     @ObservedObject private var tavilyService = TavilyService.shared
     @State private var webFetchEnabled = WebFetchService.shared.isEnabled
 
     var body: some View {
         Form {
-            // Built-in Tools
             Section {
-                // Web Fetch Tool
                 HStack {
                     Image(systemName: "link")
                         .font(Typography.title2)
@@ -615,7 +587,6 @@ struct IOSToolsSettingsView: View {
                         }
                 }
 
-                // Web Search Tool
                 HStack {
                     Image(systemName: "globe")
                         .font(Typography.title2)
@@ -650,7 +621,6 @@ struct IOSToolsSettingsView: View {
                 Text("Tools extend the capabilities of AI models by allowing them to access external data and services.")
             }
 
-            // Web Search Configuration
             if tavilyService.isEnabled {
                 Section {
                     HStack {
@@ -680,7 +650,6 @@ struct IOSToolsSettingsView: View {
     }
 }
 
-/// iOS settings section for Tavily Web Search configuration (legacy, kept for reference)
 struct IOSWebSearchSettingsSection: View {
     @ObservedObject private var tavilyService = TavilyService.shared
 

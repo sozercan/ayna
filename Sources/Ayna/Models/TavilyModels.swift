@@ -1,30 +1,16 @@
-//
-//  TavilyModels.swift
-//  Ayna
-//
-//  Models for Tavily Web Search API integration.
-//
-
 import Foundation
 
-// MARK: - Enums
-
-/// Topic category for search queries
 enum TavilyTopic: String, Codable, CaseIterable, Sendable {
     case general
     case news
     case finance
 }
 
-/// Search depth affects result quality and API credits used
 enum TavilySearchDepth: String, Codable, CaseIterable, Sendable {
     case basic
     case advanced
 }
 
-// MARK: - Request
-
-/// Request body for Tavily Search API
 struct TavilySearchRequest: Codable, Sendable {
     let apiKey: String
     let query: String
@@ -52,7 +38,6 @@ struct TavilySearchRequest: Codable, Sendable {
     }
 }
 
-/// Time range filter for search results
 enum TavilyTimeRange: String, Codable, Sendable {
     case day
     case week
@@ -60,9 +45,6 @@ enum TavilyTimeRange: String, Codable, Sendable {
     case year
 }
 
-// MARK: - Response
-
-/// Response from Tavily Search API
 struct TavilySearchResponse: Codable, Sendable {
     let query: String
     let answer: String?
@@ -78,7 +60,6 @@ struct TavilySearchResponse: Codable, Sendable {
     }
 }
 
-/// Individual search result from Tavily
 struct TavilySearchResult: Codable, Sendable {
     let title: String
     let url: String
@@ -94,15 +75,11 @@ struct TavilySearchResult: Codable, Sendable {
     }
 }
 
-/// Image result from Tavily (when includeImages is true)
 struct TavilyImage: Codable, Sendable {
     let url: String
     let description: String?
 }
 
-// MARK: - Error
-
-/// Errors that can occur during Tavily API operations
 enum TavilyError: LocalizedError, Sendable {
     case notConfigured
     case invalidAPIKey
@@ -144,10 +121,7 @@ enum TavilyError: LocalizedError, Sendable {
     }
 }
 
-// MARK: - Formatting Extension
-
 extension TavilySearchResponse {
-    /// Converts to the common WebSearchResponse type
     func toWebSearchResponse() -> WebSearchResponse {
         WebSearchResponse(
             query: query,
@@ -165,14 +139,10 @@ extension TavilySearchResponse {
         )
     }
 
-    /// Formats the search response as a concise markdown string for the model.
-    /// Delegates to the common WebSearchResponse formatting.
     func formattedForModel(maxResults: Int = 3) -> String {
         toWebSearchResponse().formattedForModel(maxResults: maxResults)
     }
 
-    /// Converts search results to CitationReference array for inline display.
-    /// Delegates to the common WebSearchResponse formatting.
     func toCitationReferences(maxResults: Int = 5) -> [CitationReference] {
         toWebSearchResponse().toCitationReferences(maxResults: maxResults)
     }

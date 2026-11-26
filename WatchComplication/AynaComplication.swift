@@ -1,11 +1,3 @@
-//
-//  AynaComplication.swift
-//  Ayna Watch Complication
-//
-//  A launcher complication: it shows the Ayna glyph and opens the app when tapped. It reads no
-//  app data, so it needs no App Group.
-//
-
 import SwiftUI
 import WidgetKit
 
@@ -23,7 +15,6 @@ struct LauncherProvider: TimelineProvider {
     }
 
     func getTimeline(in _: Context, completion: @escaping (Timeline<LauncherEntry>) -> Void) {
-        // Static content: nothing to refresh.
         completion(Timeline(entries: [LauncherEntry(date: .now)], policy: .never))
     }
 }

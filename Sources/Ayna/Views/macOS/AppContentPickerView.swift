@@ -1,49 +1,32 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  AppContentPickerView.swift
-//  ayna
-//
-//  App content picker for attaching context from running applications.
-//
 
 #if os(macOS)
 import SwiftUI
 
-/// A sheet/popover for picking app content to attach to a message
 struct AppContentPickerView: View {
-    /// Callback when user selects content
     let onSelect: (AppContent) -> Void
 
-    /// Callback to dismiss the picker
     let onDismiss: () -> Void
 
-    /// Available windows grouped by app
     @State private var windowGroups: [AccessibilityService.AppWindowGroup] = []
 
-    /// Expanded apps in the picker
     @State private var expandedApps: Set<String> = []
 
-    /// Loading state for content extraction
     @State private var isExtracting: Bool = false
 
-    /// Selected window being extracted
     @State private var extractingWindow: AccessibilityService.WindowInfo?
 
-    /// Error message to display
     @State private var errorMessage: String?
 
-    /// Whether accessibility is enabled
     @State private var hasAccessibilityPermission: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
             header
 
             Divider()
 
-            // Error banner
             if let error = errorMessage {
                 HStack(spacing: Spacing.sm) {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -65,7 +48,6 @@ struct AppContentPickerView: View {
                 .background(Color.orange.opacity(0.1))
             }
 
-            // Content
             if !hasAccessibilityPermission {
                 accessibilityPrompt
             } else if windowGroups.isEmpty {
@@ -79,8 +61,6 @@ struct AppContentPickerView: View {
             checkAccessibilityAndLoadWindows()
         }
     }
-
-    // MARK: - Header
 
     private var header: some View {
         HStack {
@@ -98,8 +78,6 @@ struct AppContentPickerView: View {
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
     }
-
-    // MARK: - Accessibility Prompt
 
     private var accessibilityPrompt: some View {
         VStack(spacing: Spacing.md) {
@@ -129,8 +107,6 @@ struct AppContentPickerView: View {
         .padding()
     }
 
-    // MARK: - Empty State
-
     private var emptyState: some View {
         VStack(spacing: Spacing.md) {
             Image(systemName: "macwindow.on.rectangle")
@@ -154,8 +130,6 @@ struct AppContentPickerView: View {
         .padding()
     }
 
-    // MARK: - Window List
-
     private var windowList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -168,7 +142,6 @@ struct AppContentPickerView: View {
 
     private func appGroupRow(_ group: AccessibilityService.AppWindowGroup) -> some View {
         VStack(spacing: 0) {
-            // App header row
             Button {
                 withAnimation(.easeOut(duration: 0.15)) {
                     if expandedApps.contains(group.id) {
@@ -179,7 +152,6 @@ struct AppContentPickerView: View {
                 }
             } label: {
                 HStack(spacing: Spacing.sm) {
-                    // App icon
                     if let icon = group.appIcon {
                         Image(nsImage: icon)
                             .resizable()
@@ -191,19 +163,16 @@ struct AppContentPickerView: View {
                             .foregroundStyle(Theme.textSecondary)
                     }
 
-                    // App name
                     Text(group.appName)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Theme.textPrimary)
 
-                    // Window count
                     Text("(\(group.windows.count))")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.textTertiary)
 
                     Spacer()
 
-                    // Expand indicator
                     Image(systemName: expandedApps.contains(group.id) ? "chevron.down" : "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Theme.textTertiary)
@@ -219,7 +188,6 @@ struct AppContentPickerView: View {
             }
             .buttonStyle(.plain)
 
-            // Windows (when expanded)
             if expandedApps.contains(group.id) {
                 ForEach(group.windows) { window in
                     windowRow(window)
@@ -233,7 +201,6 @@ struct AppContentPickerView: View {
             selectWindow(window)
         } label: {
             HStack(spacing: Spacing.sm) {
-                // Indent
                 Rectangle()
                     .fill(Color.clear)
                     .frame(width: 20)
@@ -249,7 +216,6 @@ struct AppContentPickerView: View {
 
                 Spacer()
 
-                // Loading indicator for this window
                 if isExtracting, extractingWindow?.id == window.id {
                     ProgressView()
                         .scaleEffect(0.6)
@@ -263,8 +229,6 @@ struct AppContentPickerView: View {
         .buttonStyle(.plain)
         .disabled(isExtracting)
     }
-
-    // MARK: - Actions
 
     private func checkAccessibilityAndLoadWindows() {
         hasAccessibilityPermission = AccessibilityService.shared.checkPermission(prompt: false)
@@ -287,7 +251,6 @@ struct AppContentPickerView: View {
             ]
         )
 
-        // Auto-expand first app with windows
         if let firstGroup = windowGroups.first {
             expandedApps.insert(firstGroup.id)
         }

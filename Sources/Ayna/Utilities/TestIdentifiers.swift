@@ -1,9 +1,6 @@
 import Foundation
 
-/// Central place to keep the accessibility identifiers we rely on in UI tests.
 enum TestIdentifiers {
-    // MARK: - Sidebar (Shared)
-
     enum Sidebar {
         static let searchField = "sidebar.searchField"
         static let newConversationButton = "sidebar.newConversationButton"
@@ -20,8 +17,6 @@ enum TestIdentifiers {
             "sidebar.conversationCheckbox.\(conversationId.uuidString)"
         }
     }
-
-    // MARK: - Chat Composer (Shared)
 
     enum ChatComposer {
         static let textEditor = "chat.composer.textEditor"
@@ -40,8 +35,6 @@ enum TestIdentifiers {
         static let errorMessage = "newchat.composer.errorMessage"
     }
 
-    // MARK: - Chat View
-
     enum ChatView {
         static let messagesList = "chat.messagesList"
         static let modelSelector = "chat.modelSelector"
@@ -51,8 +44,6 @@ enum TestIdentifiers {
             "chat.message.\(messageId.uuidString)"
         }
     }
-
-    // MARK: - Settings
 
     enum Settings {
         static let doneButton = "settings.doneButton"
@@ -65,8 +56,6 @@ enum TestIdentifiers {
         }
     }
 
-    // MARK: - Watch
-
     enum Watch {
         static let conversationList = "watch.conversationList"
         static let emptyState = "watch.emptyState"
@@ -74,7 +63,6 @@ enum TestIdentifiers {
         static let modelSelectorButton = "watch.modelSelectorButton"
         static let newChatView = "watch.newChat.view"
 
-        // Chat view identifiers (flattened to avoid nesting violation)
         static let chatMessagesList = "watch.chat.messagesList"
         static let chatComposerTextField = "watch.chat.composerTextField"
         static let chatStopButton = "watch.chat.stopButton"
@@ -84,7 +72,6 @@ enum TestIdentifiers {
             "watch.chat.message.\(messageId.uuidString)"
         }
 
-        /// New chat view identifiers
         static let newChatComposerTextField = "watch.newChat.composerTextField"
 
         static func conversationRow(for conversationId: UUID) -> String {

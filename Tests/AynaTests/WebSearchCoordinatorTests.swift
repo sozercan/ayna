@@ -1,10 +1,3 @@
-//
-//  WebSearchCoordinatorTests.swift
-//  AynaTests
-//
-//  Tests for WebSearchCoordinator routing, fallback, and response formatting.
-//
-
 @testable import Ayna
 import Foundation
 import Testing
@@ -12,12 +5,9 @@ import Testing
 @Suite("WebSearchCoordinator Tests", .tags(.async), .serialized)
 @MainActor
 struct WebSearchCoordinatorTests {
-    // MARK: - Provider Routing Tests
-
     @Test("Routes to DuckDuckGo when Tavily not configured")
     func routesToDDGWhenTavilyNotConfigured() {
         let tavily = TavilyService(keychain: MockKeychainStorage())
-        // Don't set an API key — Tavily is unconfigured
         tavily.isEnabled = true
 
         let coordinator = WebSearchCoordinator(tavilyService: tavily)
@@ -68,8 +58,6 @@ struct WebSearchCoordinatorTests {
         #expect(required == ["query"])
     }
 
-    // MARK: - Execution Tests
-
     @Test("executeToolCall returns error for missing query", .timeLimit(.minutes(1)))
     func executeToolCallReturnsMissingQueryError() async {
         let tavily = TavilyService(keychain: MockKeychainStorage())
@@ -112,8 +100,6 @@ struct WebSearchCoordinatorTests {
         try? await Task.sleep(for: .milliseconds(100))
         #expect(server.requestCount == 1)
     }
-
-    // MARK: - WebSearchResponse Formatting Tests
 
     @Test("formattedForModel includes answer and sources")
     func formattedForModelIncludesAnswerAndSources() {
@@ -169,8 +155,6 @@ struct WebSearchCoordinatorTests {
         #expect(!formatted.contains("Result 3"))
     }
 
-    // MARK: - Citation Tests
-
     @Test("toCitationReferences generates correct citations")
     func toCitationReferencesGeneratesCorrectCitations() {
         let response = WebSearchResponse(
@@ -215,8 +199,6 @@ struct WebSearchCoordinatorTests {
         #expect(citations.count == 2)
     }
 }
-
-// MARK: - Mock Keychain
 
 private final class MockKeychainStorage: KeychainStoring, @unchecked Sendable {
     private var store: [String: String] = [:]

@@ -1,13 +1,5 @@
-//
-//  ToolChainCoordinator.swift
-//  ayna
-//
-//  Owns every asynchronous stage of the current tool-call chain.
-//
-
 import Foundation
 
-/// Fences and cancels tool execution, callback, and continuation work for one chat action.
 @MainActor
 final class ToolChainCoordinator {
     struct OperationID: Hashable, Sendable {
@@ -30,14 +22,12 @@ final class ToolChainCoordinator {
         let operation: @MainActor @Sendable () -> Void
     }
 
-    /// Thread-safe FIFO storage used by sendable provider callbacks.
     private final class OrderedCallbackHandoff: @unchecked Sendable {
         private let lock = NSLock()
         private var callbacks: [QueuedCallback] = []
         private var nextCallbackIndex = 0
         private var isDrainScheduled = false
 
-        /// Returns true when the caller must schedule the single MainActor drain.
         func enqueue(_ callback: QueuedCallback) -> Bool {
             lock.lock()
             defer { lock.unlock() }
@@ -72,7 +62,6 @@ final class ToolChainCoordinator {
         activeOperation != nil
     }
 
-    /// Starts a new logical tool chain and atomically fences/cancels its predecessor.
     func beginOperation(conversationID: UUID) -> OperationID {
         cancelCurrentOperation()
         let id = OperationID()
@@ -84,14 +73,12 @@ final class ToolChainCoordinator {
         activeOperation?.id == id && activeOperation?.conversationID == conversationID
     }
 
-    /// Adds an owner-specific AI transport child to the active chain.
     func track(_ request: AITextRequest, for id: OperationID) {
         trackCancellation(for: id) {
             request.cancel()
         }
     }
 
-    /// Adds an asynchronous callback or tool-execution child to the active chain.
     func track(_ task: Task<Void, Never>, for id: OperationID) {
         trackCancellation(for: id) {
             task.cancel()
@@ -105,10 +92,6 @@ final class ToolChainCoordinator {
         trackCancellation(for: id, cancellation: action)
     }
 
-    /// Enqueues synchronous provider callback bookkeeping in one deterministic FIFO handoff.
-    ///
-    /// Provider callbacks may arrive from any thread. The handoff orders them at enqueue time,
-    /// then a single MainActor drain checks ownership immediately before each callback runs.
     nonisolated func enqueueCallback(
         for id: OperationID,
         conversationID: UUID,
@@ -126,7 +109,6 @@ final class ToolChainCoordinator {
         }
     }
 
-    /// Launches and owns asynchronous work without serializing it behind other callbacks.
     nonisolated func schedule(
         for id: OperationID,
         conversationID: UUID,
@@ -156,7 +138,6 @@ final class ToolChainCoordinator {
         }
     }
 
-    /// Completes only the matching operation; stale completions cannot clear a replacement.
     @discardableResult
     func finishOperation(_ id: OperationID) -> Bool {
         guard activeOperation?.id == id else { return false }
@@ -164,7 +145,6 @@ final class ToolChainCoordinator {
         return true
     }
 
-    /// Cancels and fences all work belonging to the current chain.
     @discardableResult
     func cancelCurrentOperation() -> Bool {
         guard let operation = activeOperation else { return false }
@@ -173,11 +153,6 @@ final class ToolChainCoordinator {
         return true
     }
 
-    /// Drains already-enqueued provider bookkeeping, finalizes persisted state while ownership
-    /// is still valid, then fences and cancels the matching operation.
-    ///
-    /// A terminal provider callback may finish the operation while the queue drains. In that case
-    /// its normal completion bookkeeping wins and this method does not cancel a replacement.
     @discardableResult
     func cancelCurrentOperation(
         finalizing finalization: @MainActor () -> Void

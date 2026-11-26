@@ -1,31 +1,16 @@
-//
-//  ProjectContextService.swift
-//  Ayna
-//
-//  Detects and manages project context for agentic operations.
-//  Provides project-aware file paths and context injection.
-//
-
 import Foundation
 import os.log
 
 #if os(macOS)
-    /// Detects project type and provides project-specific context
     @Observable @MainActor
     final class ProjectContextService {
-        /// The detected project root
         private(set) var projectRoot: URL?
 
-        /// The detected project type
         private(set) var projectType: ProjectType = .unknown
 
-        /// Files to include in context (e.g., CLAUDE.md, AGENTS.md)
         private(set) var contextFiles: [URL] = []
 
-        /// Cached context content
         private(set) var contextContent: String?
-
-        // MARK: - Project Types
 
         enum ProjectType: String, Sendable {
             case swift
@@ -50,7 +35,6 @@ import os.log
             }
 
             var contextFilenames: [String] {
-                // Common AI assistant context files
                 [
                     "CLAUDE.md",
                     "AGENTS.md",
@@ -83,12 +67,7 @@ import os.log
             }
         }
 
-        // MARK: - Context Detection
-
-        /// Detects project from a given path. With `loadingContent: false` it only finds the
-        /// context files, so the caller can validate each one before reading it.
         func detectProject(from path: URL, loadingContent: Bool = true) async {
-            // Find project root by walking up from path
             projectRoot = await findProjectRoot(from: path)
 
             guard let root = projectRoot else {
@@ -98,13 +77,10 @@ import os.log
                 return
             }
 
-            // Detect project type
             projectType = await detectProjectType(at: root)
 
-            // Find context files
             contextFiles = await findContextFiles(in: root)
 
-            // Load context content
             contextContent = loadingContent ? await loadContextContent() : nil
 
             log(.info, "Project detected", metadata: [
@@ -114,7 +90,6 @@ import os.log
             ])
         }
 
-        /// Returns the context to inject into system prompts
         func systemPromptContext() -> String? {
             guard let content = contextContent, !content.isEmpty else {
                 return nil
@@ -129,7 +104,6 @@ import os.log
             """
         }
 
-        /// Returns a brief project summary for quick context
         func briefSummary() -> String? {
             guard let root = projectRoot else { return nil }
 
@@ -142,12 +116,9 @@ import os.log
             return summary
         }
 
-        // MARK: - Private Methods
-
         private func findProjectRoot(from path: URL) async -> URL? {
             var current = path.standardized
 
-            // If path is a file, start from its directory
             var isDirectory: ObjCBool = false
             if FileManager.default.fileExists(atPath: current.path, isDirectory: &isDirectory),
                !isDirectory.boolValue
@@ -155,15 +126,12 @@ import os.log
                 current = current.deletingLastPathComponent()
             }
 
-            // Walk up looking for project markers
             while current.path != "/" {
-                // Check for .git directory (strong project indicator)
                 let gitPath = current.appendingPathComponent(".git")
                 if FileManager.default.fileExists(atPath: gitPath.path) {
                     return current
                 }
 
-                // Check for common project files
                 let commonMarkers = [
                     "Package.swift",
                     "package.json",
@@ -179,7 +147,6 @@ import os.log
                     }
                 }
 
-                // Check for xcodeproj/xcworkspace
                 if let contents = try? FileManager.default.contentsOfDirectory(
                     at: current,
                     includingPropertiesForKeys: nil
@@ -200,9 +167,7 @@ import os.log
         private func detectProjectType(at root: URL) async -> ProjectType {
             let fm = FileManager.default
 
-            // Check in order of specificity
             if fm.fileExists(atPath: root.appendingPathComponent("Package.swift").path) {
-                // Check if it has Sources/ for Swift Package
                 if fm.fileExists(atPath: root.appendingPathComponent("Sources").path) {
                     return .swiftPackage
                 }
@@ -243,7 +208,6 @@ import os.log
             var found: [URL] = []
             let fm = FileManager.default
 
-            // Check for common AI context files
             let contextFilenames = [
                 "CLAUDE.md",
                 "AGENTS.md",
@@ -261,7 +225,6 @@ import os.log
                 }
             }
 
-            // Also check docs/ directory
             let docsDir = root.appendingPathComponent("docs")
             if fm.fileExists(atPath: docsDir.path) {
                 for filename in contextFilenames {
@@ -301,13 +264,8 @@ import os.log
             return content.isEmpty ? nil : content.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        /// Largest context file that is read.
         nonisolated static let maximumContextFileBytes = 100 * 1024
 
-        /// Opens a context file without following a final symlink or blocking on a FIFO or
-        /// device. Returns the descriptor and the path it actually refers to, so that path is
-        /// what gets validated, and the bytes read later come from the same file even if the
-        /// name is replaced in between (for example while an approval card is open).
         nonisolated static func openContextFile(_ file: URL) -> (handle: FileHandle, path: URL)? {
             let resolved = file.resolvingSymlinksInPath().standardized
             let descriptor = open(resolved.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
@@ -329,7 +287,6 @@ import os.log
             return (handle, URL(fileURLWithPath: path))
         }
 
-        /// Reads an opened context file as UTF-8, or nil if it grew past the limit or is not text.
         nonisolated static func readContextFile(_ handle: FileHandle) -> String? {
             guard let data = try? handle.read(upToCount: maximumContextFileBytes + 1),
                   data.count <= maximumContextFileBytes

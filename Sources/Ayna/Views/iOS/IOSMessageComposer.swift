@@ -1,11 +1,5 @@
 // swiftformat:options --ifdef no-indent
 #if os(iOS)
-//
-//  IOSMessageComposer.swift
-//  ayna
-//
-//  Created on 11/24/25.
-//
 
 import ImageIO
 import os.log
@@ -14,9 +8,6 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// A reusable message composer component for iOS chat views.
-/// Handles text input, file attachments, sending messages, and generation cancellation.
-/// Uses spring animations for smooth height transitions as text expands.
 struct IOSMessageComposer: View {
     @Binding var messageText: String
     @Binding var isGenerating: Bool
@@ -27,10 +18,8 @@ struct IOSMessageComposer: View {
     @Binding var pasteImportSessionID: UUID
     @Binding var isImportingPastedImages: Bool
 
-    /// Optional recovery suggestion for the current error
     var errorRecoverySuggestion: String?
 
-    /// Optional retry action for failed messages
     var onRetry: (() -> Void)?
 
     let showAttachmentButton: Bool
@@ -39,21 +28,14 @@ struct IOSMessageComposer: View {
     let onFileAttachmentRequested: () -> Void
     let onPhotoAttachmentRequested: () -> Void
 
-    /// Called when error is dismissed
     var onDismissError: (() -> Void)?
 
-    /// Accessibility identifier prefix for this composer instance
     let identifierPrefix: String
 
-    /// Whether to show the attachment source selection sheet
     @State private var showAttachmentSourceSheet = false
 
-    /// Environment color scheme for theme-aware styling
     @Environment(\.colorScheme) private var colorScheme
 
-    // MARK: - iOS 26 Liquid Glass Backgrounds with Fallback
-
-    /// Background for the plus button - liquid glass on iOS 26+, solid on older
     @ViewBuilder
     private var composerButtonBackground: some View {
         #if compiler(>=6.2)
@@ -67,7 +49,6 @@ struct IOSMessageComposer: View {
         #endif
     }
 
-    /// Background for the text field - liquid glass on iOS 26+, solid on older
     @ViewBuilder
     private var composerFieldBackground: some View {
         #if compiler(>=6.2)
@@ -81,11 +62,9 @@ struct IOSMessageComposer: View {
         #endif
     }
 
-    /// Background for the entire composer bar
     @ViewBuilder
     private var composerBarBackground: some View {
         if #available(iOS 26.0, *) {
-            // Transparent on iOS 26 since elements have their own glass effect
             Color.clear
         } else {
             Color(uiColor: .systemBackground)
@@ -137,7 +116,6 @@ struct IOSMessageComposer: View {
 
     var body: some View {
         VStack(spacing: Spacing.sm) {
-            // Error message display using ErrorBannerView
             if let errorMessage {
                 ErrorBannerView(
                     message: errorMessage,
@@ -152,7 +130,6 @@ struct IOSMessageComposer: View {
                 .padding(.horizontal)
             }
 
-            // Attached files display
             if !attachedFiles.isEmpty || !attachedImages.isEmpty || !pastedImages.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: Spacing.sm) {
@@ -171,9 +148,7 @@ struct IOSMessageComposer: View {
                 .accessibilityIdentifier("\(identifierPrefix).attachmentsList")
             }
 
-            // Input bar - iMessage style
             HStack(alignment: .center, spacing: Spacing.sm) {
-                // Attachment button - iMessage style circular button
                 if showAttachmentButton {
                     Button(action: { showAttachmentSourceSheet = true }) {
                         Image(systemName: "plus")
@@ -204,7 +179,6 @@ struct IOSMessageComposer: View {
                     }
                 }
 
-                // Text field container - iMessage style pill with inline send button
                 HStack(alignment: .center, spacing: 0) {
                     IOSPasteAwareTextEditor(
                         text: $messageText,
@@ -228,7 +202,6 @@ struct IOSMessageComposer: View {
                     .frame(maxWidth: .infinity)
                     .accessibilityIdentifier("\(identifierPrefix).textEditor")
 
-                    // Send/Stop button inside the text field - iMessage style
                     if hasSendableContent || isGenerating {
                         Button(action: handleSendOrCancel) {
                             Image(systemName: isGenerating ? "stop.circle.fill" : "arrow.up.circle.fill")
@@ -246,7 +219,6 @@ struct IOSMessageComposer: View {
                 .frame(minHeight: 34)
                 .background(composerFieldBackground)
                 .clipShape(Capsule())
-                // Smooth spring animation when height changes from multiline text
                 .animation(Motion.springSnappy, value: messageText.contains("\n") || messageText.count > 40)
                 .animation(Motion.springSnappy, value: hasSendableContent || isGenerating)
             }
@@ -346,7 +318,6 @@ struct IOSMessageComposer: View {
 
     private func handleSendOrCancel() {
         if isGenerating {
-            // Use centralized haptic engine
             HapticEngine.cancelButtonTap()
 
             DiagnosticsLogger.log(
@@ -357,7 +328,6 @@ struct IOSMessageComposer: View {
             onCancel()
         } else {
             guard canSend else { return }
-            // Use centralized haptic engine
             HapticEngine.sendButtonTap()
 
             DiagnosticsLogger.log(
@@ -810,10 +780,7 @@ private final class ItemProviderImageLoad: @unchecked Sendable {
     }
 }
 
-// MARK: - File Attachment Utilities
-
 enum IOSFileAttachmentUtils {
-    /// Returns the MIME type for a given file URL based on its extension.
     static func getMimeType(for url: URL) -> String {
         let pathExtension = url.pathExtension.lowercased()
         switch pathExtension {
@@ -836,15 +803,12 @@ enum IOSFileAttachmentUtils {
         }
     }
 
-    /// Processes attached files into Message.FileAttachment array.
-    /// Properly handles security-scoped resources with defer to prevent leaks.
     static func processAttachments(from urls: [URL]) -> (attachments: [Message.FileAttachment], errors: [String]) {
         var attachments: [Message.FileAttachment] = []
         var errors: [String] = []
 
         for url in urls {
             let didStart = url.startAccessingSecurityScopedResource()
-            // Use defer to ensure resource is always released
             defer {
                 if didStart {
                     url.stopAccessingSecurityScopedResource()
@@ -878,14 +842,10 @@ enum IOSFileAttachmentUtils {
         return (attachments, errors)
     }
 
-    /// Processes UIImage attachments from the photo library into Message.FileAttachment array.
-    /// Compresses images to JPEG format for API compatibility.
     static func processImageAttachments(from images: [UIImage]) -> [Message.FileAttachment] {
         var attachments: [Message.FileAttachment] = []
 
         for (index, image) in images.enumerated() {
-            // Compress to JPEG with reasonable quality for API upload
-            // OpenAI recommends images under 20MB and low detail mode for smaller sizes
             guard let imageData = image.jpegData(compressionQuality: 0.8) else {
                 DiagnosticsLogger.log(
                     .chatView,

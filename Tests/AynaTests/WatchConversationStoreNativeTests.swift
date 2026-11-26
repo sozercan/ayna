@@ -1,12 +1,5 @@
 #if os(watchOS)
 
-//
-    //  WatchConversationStoreNativeTests.swift
-    //  Ayna-watchOSTests
-//
-    //  Unit tests for WatchConversationStore running natively on watchOS
-//
-
     @testable import Ayna
     import Foundation
     import Testing
@@ -35,8 +28,6 @@
             )
         }
 
-        // MARK: - Conversation Creation Tests
-
         @Test
         func `create conversation with title and model`() throws {
             let conversation = try #require(store.createConversation(title: "Test Chat", model: "gpt-4o"))
@@ -57,21 +48,15 @@
 
         @Test
         func `new conversation appears first`() async throws {
-            // Create first conversation
             let first = try #require(store.createConversation(model: "gpt-4o"))
 
-            // Wait a bit to ensure different timestamps
             try? await Task.sleep(for: .milliseconds(100))
 
-            // Create second conversation
             let second = try #require(store.createConversation(model: "gpt-4"))
 
-            // Second should be at index 0 (most recent)
             #expect(store.conversations.first?.id == second.id)
             #expect(store.conversations.contains { $0.id == first.id })
         }
-
-        // MARK: - Message Management Tests
 
         @Test
         func `add message to conversation`() throws {
@@ -121,7 +106,6 @@
 
             store.addMessage(message, to: conversation.id)
 
-            // Simulate streaming updates
             store.updateLastMessage(in: conversation.id, content: "Hello")
             store.updateLastMessage(in: conversation.id, content: "Hello, ")
             store.updateLastMessage(in: conversation.id, content: "Hello, World!")
@@ -147,8 +131,6 @@
             #expect(persistedConversation?.messages.last?.content == "Persist me")
         }
 
-        // MARK: - Conversation Retrieval Tests
-
         @Test
         func `get conversation for valid ID`() throws {
             let conversation = try #require(store.createConversation(model: "gpt-4o"))
@@ -166,8 +148,6 @@
 
             #expect(retrieved == nil)
         }
-
-        // MARK: - Preview Text Tests
 
         @Test
         func `preview text with messages`() throws {
@@ -194,7 +174,7 @@
 
             if let updated = store.conversation(for: conversation.id) {
                 let preview = store.previewText(for: updated)
-                #expect(preview.count <= 53) // 50 chars + "..."
+                #expect(preview.count <= 53)
                 #expect(preview.hasSuffix("..."))
             } else {
                 Issue.record("Conversation should exist")
@@ -208,8 +188,6 @@
             let preview = store.previewText(for: conversation)
             #expect(preview == "No messages")
         }
-
-        // MARK: - Delete Tests
 
         @Test
         func `delete conversation`() throws {
@@ -232,8 +210,6 @@
             #expect(store.selectedConversationId == nil)
         }
 
-        // MARK: - Rename Tests
-
         @Test
         func `rename conversation`() throws {
             let conversation = try #require(store.createConversation(title: "Original", model: "gpt-4o"))
@@ -244,14 +220,10 @@
             #expect(updated?.title == "Renamed Chat")
         }
 
-        // MARK: - Update Conversations Tests
-
         @Test
         func `update conversations merges with remote`() throws {
-            // Create a local conversation
             let local = try #require(store.createConversation(title: "Local Chat", model: "gpt-4o"))
 
-            // Simulate sync from iPhone with a new conversation
             let remoteId = UUID()
             let remote = WatchConversation(
                 from: Conversation(id: remoteId, title: "Remote Chat", model: "gpt-4")
@@ -259,61 +231,51 @@
 
             store.updateConversations([remote])
 
-            // Both should exist
             #expect(store.conversation(for: local.id) != nil)
             #expect(store.conversation(for: remoteId) != nil)
         }
 
         @Test
         func `update conversations preserves local title`() throws {
-            // Create a local conversation with generated title
             let conversation = try #require(store.createConversation(title: "Generated Title", model: "gpt-4o"))
 
-            // Simulate sync from iPhone with "New Chat" title (not yet generated on iPhone)
             let syncedConversation = WatchConversation(
                 from: Conversation(id: conversation.id, title: "New Chat", model: "gpt-4o")
             )
 
             store.updateConversations([syncedConversation])
 
-            // Local title should be preserved
             let updated = store.conversation(for: conversation.id)
             #expect(updated?.title == "Generated Title")
         }
 
         @Test
         func `update conversations preserves local messages`() throws {
-            // Create a local conversation with messages
             let conversation = try #require(store.createConversation(model: "gpt-4o"))
             let userMsg = WatchMessage(from: Message(role: .user, content: "Hello"))
             let assistantMsg = WatchMessage(from: Message(role: .assistant, content: "Hi!"))
             store.addMessage(userMsg, to: conversation.id)
             store.addMessage(assistantMsg, to: conversation.id)
 
-            // Simulate sync from iPhone with fewer messages (iPhone behind during streaming)
             var syncedConversation = WatchConversation(
                 from: Conversation(id: conversation.id, title: "New Chat", model: "gpt-4o")
             )
-            syncedConversation.messages = [userMsg] // Only 1 message
+            syncedConversation.messages = [userMsg]
 
             store.updateConversations([syncedConversation])
 
-            // Local messages should be preserved (we have more)
             let updated = store.conversation(for: conversation.id)
             #expect(updated?.messages.count == 2)
         }
 
         @Test
         func `update conversations sorts by recent`() async throws {
-            // Create conversations
             let older = try #require(store.createConversation(title: "Older", model: "gpt-4o"))
             try? await Task.sleep(for: .milliseconds(100))
             let newer = try #require(store.createConversation(title: "Newer", model: "gpt-4o"))
 
-            // Verify newer is first
             #expect(store.conversations.first?.id == newer.id)
 
-            // Update older conversation to have newer updatedAt
             var updatedOlder = WatchConversation(
                 from: Conversation(id: older.id, title: "Older Updated", model: "gpt-4o")
             )
@@ -321,7 +283,6 @@
 
             store.updateConversations([updatedOlder])
 
-            // Older should now be first (most recently updated)
             #expect(store.conversations.first?.id == older.id)
         }
     }

@@ -1,15 +1,7 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  MacChatView+Retry.swift
-//  ayna
-//
-//  Created on 7/25/25.
-//
 
 import SwiftUI
-
-// MARK: - Retry & Resend Methods
 
 extension MacChatView {
     func editMessageAndResend(_ message: Message, newContent: String) {
@@ -39,7 +31,6 @@ extension MacChatView {
         )
     }
 
-    /// Retry the message that came before the specified assistant message
     func retryLastMessage(beforeMessage: Message) {
         scheduleRetry(
             beforeMessageID: beforeMessage.id,
@@ -48,14 +39,10 @@ extension MacChatView {
         )
     }
 
-    /// Switch model and retry
     func switchModelAndRetry(beforeMessage: Message, newModel: String) {
-        // Don't update the global conversation model or selected model
-        // Just retry with the specified model for this message only
         retryWithModel(beforeMessage: beforeMessage, model: newModel)
     }
 
-    /// Retry with a specific model (without changing conversation's default model)
     func retryWithModel(beforeMessage: Message, model: String) {
         scheduleRetry(
             beforeMessageID: beforeMessage.id,
@@ -197,12 +184,10 @@ extension MacChatView {
         resendMessage(editedMessage)
     }
 
-    /// Resend a message
     func resendMessage(_ message: Message) {
         errorMessage = nil
         isGenerating = true
 
-        // Get updated messages
         guard
             let updatedConversation = conversationManager.conversations.first(where: {
                 $0.id == conversation.id
@@ -211,32 +196,26 @@ extension MacChatView {
             return
         }
 
-        // Check if current model is for image generation
         let modelCapability = aiService.getModelCapability(updatedConversation.model)
 
         if modelCapability == .imageGeneration {
-            // Image generation flow
             generateImage(prompt: message.content, model: updatedConversation.model)
             return
         }
 
         let currentMessages = updatedConversation.messages
 
-        // Prepend system prompt if configured
         var messagesToSend = currentMessages
         if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
 
-        // Add empty assistant message with current model
         let assistantMessage = Message(role: .assistant, content: "", model: updatedConversation.model)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
-        // Get available tools (Tavily + MCP)
         let tools = aiService.getAllAvailableTools()
 
-        // Reset tool call depth
         toolCallDepth = 0
 
         sendMessageWithToolSupport(
@@ -249,12 +228,10 @@ extension MacChatView {
         )
     }
 
-    /// Resend a message with a specific model (without changing conversation's default model)
     func resendMessageWithModel(_ message: Message, model: String) {
         errorMessage = nil
         isGenerating = true
 
-        // Get updated messages
         guard
             let updatedConversation = conversationManager.conversations.first(where: {
                 $0.id == conversation.id
@@ -263,32 +240,26 @@ extension MacChatView {
             return
         }
 
-        // Check if specified model is for image generation
         let modelCapability = aiService.getModelCapability(model)
 
         if modelCapability == .imageGeneration {
-            // Image generation flow
             generateImage(prompt: message.content, model: model)
             return
         }
 
         let currentMessages = updatedConversation.messages
 
-        // Prepend system prompt if configured
         var messagesToSend = currentMessages
         if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
 
-        // Add empty assistant message with the specified model
         let assistantMessage = Message(role: .assistant, content: "", model: model)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
-        // Get available tools (Tavily + MCP)
         let tools = aiService.getAllAvailableTools()
 
-        // Reset tool call depth
         toolCallDepth = 0
 
         sendMessageWithToolSupport(
@@ -301,18 +272,13 @@ extension MacChatView {
         )
     }
 
-    // MARK: - System Prompt Helpers
-
-    /// Builds the full system prompt including agentic capabilities context.
     func buildFullSystemPrompt(for conversation: Conversation) -> String? {
         var components: [String] = []
 
-        // Add user's configured system prompt
         if let userPrompt = conversationManager.effectiveSystemPrompt(for: conversation), !userPrompt.isEmpty {
             components.append(userPrompt)
         }
 
-        // Add agentic tools context if available
         if let agenticContext = aiService.getAgenticSystemPromptContext() {
             components.append(agenticContext)
         }

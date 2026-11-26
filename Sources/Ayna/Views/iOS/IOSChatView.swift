@@ -1,11 +1,5 @@
 // swiftformat:options --ifdef no-indent
 #if os(iOS)
-//
-//  IOSChatView.swift
-//  ayna
-//
-//  Created on 11/22/25.
-//
 
 import os.log
 import PhotosUI
@@ -24,23 +18,16 @@ struct IOSChatView: View {
     @State private var showModelSelector = false
     @StateObject private var viewModel = IOSChatViewModel.placeholder()
 
-    /// Scroll-to-bottom button visibility
     @State private var showScrollToBottom = false
-    /// Whether streaming keeps the newest text in view. Only the user scrolling away turns it
-    /// off; reaching the bottom again, the scroll button, or a new reply turns it back on.
     @State private var followsLatest = true
-    /// Restores a reading position handed over from the new-chat screen.
     @State private var restoredPosition = ScrollPosition()
 
-    /// Performance: Cached displayable items to avoid O(n) computation on every render
     @State private var cachedDisplayableItems: [ChatTranscriptItem] = []
 
-    /// Get the conversation from the environment's conversation manager
     private var conversation: Conversation? {
         conversationManager.conversations.first { $0.id == conversationId }
     }
 
-    /// Updates cached displayable items. Call when messages change or isGenerating changes.
     private func updateDisplayableItems() {
         guard let conversation else {
             cachedDisplayableItems = []
@@ -91,7 +78,6 @@ struct IOSChatView: View {
                                             responses: group.messages,
                                             conversation: conversation,
                                             onSelectResponse: { messageId in
-                                                // Use centralized haptic engine
                                                 HapticEngine.selection()
                                                 conversationManager.selectResponse(
                                                     in: conversation,
@@ -108,7 +94,6 @@ struct IOSChatView: View {
                                     }
                                 }
 
-                                // Scroll target for "jump to bottom"
                                 Color.clear
                                     .frame(height: 1)
                                     .id("bottom")
@@ -119,7 +104,6 @@ struct IOSChatView: View {
                         .followsStreamingContent($followsLatest, isAwayFromEnd: $showScrollToBottom)
                         .accessibilityIdentifier(TestIdentifiers.ChatView.messagesList)
 
-                        // Scroll-to-bottom floating button
                         ScrollToBottomButton(
                             isVisible: showScrollToBottom && !viewModel.isGenerating,
                             unreadCount: 0
@@ -133,20 +117,15 @@ struct IOSChatView: View {
                     }
                     .onChange(of: conversation.messages.count) {
                         updateDisplayableItems()
-                        // Tool messages added mid-stream must not pull a reader back down.
                         if followsLatest {
                             scrollToBottom(proxy: proxy, conversation: conversation)
                         }
                     }
                     .onChange(of: conversation.updatedAt) {
-                        // Message content, tool metadata, citations, and response status can change
-                        // without changing the message count. Refresh copied display items for all.
                         updateDisplayableItems()
                     }
                     .onChange(of: conversation.messages.last?.content) {
                         updateDisplayableItems()
-                        // Only scroll during generation, and only while following the reply.
-                        // A transaction without animations keeps rapid updates smooth.
                         if viewModel.isGenerating, followsLatest, let lastId = conversation.messages.last?.id {
                             var transaction = Transaction()
                             transaction.disablesAnimations = true
@@ -157,7 +136,6 @@ struct IOSChatView: View {
                     }
                     .onChange(of: conversation.messages.last?.reasoning) {
                         updateDisplayableItems()
-                        // Keep reasoning-only streams pinned just like answer content.
                         if viewModel.isGenerating, followsLatest, let lastId = conversation.messages.last?.id {
                             var transaction = Transaction()
                             transaction.disablesAnimations = true
@@ -168,7 +146,6 @@ struct IOSChatView: View {
                     }
                     .onChange(of: viewModel.isGenerating) { _, newValue in
                         updateDisplayableItems()
-                        // A new reply starts following again
                         if newValue, let lastId = conversation.messages.last?.id {
                             followsLatest = true
                             proxy.scrollTo(lastId, anchor: .bottom)
@@ -298,7 +275,6 @@ struct IOSChatView: View {
                             showModelSelector = false
                             if let conversation {
                                 updateConversationMultiModelState()
-                                // If single model selected, update conversation model
                                 if viewModel.selectedModels.count == 1, let first = viewModel.selectedModels.first {
                                     conversationManager.updateModel(for: conversation, model: first)
                                 }
@@ -317,14 +293,12 @@ struct IOSChatView: View {
         }
         .onAppear {
             viewModel.configure(with: conversationManager, conversationId: conversationId)
-            // Initialize selectedModels with current conversation model
             initializeSelectedModelsIfNeeded()
         }
         .onDisappear {
             viewModel.cancelOwnedOperations()
         }
         .onChange(of: conversation?.model) { _, newModel in
-            // Re-initialize if the conversation model changes and selectedModels is empty
             if viewModel.selectedModels.isEmpty, let model = newModel, !model.isEmpty {
                 viewModel.selectedModels = [model]
             }
@@ -334,7 +308,6 @@ struct IOSChatView: View {
     private func initializeSelectedModelsIfNeeded() {
         guard let conversation else { return }
 
-        // If conversation has multi-model enabled, restore those selections
         if conversation.multiModelEnabled, !conversation.activeModels.isEmpty {
             viewModel.selectedModels = Set(conversation.activeModels)
             return
@@ -345,7 +318,6 @@ struct IOSChatView: View {
         if !conversation.model.isEmpty {
             viewModel.selectedModels = [conversation.model]
         } else if let firstAvailable = aiService.usableModels.first {
-            // Fallback to first available model if conversation model is empty
             viewModel.selectedModels = [firstAvailable]
             conversationManager.updateModel(for: conversation, model: firstAvailable)
         }
@@ -370,8 +342,6 @@ struct IOSChatView: View {
     }
 }
 
-// MARK: - Conversation System Prompt Sheet
-
 struct IOSConversationSystemPromptSheet: View {
     let conversation: Conversation
     @Environment(\.dismiss) var dismiss
@@ -389,7 +359,6 @@ struct IOSConversationSystemPromptSheet: View {
     init(conversation: Conversation) {
         self.conversation = conversation
 
-        // Initialize state from conversation
         switch conversation.systemPromptMode {
         case .inheritGlobal:
             _selectedMode = State(initialValue: .inheritGlobal)

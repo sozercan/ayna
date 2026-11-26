@@ -1,46 +1,26 @@
-//
-//  GitContextService.swift
-//  Ayna
-//
-//  Provides git repository context for agentic operations.
-//  Injects branch, status, and recent commit info into system prompts.
-//
-
 import Foundation
 import os.log
 
 #if os(macOS)
-    /// Service for providing git repository context
     @Observable @MainActor
     final class GitContextService {
-        /// Current git status
         private(set) var status: GitStatus?
 
-        /// Current branch name
         private(set) var currentBranch: String?
 
-        /// Recent commits
         private(set) var recentCommits: [GitCommit] = []
 
-        /// Main/default branch name
         private(set) var mainBranch: String?
 
-        /// Whether the repository is clean
         var isClean: Bool {
             status?.isClean ?? true
         }
 
-        /// Repository root path
         private var repoRoot: URL?
 
-        /// Environment entries that switch off every configured filter driver for this repository.
         private var filterOverrides: [String] = []
 
-        /// Why the last `loadContext` stopped without context, when it failed rather than
-        /// finding no repository.
         private(set) var loadFailure: String?
-
-        // MARK: - Types
 
         struct GitStatus: Sendable {
             let staged: [String]
@@ -61,7 +41,7 @@ import os.log
         }
 
         struct GitCommit: Identifiable, Sendable {
-            let id: String // SHA
+            let id: String
             let shortSha: String
             let message: String
             let author: String
@@ -72,20 +52,15 @@ import os.log
             }
         }
 
-        /// Result of a git command execution
         struct GitCommandResult {
             let exitCode: Int32
             let stdout: String
             let stderr: String
         }
 
-        // MARK: - Context Loading
-
-        /// Loads git context from a directory
         func loadContext(from directory: URL) async {
             filterOverrides = []
             loadFailure = nil
-            // Find git root
             repoRoot = await findGitRoot(from: directory)
 
             guard let root = repoRoot, !Task.isCancelled else {
@@ -93,8 +68,6 @@ import os.log
                 return
             }
 
-            // `git status` runs a modified tracked file's clean/process filter when it rehashes
-            // it; those are commands from the repository's config, so they are switched off.
             guard let overrides = await Self.filterDriverOverrides(in: root), !Task.isCancelled else {
                 reset()
                 loadFailure = "Couldn't read the repository's filter configuration, so git status was not run."
@@ -102,7 +75,6 @@ import os.log
             }
             filterOverrides = overrides
 
-            // Load all git info in parallel
             async let branchTask = loadCurrentBranch(in: root)
             async let statusTask = loadStatus(in: root)
             async let commitsTask = loadRecentCommits(in: root, limit: 5)
@@ -120,7 +92,6 @@ import os.log
             ])
         }
 
-        /// Resets all git context
         func reset() {
             repoRoot = nil
             filterOverrides = []
@@ -130,7 +101,6 @@ import os.log
             mainBranch = nil
         }
 
-        /// Returns context to inject into system prompts
         func systemPromptContext() -> String? {
             guard repoRoot != nil else { return nil }
             let branch = currentBranch ?? "(detached HEAD)"
@@ -159,15 +129,11 @@ import os.log
             return context
         }
 
-        /// Returns a brief summary for display
         func briefSummary() -> String? {
             guard let branch = currentBranch else { return nil }
             return "Branch: \(branch) (\(status?.summary ?? "unknown"))"
         }
 
-        // MARK: - Git Operations
-
-        /// Creates a checkpoint (stash) of current changes
         func createCheckpoint(message: String? = nil) async -> String? {
             guard let root = repoRoot else { return nil }
 
@@ -183,7 +149,6 @@ import os.log
             return nil
         }
 
-        /// Restores from a checkpoint
         func restoreCheckpoint(index: Int = 0) async -> Bool {
             guard let root = repoRoot else { return false }
 
@@ -198,7 +163,6 @@ import os.log
             return false
         }
 
-        /// Lists available checkpoints (stashes)
         func listCheckpoints() async -> [(index: Int, message: String)] {
             guard let root = repoRoot else { return [] }
 
@@ -209,7 +173,6 @@ import os.log
             let lines = result.stdout.components(separatedBy: .newlines)
 
             for (index, line) in lines.enumerated() where !line.isEmpty {
-                // Format: stash@{0}: On branch: message
                 if let colonIndex = line.firstIndex(of: ":"),
                    let secondColonIndex = line[line.index(after: colonIndex)...].firstIndex(of: ":")
                 {
@@ -222,8 +185,6 @@ import os.log
 
             return checkpoints
         }
-
-        // MARK: - Private Methods
 
         private func findGitRoot(from directory: URL) async -> URL? {
             let result = await runGitCommand(["rev-parse", "--show-toplevel"], in: directory)
@@ -248,7 +209,6 @@ import os.log
         }
 
         private func loadStatus(in root: URL) async -> GitStatus? {
-            // Submodules are skipped: their own configs could name filters not switched off here.
             let result = await runGitCommand(["status", "--porcelain", "--ignore-submodules=all"], in: root)
             guard result.exitCode == 0 else { return nil }
 
@@ -300,7 +260,6 @@ import os.log
         }
 
         private func detectMainBranch(in root: URL) async -> String? {
-            // Check for common main branch names
             for branch in ["main", "master", "develop", "development"] {
                 guard !Task.isCancelled else { return nil }
                 let result = await runGitCommand(
@@ -312,7 +271,6 @@ import os.log
                 }
             }
 
-            // Try to get from remote
             let result = await runGitCommand(
                 ["symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
                 in: root
@@ -326,25 +284,20 @@ import os.log
             return nil
         }
 
-        /// How long a single git command may run before it is stopped.
         static let commandTimeout: Duration = .seconds(10)
 
-        /// Most output a git query may return; anything larger fails rather than being cut short.
         nonisolated static let maximumOutputBytes = 1024 * 1024
 
         private func runGitCommand(_ arguments: [String], in directory: URL) async -> GitCommandResult {
             await Self.runGit(arguments, in: directory, timeout: Self.commandTimeout, environment: filterOverrides)
         }
 
-        /// Where a repository's work tree and metadata live, as absolute canonical paths.
         struct RepositoryLayout: Equatable, Sendable {
             let topLevel: URL
             let gitDirectory: URL
             let commonDirectory: URL
         }
 
-        /// Reads the repository layout for `directory` without running repository code; nil when
-        /// it is not inside a work tree. A `.git` file can point the metadata anywhere.
         nonisolated static func repositoryLayout(at directory: URL) async -> RepositoryLayout? {
             let result = await runGit(
                 ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"],
@@ -357,19 +310,12 @@ import os.log
             return RepositoryLayout(topLevel: urls[0], gitDirectory: urls[1], commonDirectory: urls[2])
         }
 
-        /// `GIT_CONFIG_*` environment entries with empty `clean`, `smudge` and `process`
-        /// commands, and `required=false`, for every filter driver configured for the repository
-        /// at `root`. Keys go in the environment rather than `-c key=value`, which would split a
-        /// driver name containing `=`. Reading config never runs code. Returns nil if the
-        /// configuration could not be read completely, so callers can stop instead of running
-        /// git without the overrides.
         nonisolated static func filterDriverOverrides(in root: URL) async -> [String]? {
             let result = await runGit(
                 ["config", "--null", "--name-only", "--get-regexp", "^filter\\..+\\.(clean|smudge|process|required)$"],
                 in: root,
                 timeout: commandTimeout
             )
-            // `git config --get-regexp` exits 1 with no output when nothing matches.
             if result.exitCode == 1, result.stdout.isEmpty, result.stderr.isEmpty {
                 return []
             }
@@ -391,12 +337,6 @@ import os.log
             }
         }
 
-        /// Runs git in its own process group (`CommandSubprocess`), with hooks, credential
-        /// helpers, fsmonitor and signature verification disabled so a repository's
-        /// configuration cannot run code. On timeout or task cancellation the whole group is
-        /// stopped (TERM, then KILL); completion waits for git itself, not for EOF, so a helper
-        /// that keeps a pipe open cannot hold the call. Output past `maximumOutputBytes` is
-        /// drained but not kept, and the call fails.
         nonisolated static func runGit(
             _ arguments: [String],
             in directory: URL,
@@ -407,7 +347,7 @@ import os.log
                 "/usr/bin/env",
                 "GIT_CONFIG_NOSYSTEM=1",
                 "GIT_TERMINAL_PROMPT=0",
-                "GIT_OPTIONAL_LOCKS=0" // Read-only queries never take the index lock
+                "GIT_OPTIONAL_LOCKS=0"
             ] + environment + [
                 "/usr/bin/git",
                 "-c", "core.hooksPath=/dev/null",
@@ -498,7 +438,6 @@ import os.log
         }
     }
 
-    /// Output collected from a pipe's readability handler, keeping at most `limit` bytes.
     private final class GitOutputBuffer: @unchecked Sendable {
         private let lock = NSLock()
         private let limit: Int
@@ -531,7 +470,6 @@ import os.log
         }
     }
 
-    /// One git invocation that its caller's task cancellation can stop.
     private final class GitRun: @unchecked Sendable {
         private let lock = NSLock()
         private var process: CommandSubprocess?
@@ -541,7 +479,6 @@ import os.log
             lock.withLock { cancelled }
         }
 
-        /// Records the started process; if the run was cancelled meanwhile, stops it now.
         func attach(_ process: CommandSubprocess) {
             let stopNow = lock.withLock {
                 self.process = process

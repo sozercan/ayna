@@ -1,50 +1,18 @@
-//
-//  UpdaterService.swift
-//  ayna
-//
-//  Created on 1/23/26.
-//
-
 #if os(macOS)
     import Foundation
     import Sparkle
 
-    // MARK: - UpdaterService
-
-    /// Manages application updates via Sparkle framework.
-    ///
-    /// This service wraps Sparkle's `SPUStandardUpdaterController` to provide
-    /// a SwiftUI-friendly interface for checking and installing updates.
-    ///
-    /// Usage:
-    /// ```swift
-    /// @State private var updaterService = UpdaterService()
-    ///
-    /// Button("Check for Updates") {
-    ///     updaterService.checkForUpdates()
-    /// }
-    /// .disabled(!updaterService.canCheckForUpdates)
-    /// ```
     @available(macOS 14.0, *)
     @MainActor
     @Observable
     final class UpdaterService {
-        /// The Sparkle updater controller that manages the update lifecycle.
         private let updaterController: SPUStandardUpdaterController
 
-        /// Whether the updater can currently check for updates.
-        ///
-        /// This is `false` while an update check is already in progress or during installation.
         var canCheckForUpdates: Bool {
             updaterController.updater.canCheckForUpdates
         }
 
-        /// Initializes the updater service and starts the Sparkle updater.
-        ///
-        /// The updater will automatically check for updates on launch if
-        /// `SUEnableAutomaticChecks` is `true` in Info.plist.
         init() {
-            // Initialize Sparkle with default UI and start the updater
             updaterController = SPUStandardUpdaterController(
                 startingUpdater: true,
                 updaterDelegate: nil,
@@ -58,12 +26,6 @@
             )
         }
 
-        /// Manually triggers an update check.
-        ///
-        /// This shows Sparkle's standard update UI, including:
-        /// - "Checking for updates..." progress indicator
-        /// - "A new version is available" dialog if an update exists
-        /// - "You're up to date" message if no update is available
         func checkForUpdates() {
             DiagnosticsLogger.log(
                 .updater,

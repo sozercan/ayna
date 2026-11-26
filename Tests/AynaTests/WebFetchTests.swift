@@ -1,10 +1,3 @@
-//
-//  WebFetchTests.swift
-//  aynaTests
-//
-//  Unit tests for web_fetch tool functionality via WebFetchService.
-//
-
 @testable import Ayna
 import Foundation
 import Testing
@@ -20,8 +13,6 @@ struct WebFetchTests {
         webFetchService.isEnabled = true
         WebFetchTestURLProtocol.reset()
     }
-
-    // MARK: - Hostname Resolution Tests
 
     @Test("Rejects a private address reported by the actual connection")
     func rejectsPrivateActualConnectedAddress() throws {
@@ -441,8 +432,6 @@ struct WebFetchTests {
         #expect(addresses.contains("127.0.0.1"))
     }
 
-    // MARK: - Private IP Detection Tests (via fetch errors)
-
     @Test("Blocks localhost")
     func blocksLocalhost() async {
         await #expect(throws: WebFetchError.self) {
@@ -485,8 +474,6 @@ struct WebFetchTests {
         }
     }
 
-    // MARK: - URL Validation Tests
-
     @Test("Rejects invalid URL")
     func rejectsInvalidURL() async {
         await #expect(throws: WebFetchError.self) {
@@ -508,8 +495,6 @@ struct WebFetchTests {
         }
     }
 
-    // MARK: - Tool Definition Tests
-
     @Test("WebFetchService tool definition has correct name")
     func webFetchToolDefinitionName() {
         let definition = webFetchService.toolDefinition()
@@ -527,14 +512,10 @@ struct WebFetchTests {
         #expect(WebFetchService.isWebFetchTool("web_fetch"))
     }
 
-    // MARK: - Permission Tests
-
     @Test("web_fetch has automatic permission level")
     func webFetchAutomaticPermission() {
         #expect(PermissionService.defaultPermissionLevel(for: "web_fetch") == .automatic)
     }
-
-    // MARK: - Full Loopback Range Tests
 
     @Test("Blocks 127.0.0.2")
     func blocksLoopback2() async {
@@ -557,10 +538,6 @@ struct WebFetchTests {
         }
     }
 
-    // MARK: - IPv6 False Positive Tests
-
-    /// These verify that domains starting with "fd" or "fc" are NOT blocked.
-    /// The SSRF check should only block IPv6 addresses (containing ":"), not hostnames.
     @Test("Does not block fdic.gov (not an IPv6 address)")
     func doesNotBlockFdicGov() {
         #expect(!SSRFProtection.isPrivateHost("fdic.gov"))
@@ -570,8 +547,6 @@ struct WebFetchTests {
     func doesNotBlockFccGov() {
         #expect(!SSRFProtection.isPrivateHost("fcc.gov"))
     }
-
-    // MARK: - IPv6 Private Address Tests
 
     @Test("Blocks fd00::1 (IPv6 unique local)")
     func blocksIPv6UniqueLocal() async {
@@ -593,8 +568,6 @@ struct WebFetchTests {
             _ = try await webFetchService.fetch(url: "http://[fc00::1]/test")
         }
     }
-
-    // MARK: - Service Disabled Tests
 
     @Test("Throws when service is disabled")
     func throwsWhenDisabled() async {

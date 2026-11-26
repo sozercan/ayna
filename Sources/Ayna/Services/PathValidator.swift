@@ -1,21 +1,5 @@
-//
-//  PathValidator.swift
-//  Ayna
-//
-//  Path security validation for agentic file operations.
-//  Prevents traversal attacks and protects sensitive system paths.
-//
-
 import Foundation
 
-/// Validates file paths for security before allowing file operations.
-///
-/// Security features:
-/// - Expands `~` and environment variables
-/// - Resolves symlinks to prevent symlink-to-sensitive-file attacks
-/// - Canonicalizes paths (removes `.` and `..`)
-/// - Validates against protected paths
-/// - Restricts writes to project directory when configured
 struct PathValidator {
     let projectRoot: URL?
     let protectedPaths: [String]
@@ -29,9 +13,6 @@ struct PathValidator {
         return expression
     }()
 
-    // MARK: - Default Protected Paths
-
-    /// Paths that always require approval for any operation
     static let defaultProtectedPaths: [String] = [
         "~/.ssh",
         "~/.aws",
@@ -47,7 +28,6 @@ struct PathValidator {
         "/Library"
     ]
 
-    /// Filenames that always require approval regardless of directory
     static let defaultSensitiveFilenames: Set<String> = [
         ".env",
         ".env.local",
@@ -65,8 +45,6 @@ struct PathValidator {
         ".pypirc"
     ]
 
-    // MARK: - Initialization
-
     init(
         projectRoot: URL? = nil,
         protectedPaths: [String] = PathValidator.defaultProtectedPaths,
@@ -77,20 +55,16 @@ struct PathValidator {
         self.sensitiveFilenames = sensitiveFilenames
     }
 
-    // MARK: - Validation
-
-    /// File operation types with different security levels
     enum FileOperation {
-        case read // Less restrictive
-        case write // Must be in project or explicitly approved
-        case execute // Same as write
+        case read
+        case write
+        case execute
     }
 
-    /// Result of path validation
     enum ValidationResult: Equatable {
-        case allowed // Path is safe
-        case requiresApproval(reason: String) // Needs user confirmation
-        case denied(reason: String) // Always blocked
+        case allowed
+        case requiresApproval(reason: String)
+        case denied(reason: String)
 
         var isAllowed: Bool {
             if case .allowed = self {
@@ -100,19 +74,11 @@ struct PathValidator {
         }
     }
 
-    /// Validates a path for a given operation.
-    ///
-    /// - Parameters:
-    ///   - path: The path string to validate
-    ///   - operation: The type of file operation
-    ///   - requireApprovalOutsideProject: Whether to require approval for paths outside project
-    /// - Returns: Validated URL if allowed, or throws an error
     func validate(
         _ path: String,
         operation: FileOperation,
         requireApprovalOutsideProject: Bool = true
     ) -> ValidationResult {
-        // Step 1: Expand path (~ and environment variables)
         validate(
             url: URL(fileURLWithPath: expandPath(path)),
             operation: operation,
@@ -120,37 +86,29 @@ struct PathValidator {
         )
     }
 
-    /// Validates an already-expanded file URL. Unlike `validate(_:operation:)`, this never
-    /// expands `~` or `$VAR` again, so a resolved path containing a literal `$` stays literal.
     func validate(
         url: URL,
         operation: FileOperation,
         requireApprovalOutsideProject: Bool = true
     ) -> ValidationResult {
-        // Step 2: Resolve symlinks
         let resolvedURL = url.resolvingSymlinksInPath()
 
-        // Step 3: Standardize the path (removes . and ..)
         let canonicalURL = resolvedURL.standardized
         let pathComponents = canonicalURL.pathComponents
 
-        // Step 4: Check for protected system paths
         if let protectedReason = checkProtectedPaths(pathComponents) {
             return .requiresApproval(reason: protectedReason)
         }
 
-        // Step 5: Check for sensitive filenames
         let filename = canonicalURL.lastPathComponent
         if sensitiveFilenames.contains(filename.lowercased()) {
             return .requiresApproval(reason: "Sensitive file: \(filename)")
         }
 
-        // Also check if any path component matches sensitive filenames
         for component in pathComponents where sensitiveFilenames.contains(component.lowercased()) {
             return .requiresApproval(reason: "Path contains sensitive component: \(component)")
         }
 
-        // Check for sensitive multi-component paths (e.g., .git/config)
         if pathComponents.count >= 2 {
             for idx in 0 ..< (pathComponents.count - 1) {
                 if pathComponents[idx].lowercased() == ".git", pathComponents[idx + 1].lowercased() == "config" {
@@ -159,7 +117,6 @@ struct PathValidator {
             }
         }
 
-        // Step 6: For write/execute operations, check project boundary
         if operation == .write || operation == .execute {
             if requireApprovalOutsideProject, let projectRoot {
                 let rootComponents = Self.canonicalPathComponents(for: projectRoot)
@@ -172,20 +129,12 @@ struct PathValidator {
         return .allowed
     }
 
-    /// Returns the canonical URL for a path, resolving symlinks.
-    ///
-    /// - Parameter path: The path string to canonicalize
-    /// - Returns: Canonical URL or nil if path cannot be resolved
     func canonicalize(_ path: String) -> URL? {
         let expandedPath = expandPath(path)
         let url = URL(fileURLWithPath: expandedPath)
         return url.resolvingSymlinksInPath().standardized
     }
 
-    /// Checks if a path is within the project directory.
-    ///
-    /// - Parameter path: The path to check
-    /// - Returns: true if path is within project root
     func isWithinProject(_ path: String) -> Bool {
         guard let projectRoot else { return false }
         guard let canonical = canonicalize(path) else { return false }
@@ -194,22 +143,15 @@ struct PathValidator {
         return Self.pathComponents(canonical.pathComponents, startWith: rootComponents)
     }
 
-    // MARK: - Private Helpers
-
     private func expandPath(_ path: String) -> String {
         Self.expandPath(path)
     }
 
     private func checkProtectedPaths(_ pathComponents: [String]) -> String? {
         for protectedPath in protectedPaths {
-            // Re-resolve protected boundaries on each validation. Protected directories
-            // may be created, removed, or retargeted as symlinks after service startup;
-            // using stale resolved components could bypass required approval.
             let expandedProtectedPath = Self.expandPath(protectedPath)
             let lexicalProtectedComponents = URL(fileURLWithPath: expandedProtectedPath).standardized.pathComponents
             let resolvedProtectedComponents = Self.canonicalPathComponents(forPath: expandedProtectedPath)
-            // Compare case-insensitively: the default macOS volume is case-insensitive,
-            // so `~/.SSH` and `~/.ssh` name the same directory.
             if Self.pathComponents(pathComponents, startWith: lexicalProtectedComponents, caseInsensitive: true)
                 || Self.pathComponents(pathComponents, startWith: resolvedProtectedComponents, caseInsensitive: true)
             {
@@ -219,18 +161,13 @@ struct PathValidator {
         return nil
     }
 
-    /// Expands `~` and `$VAR` references the same way validation does. Tools must use this
-    /// for raw input paths so the file they touch is the file that was validated.
     static func expandPath(_ path: String) -> String {
         var expanded = path
 
-        // Expand ~
         if expanded.hasPrefix("~") {
             expanded = NSString(string: expanded).expandingTildeInPath
         }
 
-        // Expand environment variables like $HOME, $USER, etc.
-        // Uses a shared regex and replaces matches from the end to preserve indices.
         let range = NSRange(expanded.startIndex..., in: expanded)
         let matches = environmentVariableRegex.matches(in: expanded, options: [], range: range)
 
@@ -262,12 +199,10 @@ struct PathValidator {
         startWith directoryComponents: [String],
         caseInsensitive: Bool = false
     ) -> Bool {
-        // Path must have at least as many components as directory
         guard pathComponents.count >= directoryComponents.count else {
             return false
         }
 
-        // Check that all directory components match the start of path components
         if caseInsensitive {
             return pathComponents.starts(with: directoryComponents) {
                 $0.caseInsensitiveCompare($1) == .orderedSame
@@ -277,10 +212,7 @@ struct PathValidator {
     }
 }
 
-// MARK: - Path Validation Error
-
 extension PathValidator {
-    /// Errors that can occur during path validation
     enum ValidationError: LocalizedError {
         case pathNotAllowed(path: String, reason: String)
         case pathResolutionFailed(path: String, underlying: Error)

@@ -1,10 +1,3 @@
-//
-//  ShellSandboxTests.swift
-//  aynaTests
-//
-//  Unit tests for ShellSandbox command validation.
-//
-
 @testable import Ayna
 import Foundation
 import Testing
@@ -16,8 +9,6 @@ struct ShellSandboxTests {
     init() {
         sut = ShellSandbox()
     }
-
-    // MARK: - Allowed Commands
 
     @Test("Allows ls command")
     func allowsLs() {
@@ -60,8 +51,6 @@ struct ShellSandboxTests {
         let result = sut.validate("echo 'hello world'")
         #expect(result == .allowed)
     }
-
-    // MARK: - Blocked Commands
 
     @Test("Blocks sudo command")
     func blocksSudo() {
@@ -107,7 +96,6 @@ struct ShellSandboxTests {
     func blocksForkBomb() {
         let result = sut.validate(":(){ :|:& };:")
         if case .blocked = result {
-            // Expected
         } else {
             Issue.record("Expected blocked for fork bomb")
         }
@@ -122,8 +110,6 @@ struct ShellSandboxTests {
             Issue.record("Expected blocked for dd")
         }
     }
-
-    // MARK: - Commands Requiring Approval
 
     @Test("Requires approval for unknown commands")
     func requiresApprovalForUnknown() {
@@ -155,13 +141,10 @@ struct ShellSandboxTests {
         #expect(result == .requiresApproval)
     }
 
-    // MARK: - Command Chaining
-
     @Test("Blocks chained command with blocked component")
     func blocksChainedWithBlocked() {
         let result = sut.validate("ls && sudo rm -rf /")
         if case .blocked = result {
-            // Expected
         } else {
             Issue.record("Expected blocked for chained command with sudo")
         }
@@ -197,8 +180,6 @@ struct ShellSandboxTests {
         #expect(result == .allowed)
     }
 
-    // MARK: - Command Name Extraction
-
     @Test("Extracts simple command name")
     func extractsSimpleName() {
         let name = sut.extractCommandName("ls -la")
@@ -222,8 +203,6 @@ struct ShellSandboxTests {
         let name = sut.extractCommandName("FOO=bar BAZ=qux npm install")
         #expect(name == "npm")
     }
-
-    // MARK: - Working Directory Validation
 
     @Test("Allows working directory in project")
     func allowsWorkingDirInProject() {
@@ -278,8 +257,6 @@ struct ShellSandboxTests {
         #expect(sandbox.isWorkingDirectoryAllowed(escapePath.path) == false)
     }
 
-    // MARK: - Custom Configuration
-
     @Test("Respects custom allowed commands")
     func respectsCustomAllowed() {
         let sandbox = ShellSandbox.withAdditionalAllowed(["mycustom"])
@@ -292,7 +269,6 @@ struct ShellSandboxTests {
         let sandbox = ShellSandbox.withAdditionalBlocked(["dangerous_pattern"])
         let result = sandbox.validate("dangerous_pattern arg")
         if case .blocked = result {
-            // Expected
         } else {
             Issue.record("Expected blocked for custom pattern")
         }
@@ -314,13 +290,10 @@ struct ShellSandboxTests {
         let sandbox = ShellSandbox(allowUnlistedCommands: false)
         let result = sandbox.validate("unknown_command")
         if case .blocked = result {
-            // Expected
         } else {
             Issue.record("Expected blocked for unlisted command")
         }
     }
-
-    // MARK: - Edge Cases
 
     @Test("Handles empty command")
     func handlesEmptyCommand() {
@@ -336,7 +309,6 @@ struct ShellSandboxTests {
     func handlesWhitespaceCommand() {
         let result = sut.validate("   ")
         if case .blocked = result {
-            // Expected
         } else {
             Issue.record("Expected blocked for whitespace command")
         }
@@ -353,8 +325,6 @@ struct ShellSandboxTests {
         let result = sut.validate("echo \"test && test\"")
         #expect(result == .allowed)
     }
-
-    // MARK: - Command Substitution Blocking
 
     @Test("Blocks backtick command substitution")
     func blocksBacktickSubstitution() {
@@ -380,7 +350,6 @@ struct ShellSandboxTests {
     func blocksNestedSubstitution() {
         let result = sut.validate("ls $(cat /etc/passwd)")
         if case .blocked = result {
-            // Expected
         } else {
             Issue.record("Expected blocked for nested command substitution")
         }
@@ -390,7 +359,6 @@ struct ShellSandboxTests {
     func blocksBacktickInMiddle() {
         let result = sut.validate("cat `find . -name '*.txt'`")
         if case .blocked = result {
-            // Expected
         } else {
             Issue.record("Expected blocked for backtick in command")
         }
@@ -398,24 +366,20 @@ struct ShellSandboxTests {
 
     @Test("Allows backticks inside single quotes")
     func allowsBacktickInSingleQuotes() {
-        // Single quotes prevent substitution in shells
         let result = sut.validate("echo 'Price: `100`'")
         #expect(result == .allowed)
     }
 
     @Test("Allows $() inside single quotes")
     func allowsDollarParenInSingleQuotes() {
-        // Single quotes prevent substitution in shells
         let result = sut.validate("echo 'Value is $(10)'")
         #expect(result == .allowed)
     }
 
     @Test("Blocks backtick even with double quotes")
     func blocksBacktickInDoubleQuotes() {
-        // Double quotes allow substitution, so this should be blocked
         let result = sut.validate("echo \"result: `id`\"")
         if case .blocked = result {
-            // Expected
         } else {
             Issue.record("Expected blocked for backtick in double quotes")
         }
@@ -425,13 +389,10 @@ struct ShellSandboxTests {
     func blocksDangerousSubstitution() {
         let result = sut.validate("echo `sudo cat /etc/shadow`")
         if case .blocked = result {
-            // Expected - blocked by either substitution or sudo pattern
         } else {
             Issue.record("Expected blocked for dangerous substitution")
         }
     }
-
-    // MARK: - Process Substitution Blocking
 
     @Test("Blocks input process substitution <()")
     func blocksInputProcessSubstitution() {
@@ -457,7 +418,6 @@ struct ShellSandboxTests {
     func blocksProcessSubstitutionAttack() {
         let result = sut.validate("echo <(cat /etc/passwd)")
         if case .blocked = result {
-            // Expected
         } else {
             Issue.record("Expected blocked for process substitution attack")
         }
@@ -465,37 +425,29 @@ struct ShellSandboxTests {
 
     @Test("Allows <() inside single quotes")
     func allowsProcessSubstitutionInSingleQuotes() {
-        // Single quotes prevent substitution
         let result = sut.validate("echo 'use <(cmd) for process substitution'")
         #expect(result == .allowed)
     }
 
     @Test("Blocks <() in double quotes")
     func blocksProcessSubstitutionInDoubleQuotes() {
-        // Double quotes don't prevent process substitution
         let result = sut.validate("echo \"<(whoami)\"")
         if case .blocked = result {
-            // Expected
         } else {
             Issue.record("Expected blocked for <() in double quotes")
         }
     }
 
-    // MARK: - Escape Sequence Handling
-
     @Test("Handles escaped quotes in double-quoted strings")
     func handlesEscapedQuotes() {
-        // Command with escaped quote should still validate properly
         let result = sut.validate("echo \"hello \\\"world\\\"\"")
         #expect(result == .allowed)
     }
 
     @Test("Blocks command substitution after escaped quote")
     func blocksSubstitutionAfterEscapedQuote() {
-        // Ensure escaped quotes don't break detection
         let result = sut.validate("echo \"test\\\"\" $(whoami)")
         if case .blocked = result {
-            // Expected - $() should still be detected
         } else {
             Issue.record("Expected blocked for $() after escaped quote")
         }
@@ -522,8 +474,6 @@ struct ShellSandboxTests {
         #expect(sandbox.isWorkingDirectoryAllowed(newTarget.path))
     }
 
-    // MARK: - Bulk Validation Checks
-
     @Test("Bulk shell validation classifications stay stable")
     func bulkShellValidationClassificationsStayStable() {
         enum ExpectedResult {
@@ -539,7 +489,6 @@ struct ShellSandboxTests {
             ("ls | grep test", .allowed),
             ("FOO=bar swift --version", .allowed),
             ("custom_tool --flag", .requiresApproval),
-            // Allowlisted commands that would run other code still ask.
             ("swift test --list-tests", .requiresApproval),
             ("env python3 -c 'print(1)'", .requiresApproval),
             ("find . -name '*.tmp' -delete", .requiresApproval),

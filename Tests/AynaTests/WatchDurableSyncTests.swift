@@ -30,7 +30,6 @@ struct WatchDurableSyncTests {
 
         let snapshot = manager.durableSyncSnapshot()
 
-        // Before the fix only this session's saves counted, so the Watch tombstoned these.
         #expect(Set(snapshot.conversations.map(\.id)) == Set(stored.map(\.id)))
         #expect(snapshot.bodyUnavailableIDs == Set(stored.map(\.id)))
     }

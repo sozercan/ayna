@@ -1,17 +1,8 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  CitationSourcesView.swift
-//  Ayna
-//
-//  Displays inline citation sources with favicons for web search results.
-//
 
 import SwiftUI
 
-// MARK: - Citation Badge View
-
-/// A small favicon badge that represents a single citation source
 struct CitationBadgeView: View {
     let citation: CitationReference
     let size: CGFloat
@@ -26,12 +17,10 @@ struct CitationBadgeView: View {
     var body: some View {
         Button(action: openURL) {
             ZStack {
-                // Background circle
                 Circle()
                     .fill(Color.white.opacity(0.15))
                     .frame(width: size, height: size)
 
-                // Favicon or fallback number
                 if let faviconURL = citation.favicon, let url = URL(string: faviconURL) {
                     AsyncImage(url: url) { phase in
                         switch phase {
@@ -83,23 +72,18 @@ struct CitationBadgeView: View {
     }
 }
 
-// MARK: - Citation Sources Footer
-
-/// A collapsible footer that shows all citation sources for a message
 struct CitationSourcesFooter: View {
     let citations: [CitationReference]
     @State private var isExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            // Header button
             Button(action: {
                 withAnimation(Motion.springSnappy) {
                     isExpanded.toggle()
                 }
             }) {
                 HStack(spacing: Spacing.sm) {
-                    // Favicon row (collapsed state) - no overlap
                     if !isExpanded {
                         HStack(spacing: Spacing.xs) {
                             ForEach(citations.prefix(5), id: \.number) { citation in
@@ -131,7 +115,6 @@ struct CitationSourcesFooter: View {
             }
             .buttonStyle(PlainButtonStyle())
 
-            // Expanded source list
             if isExpanded {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     ForEach(citations, id: \.number) { citation in
@@ -145,9 +128,6 @@ struct CitationSourcesFooter: View {
     }
 }
 
-// MARK: - Citation Source Row
-
-/// A single row in the expanded sources list
 struct CitationSourceRow: View {
     let citation: CitationReference
     @State private var isHovered = false
@@ -155,10 +135,8 @@ struct CitationSourceRow: View {
     var body: some View {
         Button(action: openURL) {
             HStack(spacing: Spacing.lg) {
-                // Favicon
                 CitationBadgeView(citation: citation, size: 22)
 
-                // Title and domain
                 VStack(alignment: .leading, spacing: Spacing.xxxs) {
                     Text(citation.title)
                         .font(Typography.buttonSmall)
@@ -174,7 +152,6 @@ struct CitationSourceRow: View {
 
                 Spacer()
 
-                // External link icon
                 Image(systemName: "arrow.up.right")
                     .font(.system(size: Typography.Size.xs, weight: .medium))
                     .foregroundStyle(.white.opacity(0.5))
@@ -206,14 +183,10 @@ struct CitationSourceRow: View {
         guard let url = URL(string: urlString),
               let host = url.host
         else { return nil }
-        // Remove www. prefix if present
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 }
 
-// MARK: - Inline Citation Badges Row
-
-/// A horizontal row of citation badges to display inline after message content
 struct InlineCitationBadgesView: View {
     let citations: [CitationReference]
 
@@ -225,8 +198,6 @@ struct InlineCitationBadgesView: View {
         }
     }
 }
-
-// MARK: - Previews
 
 #if DEBUG
 struct CitationSourcesView_Previews: PreviewProvider {
@@ -253,17 +224,14 @@ struct CitationSourcesView_Previews: PreviewProvider {
 
     static var previews: some View {
         VStack(spacing: 20) {
-            // Individual badges
             HStack {
                 ForEach(sampleCitations, id: \.number) { citation in
                     CitationBadgeView(citation: citation)
                 }
             }
 
-            // Inline badges row
             InlineCitationBadgesView(citations: sampleCitations)
 
-            // Full footer
             CitationSourcesFooter(citations: sampleCitations)
         }
         .padding()

@@ -1,10 +1,4 @@
 #if os(macOS)
-    //
-    //  MacNewChatView+Lifecycle.swift
-    //  ayna
-    //
-    //  Cancellation finalization for the macOS new-chat flow.
-    //
 
     import SwiftUI
 

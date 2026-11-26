@@ -1,20 +1,11 @@
 #if os(watchOS)
-//
-    //  WatchChatView.swift
-    //  Ayna Watch App
-//
-    //  Created on 11/29/25.
-//
 
     #if os(watchOS)
 
         import SwiftUI
 
-        /// Activity type for Handoff
         private let handoffActivityType = "com.sertacozercan.ayna.conversation"
 
-        /// Chat view for Watch showing messages and input
-        /// Mimics iMessage style with bubbles and bottom composer bar
         struct WatchChatView: View {
             let conversationId: UUID
             @ObservedObject var viewModel: WatchChatViewModel
@@ -32,7 +23,6 @@
                                         message.toolCalls?.contains(where: {
                                             $0.toolName == WebSearchCoordinator.toolName
                                         }) == true
-                                    // Keep web-search output in provider history but present citations instead.
                                     if !isWebSearchToolResult,
                                        !message.visibleContent.isEmpty ||
                                        message.role.lowercased() == "user" ||
@@ -44,7 +34,6 @@
                                     }
                                 }
 
-                                // Typing indicator only when waiting for response (not during streaming)
                                 if viewModel.isLoading, !viewModel.isStreaming {
                                     if let toolName = viewModel.currentToolName {
                                         toolIndicator(toolName)
@@ -56,17 +45,13 @@
                                 }
                             }
 
-                            // Keep preparation errors visible even if a phone tombstone removed
-                            // the conversation while this view was still on screen.
                             if let error = viewModel.errorMessage {
                                 errorView(error)
                             }
 
-                            // Spacer to separate messages from composer
                             Spacer()
                                 .frame(height: 20)
 
-                            // Composer at bottom of scroll content
                             composerBar
                                 .id("composer")
                         }
@@ -74,17 +59,14 @@
                     }
                     .accessibilityIdentifier(TestIdentifiers.Watch.chatMessagesList)
                     .onChange(of: conversationStore.conversation(for: conversationId)?.messages.count) { _, _ in
-                        // Scroll to bottom when new message arrives
                         withAnimation {
                             if viewModel.isLoading, !viewModel.isStreaming {
-                                // Waiting for response - scroll to typing indicator
                                 if viewModel.currentToolName != nil {
                                     proxy.scrollTo("tool", anchor: .bottom)
                                 } else {
                                     proxy.scrollTo("typing", anchor: .bottom)
                                 }
                             } else if let lastId = conversationStore.conversation(for: conversationId)?.messages.last?.id {
-                                // Streaming or idle - scroll to last message
                                 proxy.scrollTo(lastId, anchor: .bottom)
                             }
                         }
@@ -107,7 +89,6 @@
                     viewModel.setConversation(conversationId)
                 }
                 .userActivity(handoffActivityType) { activity in
-                    // Set up Handoff activity for this conversation
                     activity.isEligibleForHandoff = true
                     activity.title = conversationTitle
                     activity.userInfo = ["conversationId": conversationId.uuidString]
@@ -119,11 +100,9 @@
                 conversationStore.conversation(for: conversationId)?.title ?? "Chat"
             }
 
-            /// iMessage-style composer bar
             private var composerBar: some View {
                 HStack(spacing: 6) {
                     if viewModel.isLoading {
-                        // Stop button when generating
                         Button {
                             viewModel.cancelRequest()
                         } label: {
@@ -141,7 +120,6 @@
                         .buttonStyle(.plain)
                         .accessibilityIdentifier(TestIdentifiers.Watch.chatStopButton)
                     } else {
-                        // Text field - tapping triggers dictation on watchOS
                         TextField("Ask anything", text: $messageText)
                             .font(.system(size: 13))
                             .frame(height: 28)
@@ -205,7 +183,7 @@
             private func errorView(_ message: String) -> some View {
                 ErrorBannerView(
                     message: message,
-                    recoverySuggestion: nil, // watchOS errors don't typically have recovery suggestions
+                    recoverySuggestion: nil,
                     onRetry: viewModel.failedMessage != nil ? { viewModel.retryFailedMessage() } : nil,
                     onDismiss: { viewModel.dismissError() },
                     identifierPrefix: "watch.chat.error"

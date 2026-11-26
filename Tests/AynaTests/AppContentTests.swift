@@ -1,18 +1,9 @@
-//
-//  AppContentTests.swift
-//  aynaTests
-//
-//  Tests for AppContent model and related types
-//
-
 #if os(macOS)
     @testable import Ayna
     import Testing
 
     @Suite("AppContent Tests")
     struct AppContentTests {
-        // MARK: - AppContent Tests
-
         @Test("Truncation of short content")
         func truncationShortContent() {
             let content = AppContent(
@@ -110,13 +101,11 @@
             #expect(truncated.isTruncated)
             #expect(truncated.content.count == 50)
             #expect(!truncated.content.contains("[Content truncated"))
-            // Terminal content should keep the END (suffix)
             #expect(truncated.content.hasSuffix(String(repeating: "b", count: 50)))
         }
 
         @Test("Terminal truncation keeps end")
         func terminalTruncationKeepsEnd() {
-            // Terminal with distinct start and end content
             let terminalContent = "START_MARKER" + String(repeating: "x", count: 200) + "END_MARKER"
             let content = AppContent(
                 appName: "Terminal",
@@ -131,14 +120,12 @@
 
             let truncated = content.truncated(to: 50, addIndicator: false)
 
-            // Should keep the END, not the START
             #expect(truncated.content.contains("END_MARKER"))
             #expect(!truncated.content.contains("START_MARKER"))
         }
 
         @Test("Document truncation keeps start")
         func documentTruncationKeepsStart() {
-            // Document with distinct start and end content
             let docContent = "START_MARKER" + String(repeating: "x", count: 200) + "END_MARKER"
             let content = AppContent(
                 appName: "Editor",
@@ -153,7 +140,6 @@
 
             let truncated = content.truncated(to: 50, addIndicator: false)
 
-            // Should keep the START, not the END
             #expect(truncated.content.contains("START_MARKER"))
             #expect(!truncated.content.contains("END_MARKER"))
         }
@@ -174,10 +160,8 @@
 
             let forModel = content.forModel
 
-            // Should be truncated to model limit (16000) plus indicator
             #expect(forModel.isTruncated)
             #expect(forModel.content.hasPrefix(String(repeating: "c", count: 100)))
-            // Total should be around 16000 + indicator text length
             #expect(forModel.content.count < 17000)
         }
 
@@ -197,11 +181,8 @@
 
             let forPreview = content.forPreview
 
-            // Should be truncated to preview limit (500) plus indicator
             #expect(forPreview.isTruncated)
         }
-
-        // MARK: - Secret Redaction Tests
 
         @Test("Redact OpenAI key")
         func redactOpenAIKey() {
@@ -278,8 +259,6 @@
             #expect(!redacted.content.contains("[REDACTED]"))
         }
 
-        // MARK: - ContentType Tests
-
         @Test("Content type display names")
         func contentTypeDisplayNames() {
             #expect(AppContent.ContentType.selectedText.displayName == "Selected Text")
@@ -288,8 +267,6 @@
             #expect(AppContent.ContentType.browserURL.displayName == "Web Page")
             #expect(AppContent.ContentType.generic.displayName == "Content")
         }
-
-        // MARK: - AppContentResult Tests
 
         @Test("Result success content")
         func resultSuccessContent() {

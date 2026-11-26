@@ -1,17 +1,8 @@
 // swiftformat:options --ifdef no-indent
 #if os(iOS)
-//
-//  IOSCitationSourcesView.swift
-//  Ayna
-//
-//  iOS-specific views for displaying inline citation sources with favicons.
-//
 
 import SwiftUI
 
-// MARK: - iOS Citation Badge View
-
-/// A small favicon badge that represents a single citation source (iOS version)
 struct IOSCitationBadgeView: View {
     let citation: CitationReference
     let size: CGFloat
@@ -24,12 +15,10 @@ struct IOSCitationBadgeView: View {
     var body: some View {
         Button(action: openURL) {
             ZStack {
-                // Background circle
                 Circle()
                     .fill(Theme.textPrimary.opacity(0.1))
                     .frame(width: size, height: size)
 
-                // Favicon or fallback number
                 if let faviconURL = citation.favicon, let url = URL(string: faviconURL) {
                     AsyncImage(url: url) { phase in
                         switch phase {
@@ -70,18 +59,13 @@ struct IOSCitationBadgeView: View {
     }
 }
 
-// MARK: - iOS Citation Sources Footer
-
-/// A collapsible footer that shows all citation sources for a message (iOS version)
 struct IOSCitationSourcesFooter: View {
     let citations: [CitationReference]
     @State private var isExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            // Header button
             Button(action: {
-                // Haptic feedback
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
 
@@ -90,7 +74,6 @@ struct IOSCitationSourcesFooter: View {
                 }
             }) {
                 HStack(spacing: Spacing.sm) {
-                    // Favicon row (collapsed state) - no overlap
                     if !isExpanded {
                         HStack(spacing: Spacing.xs) {
                             ForEach(citations.prefix(4), id: \.number) { citation in
@@ -124,7 +107,6 @@ struct IOSCitationSourcesFooter: View {
             .accessibilityLabel(isExpanded ? "Collapse sources" : "Expand sources, \(citations.count) available")
             .accessibilityIdentifier("message.citations.expandButton")
 
-            // Expanded source list
             if isExpanded {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     ForEach(citations, id: \.number) { citation in
@@ -138,19 +120,14 @@ struct IOSCitationSourcesFooter: View {
     }
 }
 
-// MARK: - iOS Citation Source Row
-
-/// A single row in the expanded sources list (iOS version)
 struct IOSCitationSourceRow: View {
     let citation: CitationReference
 
     var body: some View {
         Button(action: openURL) {
             HStack(spacing: Spacing.lg) {
-                // Favicon
                 IOSCitationBadgeView(citation: citation, size: 24)
 
-                // Title and domain
                 VStack(alignment: .leading, spacing: Spacing.xxxs) {
                     Text(citation.title)
                         .font(Typography.captionBold)
@@ -166,7 +143,6 @@ struct IOSCitationSourceRow: View {
 
                 Spacer()
 
-                // External link icon
                 Image(systemName: "arrow.up.right")
                     .font(.system(size: Typography.Size.sm, weight: .medium))
                     .foregroundStyle(Theme.textSecondary)
@@ -182,7 +158,6 @@ struct IOSCitationSourceRow: View {
 
     private func openURL() {
         guard let url = URL(string: citation.url) else { return }
-        // Haptic feedback
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
         UIApplication.shared.open(url)
@@ -192,14 +167,10 @@ struct IOSCitationSourceRow: View {
         guard let url = URL(string: urlString),
               let host = url.host
         else { return nil }
-        // Remove www. prefix if present
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 }
 
-// MARK: - Inline Citation Badges Row (iOS)
-
-/// A horizontal row of citation badges to display inline after message content
 struct IOSInlineCitationBadgesView: View {
     let citations: [CitationReference]
 
@@ -211,8 +182,6 @@ struct IOSInlineCitationBadgesView: View {
         }
     }
 }
-
-// MARK: - Previews
 
 #if DEBUG
 struct IOSCitationSourcesView_Previews: PreviewProvider {
@@ -239,17 +208,14 @@ struct IOSCitationSourcesView_Previews: PreviewProvider {
 
     static var previews: some View {
         VStack(spacing: 20) {
-            // Individual badges
             HStack {
                 ForEach(sampleCitations, id: \.number) { citation in
                     IOSCitationBadgeView(citation: citation)
                 }
             }
 
-            // Inline badges row
             IOSInlineCitationBadgesView(citations: sampleCitations)
 
-            // Full footer
             IOSCitationSourcesFooter(citations: sampleCitations)
         }
         .padding()

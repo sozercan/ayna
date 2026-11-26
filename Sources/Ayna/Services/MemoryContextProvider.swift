@@ -1,14 +1,5 @@
-//
-//  MemoryContextProvider.swift
-//  ayna
-//
-//  Created on 12/25/25.
-//
-
 import Foundation
 
-/// Provides memory context for injection into AI requests.
-/// Coordinates between UserMemoryService, SessionMetadataService, and ConversationSummaryService.
 @MainActor
 @Observable
 final class MemoryContextProvider {
@@ -19,21 +10,15 @@ final class MemoryContextProvider {
     private let summaryService: ConversationSummaryService
     private let factExtractor: MemoryFactExtractor
 
-    /// Task for loading memory data (tracked to avoid fire-and-forget)
     @ObservationIgnored private nonisolated(unsafe) var loadTask: Task<Void, Never>?
 
-    /// Source of full conversations for summary backfill; attached by the app.
     @ObservationIgnored private weak var conversationSource: ConversationManager?
 
-    /// Summaries kept for recent conversations (the backfill target).
     static let backfillLimit = 10
 
-    /// Advances on "Clear All Memory", so backfill that started before it applies nothing.
     private var memoryClearGeneration: UInt64 = 0
-    /// Clears in progress; while any runs, saves neither update summaries nor schedule extraction.
     private var activeMemoryClears = 0
 
-    /// Whether memory features are enabled globally
     private(set) var isMemoryEnabled: Bool = false {
         didSet {
             AppPreferences.storage.set(isMemoryEnabled, forKey: "memoryEnabled")
@@ -47,14 +32,12 @@ final class MemoryContextProvider {
         }
     }
 
-    /// Whether automatic fact extraction is enabled (opt-in)
     private(set) var isAutoExtractionEnabled: Bool = false {
         didSet {
             AppPreferences.storage.set(isAutoExtractionEnabled, forKey: "memoryAutoExtraction")
         }
     }
 
-    /// Sets whether memory is enabled
     func setMemoryEnabled(_ enabled: Bool) {
         guard isMemoryEnabled != enabled else {
             if enabled {
@@ -66,7 +49,6 @@ final class MemoryContextProvider {
         NotificationCenter.default.post(name: .watchSyncContextDidChange, object: nil)
     }
 
-    /// Sets whether auto extraction is enabled
     func setAutoExtractionEnabled(_ enabled: Bool) {
         isAutoExtractionEnabled = enabled
         if !enabled {
@@ -85,13 +67,11 @@ final class MemoryContextProvider {
         self.summaryService = summaryService
         self.factExtractor = factExtractor
 
-        // Register defaults
         AppPreferences.storage.register(defaults: [
-            "memoryEnabled": false, // Opt-in by default
-            "memoryAutoExtraction": false // Disabled by default
+            "memoryEnabled": false,
+            "memoryAutoExtraction": false
         ])
 
-        // Load stored values
         isMemoryEnabled = AppPreferences.storage.bool(forKey: "memoryEnabled")
         isAutoExtractionEnabled = AppPreferences.storage.bool(forKey: "memoryAutoExtraction")
         scheduleMemoryLoadIfNeeded()
@@ -122,7 +102,6 @@ final class MemoryContextProvider {
         }
     }
 
-    /// Loads all memory data from storage.
     func loadAll() async {
         guard isMemoryEnabled else { return }
 
@@ -134,14 +113,11 @@ final class MemoryContextProvider {
         await backfillSummariesIfNeeded()
     }
 
-    /// Lets summary backfill read recent conversations, then backfills if memory is ready.
     func attachConversationSource(_ manager: ConversationManager) {
         conversationSource = manager
         Task { await self.backfillSummariesIfNeeded() }
     }
 
-    /// Summarizes recent conversations that have no summary yet, e.g. right after memory is
-    /// turned on or for conversations from before summaries were saved reliably.
     func backfillSummariesIfNeeded() async {
         guard isMemoryEnabled, summaryService.isLoaded,
               summaryService.summaryCount < Self.backfillLimit,
@@ -152,14 +128,12 @@ final class MemoryContextProvider {
         let generation = memoryClearGeneration
         let loaded = await conversationSource.recentConversationsWithHistory(limit: Self.backfillLimit)
         guard memoryClearGeneration == generation else { return }
-        // Conversations deleted (or cleared) while their history loaded must not regain summaries.
         let currentIds = Set(conversationSource.conversations.map(\.id))
         let recent = loaded.filter { currentIds.contains($0.id) }
         guard isMemoryEnabled, !recent.isEmpty else { return }
         summaryService.backfillSummaries(from: recent, limit: Self.backfillLimit)
     }
 
-    /// Saves all memory data immediately.
     func saveAll() async {
         guard isMemoryEnabled else { return }
 
@@ -167,9 +141,6 @@ final class MemoryContextProvider {
         await summaryService.saveImmediately()
     }
 
-    // MARK: - Context Building
-
-    /// Token budget allocation based on model context window.
     struct ContextAllocation {
         let sessionMetadata: Int
         let userMemory: Int
@@ -178,26 +149,20 @@ final class MemoryContextProvider {
 
         static let reservedForResponse = 4000
 
-        /// Creates allocation based on available context tokens.
         init(availableTokens: Int) {
             let available = max(0, availableTokens - Self.reservedForResponse)
 
-            // For small context models (< 8K), drop summaries entirely
             if available < 8000 {
                 sessionMetadata = min(100, available / 20)
                 userMemory = min(500, available / 8)
                 conversationSummary = 0
                 conversationHistory = available - 600
-            }
-            // For medium context (8K-32K), reduce allocations
-            else if available < 32000 {
+            } else if available < 32000 {
                 sessionMetadata = 150
                 userMemory = 750
                 conversationSummary = 300
                 conversationHistory = available - 1200
-            }
-            // Large context models get full allocations
-            else {
+            } else {
                 sessionMetadata = 200
                 userMemory = 1000
                 conversationSummary = 500
@@ -206,11 +171,6 @@ final class MemoryContextProvider {
         }
     }
 
-    /// Builds complete memory context for injection.
-    /// - Parameters:
-    ///   - currentConversationId: ID of the current conversation (excluded from summaries)
-    ///   - modelContextWindow: The model's total context window size
-    /// - Returns: Memory context struct with formatted strings
     func buildContext(
         currentConversationId: UUID? = nil,
         modelContextWindow: Int = 128_000
@@ -236,8 +196,6 @@ final class MemoryContextProvider {
         )
     }
 
-    /// Processes a user message for memory commands.
-    /// - Returns: Response text if a command was processed, nil otherwise.
     func processMemoryCommand(in message: String) -> String? {
         guard isMemoryEnabled else { return nil }
 
@@ -245,8 +203,6 @@ final class MemoryContextProvider {
         return memoryService.processCommand(command)
     }
 
-    /// Updates conversation summary when a conversation changes, and schedules automatic fact
-    /// extraction for it when that is turned on.
     func updateConversationSummary(_ conversation: Conversation) {
         guard isMemoryEnabled, activeMemoryClears == 0 else { return }
         summaryService.updateSummary(for: conversation)
@@ -255,15 +211,12 @@ final class MemoryContextProvider {
         }
     }
 
-    /// Removes summary when a conversation is deleted, and drops any pending fact extraction
-    /// for it so deleted messages are never sent or stored.
     func removeConversationSummary(for conversationId: UUID) {
         factExtractor.cancel(conversationId: conversationId)
         guard isMemoryEnabled else { return }
         summaryService.removeSummary(for: conversationId)
     }
 
-    /// Clears stored facts and summaries, after stopping any extraction that could refill them.
     func clearAllMemory() async throws {
         memoryClearGeneration &+= 1
         activeMemoryClears += 1
@@ -290,8 +243,6 @@ final class MemoryContextProvider {
         )
     }
 
-    // MARK: - Accessors
-
     var memoryFactCount: Int {
         memoryService.activeFacts().count
     }
@@ -305,7 +256,6 @@ final class MemoryContextProvider {
     }
 }
 
-/// Container for memory context to inject into AI requests.
 struct MemoryContext: Sendable {
     let sessionMetadata: String?
     let userMemory: String?
@@ -324,12 +274,10 @@ struct MemoryContext: Sendable {
         self.allocation = allocation
     }
 
-    /// Whether any memory context is available
     var hasContent: Bool {
         sessionMetadata != nil || userMemory != nil || conversationSummaries != nil
     }
 
-    /// Estimated token count for the memory context
     var estimatedTokens: Int {
         var tokens = 0
         if let meta = sessionMetadata {
@@ -345,5 +293,4 @@ struct MemoryContext: Sendable {
     }
 }
 
-/// Make ContextAllocation Sendable
 extension MemoryContextProvider.ContextAllocation: Sendable {}

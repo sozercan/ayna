@@ -8,9 +8,6 @@ import Testing
 @Suite("AIService Global State Tests", .serialized)
 struct AIServiceGlobalStateTests {}
 
-// MARK: - CustomTestStringConvertible Extensions
-
-/// Provides better test failure diagnostics per Swift Testing Playbook Section 10
 extension Conversation: CustomTestStringConvertible {
     public var testDescription: String {
         "Conversation(\(id.uuidString.prefix(8))..., title: \"\(title)\", messages: \(messages.count), model: \(model))"
@@ -24,8 +21,6 @@ extension Message: CustomTestStringConvertible {
         return "Message(\(role.rawValue), \"\(contentPreview)\(suffix)\")"
     }
 }
-
-// MARK: - In-Memory Keychain Storage
 
 final class InMemoryKeychainStorage: KeychainStoring, @unchecked Sendable {
     private var storage: [String: Data] = [:]
@@ -67,8 +62,6 @@ final class InMemoryKeychainStorage: KeychainStoring, @unchecked Sendable {
 }
 
 enum TestHelpers {
-    /// A real, decodable image (PNG or JPEG) for code that validates image data.
-    /// Different widths give different bytes when a test needs distinct images.
     static func imageData(jpeg: Bool = false, width: Int = 1) -> Data {
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         guard let context = CGContext(
@@ -117,7 +110,6 @@ enum TestHelpers {
     }
 }
 
-/// Waits for one callback without relying on scheduler-sensitive sleeps.
 final class TestCallbackWaiter: @unchecked Sendable {
     private let stream: AsyncStream<Void>
     private let continuation: AsyncStream<Void>.Continuation

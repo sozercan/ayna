@@ -845,9 +845,7 @@ struct EncryptedConversationStoreTests {
         do {
             try await saveTask.value
             Issue.record("Expected save cancellation")
-        } catch is CancellationError {
-            // Expected.
-        }
+        } catch is CancellationError {}
         #expect(try await store.loadConversation(id: conversation.id) == nil)
     }
 

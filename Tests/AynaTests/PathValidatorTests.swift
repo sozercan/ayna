@@ -1,10 +1,3 @@
-//
-//  PathValidatorTests.swift
-//  aynaTests
-//
-//  Unit tests for PathValidator path security validation.
-//
-
 @testable import Ayna
 import Foundation
 import Testing
@@ -16,8 +9,6 @@ struct PathValidatorTests {
     init() {
         sut = PathValidator()
     }
-
-    // MARK: - Basic Path Validation
 
     @Test("Allows normal file paths for read")
     func allowsNormalPathForRead() {
@@ -38,8 +29,6 @@ struct PathValidatorTests {
         #expect(url?.path.contains("Documents") == true)
         #expect(url?.path.hasPrefix("/Users") == true || url?.path.hasPrefix("/var") == true)
     }
-
-    // MARK: - Protected Paths
 
     @Test("Requires approval for SSH directory")
     func requiresApprovalForSSH() {
@@ -91,8 +80,6 @@ struct PathValidatorTests {
         }
     }
 
-    // MARK: - Sensitive Filenames
-
     @Test("Requires approval for .env files")
     func requiresApprovalForEnvFile() {
         let result = sut.validate("/tmp/project/.env", operation: .read)
@@ -123,8 +110,6 @@ struct PathValidatorTests {
         }
     }
 
-    // MARK: - Project Boundary
-
     @Test("Allows write within project directory")
     func allowsWriteWithinProject() {
         let projectRoot = URL(fileURLWithPath: "/tmp/my-project")
@@ -147,8 +132,6 @@ struct PathValidatorTests {
         }
     }
 
-    // MARK: - isWithinProject
-
     @Test("Correctly identifies path within project")
     func identifiesPathWithinProject() {
         let projectRoot = URL(fileURLWithPath: "/tmp/my-project")
@@ -163,8 +146,6 @@ struct PathValidatorTests {
         let validator = PathValidator(projectRoot: nil)
         #expect(validator.isWithinProject("/tmp/any/file.swift") == false)
     }
-
-    // MARK: - TOCTOU Revalidation (paths that must remain requiresApproval on re-check)
 
     @Test("SSH known_hosts requires approval on revalidation")
     func sshKnownHostsRequiresApproval() {
@@ -199,13 +180,10 @@ struct PathValidatorTests {
         }
     }
 
-    // MARK: - Edge Cases
-
     @Test("Handles empty path")
     func handlesEmptyPath() {
         let result = sut.validate("", operation: .read)
-        // Empty path will fail to canonicalize
-        #expect(result.isAllowed || !result.isAllowed) // Just ensure no crash
+        #expect(result.isAllowed || !result.isAllowed)
     }
 
     @Test("Handles path with special characters")
@@ -213,8 +191,6 @@ struct PathValidatorTests {
         let result = sut.validate("/tmp/test file (1).txt", operation: .read)
         #expect(result.isAllowed)
     }
-
-    // MARK: - Custom Configuration
 
     @Test("Respects custom protected paths")
     func respectsCustomProtectedPaths() {
@@ -231,8 +207,6 @@ struct PathValidatorTests {
             Issue.record("Expected requiresApproval for custom protected path")
         }
     }
-
-    // MARK: - .git/config Multi-Component Path
 
     @Test(".git/config is not in defaultSensitiveFilenames")
     func gitConfigNotInDefaultSensitiveFilenames() {
@@ -344,8 +318,6 @@ struct PathValidatorTests {
         #expect(!validator.isWithinProject(oldTarget.path))
         #expect(validator.isWithinProject(newTarget.path))
     }
-
-    // MARK: - Bulk Validation Checks
 
     @Test("Bulk path validation classifications stay stable")
     func bulkPathValidationClassificationsStayStable() {

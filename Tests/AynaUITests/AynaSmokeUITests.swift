@@ -26,7 +26,6 @@ final class AynaSmokeUITests: AynaUITestCase {
         XCTAssertTrue(chatComposer.waitForExistence(timeout: 10))
         XCTAssertEqual((chatComposer.value as? String) ?? "", "")
 
-        // Title should update from "New Conversation" to the message content
         let conversationTitle = app.staticTexts["Hello UI Tests"]
         XCTAssertTrue(conversationTitle.waitForExistence(timeout: 10))
     }
@@ -48,7 +47,6 @@ final class AynaSmokeUITests: AynaUITestCase {
         let uniqueKeyword = "UniqueSearchTerm"
         composeInitialMessageAndSend("Message with \(uniqueKeyword)")
 
-        // Title should be the message content
         let title = "Message with \(uniqueKeyword)"
         XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 10))
         let rowIdentifierPrefix = "sidebar.conversationRow."
@@ -62,7 +60,6 @@ final class AynaSmokeUITests: AynaUITestCase {
         XCTAssertTrue(matchingRowTitle.waitForExistence(timeout: 10))
         let matchingRowIdentifier = matchingRowTitle.identifier
 
-        // Create another one
         composeInitialMessageAndSend("Another conversation")
         let otherTitle = "Another conversation"
         let sidebarTitlePredicate = NSPredicate(
@@ -73,14 +70,11 @@ final class AynaSmokeUITests: AynaUITestCase {
         let nonMatchingTitles = app.staticTexts.matching(sidebarTitlePredicate)
         XCTAssertTrue(nonMatchingTitles.firstMatch.waitForExistence(timeout: 10))
 
-        // Search
         let searchField = app.textFields[TestIdentifiers.Sidebar.searchField]
         XCTAssertTrue(searchField.exists)
         searchField.click()
         searchField.typeText(uniqueKeyword)
 
-        // Wait on the query count rather than a resolved element because SwiftUI
-        // can recycle the accessibility object for a removed List row.
         let titleDisappeared = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "count == 0"),
             object: nonMatchingTitles
@@ -94,44 +88,33 @@ final class AynaSmokeUITests: AynaUITestCase {
         let msg = "Conversation to delete"
         composeInitialMessageAndSend(msg)
 
-        // Wait for sidebar to update and ensure the row is hittable
         let sidebarList = app.outlines[TestIdentifiers.Sidebar.conversationList]
         let title = sidebarList.staticTexts[msg]
         XCTAssertTrue(title.waitForExistence(timeout: 10))
 
-        // Select the row and issue the Delete key command (List now handles onDeleteCommand)
         let rowHittablePredicate = NSPredicate(format: "isHittable == true")
         let rowHittableExpectation = XCTNSPredicateExpectation(predicate: rowHittablePredicate, object: title)
         XCTAssertEqual(XCTWaiter.wait(for: [rowHittableExpectation], timeout: 5), .completed)
 
-        // Use context menu to delete - this tests the actual UI interaction users would use
         title.rightClick()
 
-        // Use explicit identifier for the context menu's Delete item
         let deleteMenuItem = app.menuItems["contextMenu.delete"]
         XCTAssertTrue(deleteMenuItem.waitForExistence(timeout: 3), "Delete menu item should appear in context menu")
 
-        // Use coordinate-based tap for more reliable menu item clicking
         deleteMenuItem.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
 
-        // Wait for the menu to dismiss and deletion to process using predicate expectation
         let menuDismissed = NSPredicate(format: "exists == false")
         let menuExpectation = XCTNSPredicateExpectation(predicate: menuDismissed, object: deleteMenuItem)
         _ = XCTWaiter.wait(for: [menuExpectation], timeout: 2)
 
-        // If context menu tap didn't work (known SwiftUI issue), fall back to keyboard delete
         if title.exists {
-            // Dismiss any lingering menu
             app.typeKey(.escape, modifierFlags: [])
 
-            // Wait for menu to fully dismiss
             let escapeHandled = XCTNSPredicateExpectation(predicate: menuDismissed, object: deleteMenuItem)
             _ = XCTWaiter.wait(for: [escapeHandled], timeout: 1)
 
-            // Select and delete via keyboard
             title.click()
 
-            // Wait for selection
             let selectedPredicate = NSPredicate(format: "isSelected == true OR isHittable == true")
             let selectedExpectation = XCTNSPredicateExpectation(predicate: selectedPredicate, object: title)
             _ = XCTWaiter.wait(for: [selectedExpectation], timeout: 1)
@@ -139,49 +122,37 @@ final class AynaSmokeUITests: AynaUITestCase {
             app.typeKey(.delete, modifierFlags: [])
         }
 
-        // Confirm deletion in alert if present (not present in this app flow, it just deletes)
-
-        // Verify it's gone
         let doesNotExist = NSPredicate(format: "exists == false")
         let expectation = XCTNSPredicateExpectation(predicate: doesNotExist, object: title)
-        // Increased timeout to 10s to account for potential animation or state update delays
         let result = XCTWaiter.wait(for: [expectation], timeout: 10)
         XCTAssertEqual(result, XCTWaiter.Result.completed)
     }
 
     func testSettingsWindow() {
-        // Open Settings via keyboard shortcut (Cmd+,)
         app.typeKey(",", modifierFlags: .command)
 
-        // The settings window usually has the title "Settings" or the app name
-        // We look for the toolbar buttons which act as tabs
         let generalTab = app.buttons["General"]
         XCTAssertTrue(generalTab.waitForExistence(timeout: 5))
 
         let modelsTab = app.buttons["Models"]
         XCTAssertTrue(modelsTab.waitForExistence(timeout: 5))
 
-        // The Tools tab (formerly MCP Tools)
         let toolsTab = app.buttons["Tools"]
         XCTAssertTrue(toolsTab.waitForExistence(timeout: 5))
     }
 
     func testConversationSwitching() {
-        // 1. Create first conversation
         composeInitialMessageAndSend("Topic Alpha")
         let sidebarList = app.outlines[TestIdentifiers.Sidebar.conversationList]
         XCTAssertTrue(sidebarList.staticTexts["Topic Alpha"].waitForExistence(timeout: 5))
 
-        // 2. Create second conversation
         let newButton = app.buttons[TestIdentifiers.Sidebar.newConversationButton].firstMatch
         newButton.click()
 
         let composer = app.textViews[TestIdentifiers.NewChatComposer.textEditor]
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
 
-        // Ensure focus before typing
         composer.click()
-        // Wait for keyboard focus
         let hasFocus = NSPredicate(format: "hasKeyboardFocus == true")
         let focusExpectation = XCTNSPredicateExpectation(predicate: hasFocus, object: composer)
         let focusWaitResult = XCTWaiter.wait(for: [focusExpectation], timeout: 5)
@@ -192,31 +163,9 @@ final class AynaSmokeUITests: AynaUITestCase {
 
         XCTAssertTrue(sidebarList.staticTexts["Topic Beta"].waitForExistence(timeout: 5))
 
-        // 3. Switch back to Alpha
-        // Use sidebar list to find the specific row
         let alphaRow = sidebarList.staticTexts["Topic Alpha"]
         alphaRow.click()
 
-        // 4. Verify Alpha content is present
-        // We look for the message content in the chat view.
-        // Since "Topic Alpha" is also the title, we look for the message bubble specifically.
-        // The message bubble has an accessibility label equal to the content.
-        // To be safe, we can check that "Topic Beta" message is NOT present.
-
-        // A more robust way: check for the unique user message text element
-        // that is NOT the sidebar element.
-        // The sidebar element is usually a static text inside a cell.
-        // The message bubble is also a static text (or text view).
-        // We can check that we have at least 2 occurrences of "Topic Alpha" (one sidebar, one chat)
-        // and only 1 occurrence of "Topic Beta" (sidebar only).
-
-        // Let's verify the copy button exists for the current chat, which implies a chat is loaded.
-        // And verify the content text exists in the chat area (not sidebar)
-        // We can use a predicate to exclude sidebar elements if needed, but simple existence check is a good start.
-        // Since we clicked Alpha, we expect to see Alpha message.
-
-        // Check for message bubble content with proper wait
-        // User message is an 'Other' element with label == content
         let messageBubble = app.otherElements.containing(
             NSPredicate(format: "label == %@", "Topic Alpha")
         ).firstMatch
@@ -226,18 +175,14 @@ final class AynaSmokeUITests: AynaUITestCase {
     func testMessageCopy() {
         composeInitialMessageAndSend("Text to copy")
 
-        // Wait for response to appear
         let responseText = "UI Test Response: Text to copy"
         let responsePredicate = NSPredicate(format: "label CONTAINS %@", responseText)
 
-        // Find the message container that contains this text
         let messageBubble = app.otherElements.containing(responsePredicate).firstMatch
         XCTAssertTrue(messageBubble.waitForExistence(timeout: 10))
 
-        // Right-click to open context menu
         messageBubble.rightClick()
 
-        // Verify Copy menu item exists in context menu
         let copyMenuItem = app.menuItems["Copy"]
         XCTAssertTrue(copyMenuItem.waitForExistence(timeout: 2))
     }
@@ -262,10 +207,8 @@ final class AynaSmokeUITests: AynaUITestCase {
     @discardableResult
     private func composeInitialMessageAndSend(_ text: String) -> XCUIElement {
         let composer = ensureNewConversationComposer()
-        // Use coordinate tap to avoid "unable to find hit point" errors if element is partially obscured
         composer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
 
-        // Wait for focus
         let hasFocus = NSPredicate(format: "hasKeyboardFocus == true")
         let focusExpectation = XCTNSPredicateExpectation(predicate: hasFocus, object: composer)
         let composeFocusResult = XCTWaiter.wait(for: [focusExpectation], timeout: 5)

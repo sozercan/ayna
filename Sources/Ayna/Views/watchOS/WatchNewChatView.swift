@@ -1,16 +1,9 @@
 #if os(watchOS)
-//
-    //  WatchNewChatView.swift
-    //  Ayna Watch App
-//
-    //  Created on 11/30/25.
-//
 
     #if os(watchOS)
 
         import SwiftUI
 
-        /// New chat view that doesn't create a conversation until user sends a message
         struct WatchNewChatView: View {
             @Environment(\.dismiss) private var dismiss
             @ObservedObject var viewModel: WatchChatViewModel
@@ -22,10 +15,8 @@
             var body: some View {
                 Group {
                     if let conversationId = createdConversationId {
-                        // Once conversation is created, show the regular chat view
                         WatchChatView(conversationId: conversationId, viewModel: viewModel)
                     } else {
-                        // Show empty state with just the composer
                         newChatContent
                     }
                 }
@@ -49,7 +40,6 @@
                         Spacer()
                             .frame(height: 40)
 
-                        // Composer
                         composerBar
 
                         if let error = viewModel.errorMessage {
@@ -80,13 +70,10 @@
                 let trimmed = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }
 
-                // Create the conversation only now
-                // No haptic here: sending the first message already plays one.
                 guard let newId = viewModel.createNewConversation() else { return }
                 createdConversationId = newId
                 conversationStore.selectedConversationId = newId
 
-                // Send the message
                 if viewModel.sendMessage(trimmed).consumedInput {
                     messageText = ""
                 }

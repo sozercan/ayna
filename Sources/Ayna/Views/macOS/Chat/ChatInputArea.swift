@@ -1,17 +1,10 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  ChatInputArea.swift
-//  ayna
-//
-//  Extracted from MacChatView.swift - Chat input/composer area component
-//
 
 import AppKit
 import ImageIO
 import SwiftUI
 
-/// The chat input/composer area including text editor, attachments, and model selector
 struct ChatInputArea: View {
     @Binding var messageText: String
     @Binding var isComposerFocused: Bool
@@ -36,7 +29,6 @@ struct ChatInputArea: View {
     let onClearMultiSelection: () -> Void
     let onRemoveFile: (URL) -> Void
     var onRemoveAppContent: (() -> Void)?
-    /// True while files dropped on the screen are still loading.
     var hasPendingFileDrops = false
 
     var body: some View {
@@ -45,17 +37,14 @@ struct ChatInputArea: View {
         VStack(spacing: Spacing.sm) {
             MCPToolSummaryView(isExpanded: $isToolSectionExpanded)
 
-            // Attached files preview
             if !attachedFiles.isEmpty || !pastedImages.isEmpty {
                 attachedFilesView
             }
 
-            // Attached app content preview
             if let appContent = attachedAppContent {
                 attachedAppContentView(appContent: appContent)
             }
 
-            // Main input row
             HStack(spacing: 0) {
                 textEditorWithAttachButton(textHeight: textHeight)
                 modelSelectorButton(textHeight: textHeight)
@@ -75,8 +64,6 @@ struct ChatInputArea: View {
         .background(.ultraThinMaterial)
     }
 
-    // MARK: - Attached Files View
-
     private var attachedFilesView: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Spacing.sm) {
@@ -95,11 +82,8 @@ struct ChatInputArea: View {
         }
     }
 
-    // MARK: - Attached App Content View
-
     private func attachedAppContentView(appContent: AppContent) -> some View {
         HStack(spacing: Spacing.sm) {
-            // App icon
             if let icon = appContent.appIcon {
                 Image(nsImage: icon)
                     .resizable()
@@ -111,7 +95,6 @@ struct ChatInputArea: View {
                     .foregroundStyle(Theme.textSecondary)
             }
 
-            // App name and window title
             VStack(alignment: .leading, spacing: 2) {
                 Text(appContent.appName)
                     .font(Typography.captionBold)
@@ -127,7 +110,6 @@ struct ChatInputArea: View {
 
             Spacer()
 
-            // Content type badge
             Text(appContent.contentType.displayName)
                 .font(Typography.footnote)
                 .foregroundStyle(Theme.textTertiary)
@@ -136,7 +118,6 @@ struct ChatInputArea: View {
                 .background(Theme.backgroundTertiary)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            // Remove button
             Button {
                 if let onRemove = onRemoveAppContent {
                     onRemove()
@@ -155,8 +136,6 @@ struct ChatInputArea: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Spacing.CornerRadius.md))
         .padding(.horizontal, Spacing.contentPadding)
     }
-
-    // MARK: - Text Editor with Attach Button
 
     private func textEditorWithAttachButton(textHeight: CGFloat) -> some View {
         ZStack(alignment: .bottomLeading) {
@@ -190,7 +169,6 @@ struct ChatInputArea: View {
             .padding(.vertical, Spacing.md)
             .background(.clear)
 
-            // Attach menu button
             Menu {
                 Button {
                     onAttachFile()
@@ -217,8 +195,6 @@ struct ChatInputArea: View {
             .padding(.bottom, Spacing.sm)
         }
     }
-
-    // MARK: - Model Selector Button
 
     private func modelSelectorButton(textHeight: CGFloat) -> some View {
         Button(action: { showModelSelector.toggle() }) {
@@ -264,8 +240,6 @@ struct ChatInputArea: View {
         )
     }
 
-    // MARK: - Send Button
-
     private func sendButton(textHeight: CGFloat) -> some View {
         Button(action: onSendMessage) {
             ZStack {
@@ -287,8 +261,6 @@ struct ChatInputArea: View {
         .padding(.horizontal, Spacing.md)
         .frame(height: textHeight + Spacing.xxl)
     }
-
-    // MARK: - Text Height Calculation
 
     private func calculateTextHeight() -> CGFloat {
         let baseHeight: CGFloat = 22
@@ -348,7 +320,6 @@ private enum AttachmentThumbnailCache {
     }
 }
 
-/// Row for displaying an attached file
 struct AttachedFileRow: View {
     let fileURL: URL
     let onRemove: () -> Void

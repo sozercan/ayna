@@ -4,8 +4,6 @@ import Testing
 
 @Suite("CitationReference Tests", .tags(.fast))
 struct CitationReferenceTests {
-    // MARK: - Initialization Tests
-
     @Test("Init with all properties")
     func initWithAllProperties() {
         let citation = CitationReference(
@@ -34,8 +32,6 @@ struct CitationReferenceTests {
         #expect(citation.url == "https://example.org")
         #expect(citation.favicon == nil)
     }
-
-    // MARK: - Codable Tests
 
     @Test("Encode and decode round trip")
     func encodeDecode() throws {
@@ -93,8 +89,6 @@ struct CitationReferenceTests {
         #expect(citation.favicon == nil)
     }
 
-    // MARK: - Equatable Tests
-
     @Test("Equality")
     func equality() {
         let citation1 = CitationReference(
@@ -145,8 +139,6 @@ struct CitationReferenceTests {
 
         #expect(citation1 != citation2)
     }
-
-    // MARK: - Message Integration Tests
 
     @Test("Message with citations")
     func messageWithCitations() {
@@ -203,7 +195,6 @@ struct CitationReferenceTests {
 
     @Test("Message with nil citations decodes from legacy JSON")
     func messageWithNilCitationsDecodesFromLegacyJSON() throws {
-        // Simulate a legacy message JSON without the citations field
         let json = """
         {
             "id": "550e8400-e29b-41d4-a716-446655440000",

@@ -1,67 +1,20 @@
-//
-//  ErrorBannerView.swift
-//  ayna
-//
-//  A reusable error banner component following Apple's Human Interface Guidelines.
-//  Displays error messages with optional recovery suggestions and action buttons.
-//
-//  HIG Compliance:
-//  - Non-modal, inline display for recoverable errors
-//  - Clear, actionable messaging
-//  - Accessible touch targets (44pt minimum)
-//  - Consistent visual hierarchy across platforms
-//
-
 import SwiftUI
 
-/// A cross-platform error banner view for displaying error messages.
-///
-/// Usage:
-/// ```swift
-/// if let error = viewModel.errorMessage {
-///     ErrorBannerView(
-///         message: error,
-///         recoverySuggestion: "Check your internet connection",
-///         onRetry: { viewModel.retry() },
-///         onDismiss: { viewModel.dismissError() }
-///     )
-/// }
-/// ```
 public struct ErrorBannerView: View {
-    /// The primary error message to display
     let message: String
 
-    /// An optional secondary message with recovery guidance
     let recoverySuggestion: String?
 
-    /// Optional retry action - if provided, shows a retry button
     let onRetry: (() -> Void)?
 
-    /// Optional open-settings action - if provided, shows an "Open Settings" button
     let onOpenSettings: (() -> Void)?
 
-    /// Optional settings destination to open on macOS via `SettingsLink`.
-    ///
-    /// Stored as `AnyHashable` to keep this view cross-platform; interpreted as `SettingsTab`
-    /// only on macOS.
-    /// If set on macOS, this takes precedence over `onOpenSettings`.
     let openSettingsTab: AnyHashable?
 
-    /// Dismiss action - always required to clear the error
     let onDismiss: () -> Void
 
-    /// Accessibility identifier prefix for testing
     var identifierPrefix: String = "error.banner"
 
-    /// Creates an error banner view.
-    /// - Parameters:
-    ///   - message: The primary error message
-    ///   - recoverySuggestion: Optional recovery guidance (e.g., "Check your API key in Settings")
-    ///   - onRetry: Optional retry action closure
-    ///   - onOpenSettings: Optional open-settings action closure
-    ///   - openSettingsTab: Optional settings destination (macOS-only behavior)
-    ///   - onDismiss: Dismiss action closure (required)
-    ///   - identifierPrefix: Accessibility identifier prefix for testing
     public init(
         message: String,
         recoverySuggestion: String? = nil,
@@ -87,8 +40,6 @@ public struct ErrorBannerView: View {
             standardLayout
         #endif
     }
-
-    // MARK: - Standard Layout (iOS/macOS)
 
     private var standardLayout: some View {
         HStack(alignment: .center, spacing: Spacing.sm) {
@@ -192,8 +143,6 @@ public struct ErrorBannerView: View {
         .accessibilityIdentifier("\(identifierPrefix).container")
     }
 
-    // MARK: - watchOS Layout (Compact)
-
     private var watchOSLayout: some View {
         VStack(spacing: Spacing.sm) {
             HStack(spacing: Spacing.xs) {
@@ -242,8 +191,6 @@ public struct ErrorBannerView: View {
         .accessibilityIdentifier("\(identifierPrefix).container")
     }
 
-    // MARK: - Accessibility
-
     private var accessibilityMessage: String {
         if let suggestion = recoverySuggestion {
             return "Error: \(message). \(suggestion)"
@@ -252,10 +199,7 @@ public struct ErrorBannerView: View {
     }
 }
 
-// MARK: - Convenience Initializers
-
 public extension ErrorBannerView {
-    /// Creates an error banner from a LocalizedError with automatic recovery suggestion extraction.
     init(
         error: some LocalizedError,
         onRetry: (() -> Void)? = nil,
@@ -274,26 +218,21 @@ public extension ErrorBannerView {
     }
 }
 
-// MARK: - Preview
-
 #if DEBUG
     struct ErrorBannerView_Previews: PreviewProvider {
         static var previews: some View {
             VStack(spacing: 20) {
-                // Simple error
                 ErrorBannerView(
                     message: "Network connection failed",
                     onDismiss: {}
                 )
 
-                // Error with recovery suggestion
                 ErrorBannerView(
                     message: "Invalid API key",
                     recoverySuggestion: "Check your API key in Settings",
                     onDismiss: {}
                 )
 
-                // Error with retry
                 ErrorBannerView(
                     message: "Request timed out",
                     recoverySuggestion: "The server took too long to respond",

@@ -1,18 +1,9 @@
-//
-//  BuiltinToolService+Context.swift
-//  Ayna
-//
-//  Read-only project and git context tools, and the conversation task list tool.
-//
-
 import Foundation
 
 #if os(macOS)
     extension BuiltinToolService {
-        /// Longest context a single call returns, so one large file cannot fill the window.
         static let maximumContextCharacters = 40000
 
-        /// Resolves, validates, and approves a directory for a read-only tool.
         private func authorizedDirectory(
             _ path: String?,
             tool: String,
@@ -44,8 +35,6 @@ import Foundation
                 riskReason: riskReason,
                 conversationId: conversationId
             )
-            // The path could have been swapped (for example for a symlink) while the approval
-            // card was open; only the directory that was checked may be read.
             guard identity != nil,
                   pathValidator.canonicalize(path) == directory,
                   Self.fileIdentity(of: directory) == identity
@@ -55,22 +44,17 @@ import Foundation
             return directory
         }
 
-        /// Device and inode of a file, which stay the same only while it is the same file.
         private static func fileIdentity(of url: URL) -> [UInt64]? {
             var info = stat()
             guard lstat(url.path, &info) == 0 else { return nil }
             return [UInt64(info.st_dev), UInt64(info.st_ino)]
         }
 
-        /// Approves git metadata that lives outside the repository's work tree. A `.git` file
-        /// can point anywhere, such as a protected `~/.config` repository, and only the work
-        /// tree directory was checked so far.
         private func authorizeGitMetadata(
             _ layout: GitContextService.RepositoryLayout,
             conversationId: UUID
         ) async throws {
             let rootComponents = layout.topLevel.pathComponents
-            // A separate git dir is usually also the common dir; ask once per location.
             let locations = layout.commonDirectory == layout.gitDirectory
                 ? [layout.gitDirectory]
                 : [layout.gitDirectory, layout.commonDirectory]
@@ -93,7 +77,6 @@ import Foundation
             }
         }
 
-        /// Branch, status, changed files, and recent commits for the repository containing `path`.
         func gitContext(path: String?, conversationId: UUID) async throws -> String {
             guard isEnabled else { throw ToolExecutionError.serviceDisabled }
             let directory = try await authorizedDirectory(
@@ -130,7 +113,6 @@ import Foundation
             return output
         }
 
-        /// Project type and the AI context files (AGENTS.md, CLAUDE.md, ...) of the project containing `path`.
         func projectContext(path: String?, conversationId: UUID) async throws -> String {
             guard isEnabled else { throw ToolExecutionError.serviceDisabled }
             let directory = try await authorizedDirectory(
@@ -145,8 +127,6 @@ import Foundation
                 return "No project found at or above \(directory.path)"
             }
             var output = summary
-            // Each context file is resolved and checked like a read_file target: a symlinked
-            // AGENTS.md pointing at a key or credentials file asks before it is read.
             for file in project.contextFiles {
                 guard output.count < Self.maximumContextCharacters,
                       let content = try await readContextFile(file, conversationId: conversationId)
@@ -186,11 +166,8 @@ import Foundation
             return ProjectContextService.readContextFile(handle)
         }
 
-        /// Replaces the conversation's task list. Tasks keep their identity when their text is unchanged.
         func updateTasks(_ entries: [[String: Any]], conversationId: UUID) async throws -> String {
             guard isEnabled else { throw ToolExecutionError.serviceDisabled }
-            // The conversation is the approval target, so approving one list doesn't approve
-            // other conversations' lists of the same length.
             try await authorize(
                 tool: ToolName.updateTasks,
                 description: "Update task list (\(entries.count) tasks)",

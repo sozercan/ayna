@@ -9,7 +9,6 @@ import Testing
     @Suite("Agent context tools", .serialized)
     @MainActor
     struct AgentContextToolsTests {
-        /// A directory under /tmp, which is not protected, so read-only tools run without asking.
         private func makeRoot() throws -> URL {
             let root = URL(fileURLWithPath: "/tmp").appendingPathComponent("AynaContextTools-\(UUID().uuidString)")
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -55,7 +54,6 @@ import Testing
         func `Large stderr does not deadlock the git runner`() async throws {
             let root = try makeRoot()
             defer { try? FileManager.default.removeItem(at: root) }
-            // About 200 KB on stderr, well past a pipe buffer, while stdout stays open.
             let result = await GitContextService.runGit(
                 ["-c", "alias.noisy=!yes error-line | head -n 20000 >&2; echo done", "noisy"],
                 in: root,
@@ -127,7 +125,6 @@ import Testing
             ] {
                 _ = await GitContextService.runGit(["config", key, value], in: root, timeout: .seconds(10))
             }
-            // Same size, new mtime: status can only tell by rehashing the file through its filter.
             try FileManager.default.setAttributes(
                 [.modificationDate: Date().addingTimeInterval(-3600)],
                 ofItemAtPath: file.path
@@ -157,9 +154,6 @@ import Testing
             return permissionService.pendingApprovals.first
         }
 
-        /// A repository whose tracked notes.txt uses `driver` as its filter, with the driver's
-        /// clean and process commands writing `marker`. Only the mtime changes afterwards, so
-        /// status has to rehash the file through the filter.
         private func makeFilteredRepository(root: URL, driver: String, marker: URL) async throws {
             await git(["init"], in: root)
             try "*.txt filter=\(driver)\n".write(to: root.appendingPathComponent(".gitattributes"), atomically: true, encoding: .utf8)
@@ -192,7 +186,6 @@ import Testing
             defer { try? FileManager.default.removeItem(at: root) }
             let marker = root.appendingPathComponent("filter-ran")
             try await makeFilteredRepository(root: root, driver: "evil", marker: marker)
-            // Enough filter keys that listing them passes the output limit.
             let padding = String(repeating: "x", count: 60)
             let extra = (0 ..< 16000).map { "[filter \"d\($0)\(padding)\"]\n\tclean = cat\n" }.joined()
             let config = root.appendingPathComponent(".git/config")
@@ -255,7 +248,6 @@ import Testing
         func `A directory swapped while approval is pending is not read`() async throws {
             let root = try makeRoot()
             defer { try? FileManager.default.removeItem(at: root) }
-            // A `.env` path component makes the directory ask before it is read.
             let checked = root.appendingPathComponent(".env/repo")
             let other = root.appendingPathComponent("other")
             for (directory, subject) in [(checked, "checked subject"), (other, "secret subject")] {
@@ -303,14 +295,12 @@ import Testing
             try permissionService.approve(#require(await waitForPending(permissionService)).id)
             _ = await approved.value
 
-            // Another conversation with a list of the same length still asks.
             let other = Task { await service.executeToolCall(toolName: "update_tasks", arguments: tasks(2), conversationId: second) }
             let otherPending = await waitForPending(permissionService)
             #expect(otherPending != nil)
             if let otherPending { permissionService.deny(otherPending.id) }
             _ = await other.value
 
-            // The approved conversation can grow its list without asking again.
             let grown = Task { await service.executeToolCall(toolName: "update_tasks", arguments: tasks(3), conversationId: first) }
             let grownPending = await waitForPending(permissionService, seconds: 1)
             #expect(grownPending == nil)
@@ -428,7 +418,6 @@ import Testing
             try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
 
             let (handle, path) = try #require(ProjectContextService.openContextFile(link))
-            // Swap the name for a link to another file, as could happen while approval is pending.
             let other = root.appendingPathComponent("other.md")
             try "swapped".write(to: other, atomically: false, encoding: .utf8)
             try FileManager.default.removeItem(at: target)
@@ -572,7 +561,6 @@ import Testing
 
     @Suite("Hotkey combinations")
     struct HotkeyCombinationTests {
-        /// Labels as the US layout would, so expectations do not depend on this Mac's layout.
         private func usLabel(_ combination: HotkeyCombination) -> String {
             combination.displayString(layoutCharacter: { _ in nil })
         }
@@ -587,7 +575,6 @@ import Testing
             let function = HotkeyCombination(keyCode: UInt32(kVK_F5), modifiers: UInt32(cmdKey))
             #expect(HotkeyCombination(storage: usLabel(function)) == function)
             #expect(HotkeyCombination(storage: "⌘Nonsense") == nil)
-            // Keys without a name (keypad, F13+) round-trip through their numeric fallback.
             let keypad = HotkeyCombination(keyCode: 105, modifiers: UInt32(cmdKey))
             #expect(usLabel(keypad) == "⌘Key 105")
             #expect(HotkeyCombination(storage: usLabel(keypad)) == keypad)
@@ -595,13 +582,11 @@ import Testing
 
         @Test
         func `The saved shortcut keeps its key code whatever the layout shows`() {
-            // On a German layout the key in the US "Z" position types "y".
             let combination = HotkeyCombination(keyCode: UInt32(kVK_ANSI_Z), modifiers: UInt32(controlKey | optionKey))
             let german = combination.displayString(layoutCharacter: { $0 == UInt32(kVK_ANSI_Z) ? "Y" : nil })
 
             #expect(german == "⌃⌥Y")
             #expect(HotkeyCombination(storage: combination.storageString) == combination)
-            // Space and function keys keep their fixed names on every layout.
             #expect(HotkeyCombination.default.displayString(layoutCharacter: { _ in "X" }) == "⇧⌘Space")
         }
 

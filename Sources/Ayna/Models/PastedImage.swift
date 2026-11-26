@@ -1,8 +1,3 @@
-//
-//  PastedImage.swift
-//  Ayna
-//
-
 #if !os(watchOS)
 
     import CoreGraphics
@@ -11,7 +6,6 @@
     import ImageIO
     import UniformTypeIdentifiers
 
-    /// An image imported from the clipboard and normalized for vision-capable providers.
     struct PastedImage: Identifiable, Equatable, Sendable {
         enum ImportError: LocalizedError {
             case invalidImage
@@ -30,7 +24,6 @@
             }
         }
 
-        /// Matches the strictest supported provider limit (Anthropic: 3.75 MiB).
         static let maximumByteCount = 3_932_160
         static let maximumDimension = 2048
 
@@ -55,7 +48,6 @@
             "pasted-image-\(id.uuidString.lowercased()).\(fileExtension)"
         }
 
-        /// Validates clipboard bytes and converts formats that providers cannot consume directly.
         static func importing(data: Data, contentType: UTType) throws -> PastedImage {
             guard !data.isEmpty,
                   let source = CGImageSourceCreateWithData(data as CFData, nil),

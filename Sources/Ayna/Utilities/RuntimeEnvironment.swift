@@ -1,7 +1,5 @@
 import Foundation
 
-/// Process/runtime detection used to keep tests and SwiftPM helper tools away from
-/// the production Keychain namespace.
 enum RuntimeEnvironment {
     static let productionKeychainServiceIdentifier = "com.sertacozercan.ayna"
     static let developmentKeychainServiceIdentifier = "com.sertacozercan.ayna.dev"
@@ -107,9 +105,6 @@ enum RuntimeEnvironment {
             return productionKeychainServiceIdentifier
         }
 
-        // SwiftPM/dev command-line launches do not have the app bundle's stable
-        // code-signing identity. Give them a stable, separate namespace so they
-        // never ask to access credentials created by Ayna.app.
         if isSwiftPMOrDevelopmentLaunch(
             bundleIdentifier: bundleIdentifier,
             processName: processName,

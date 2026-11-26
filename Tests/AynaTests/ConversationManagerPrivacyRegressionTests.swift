@@ -51,7 +51,6 @@ struct ConversationManagerPrivacyTests {
         await deleteGate.releaseWithFailure()
         await manager.flushPendingSaves()
 
-        // The rollback and the rollback's re-save both restore the summary.
         #expect(Set(summaryProbe.updatedTitles) == [conversation.title])
         #expect(manager.conversations.map(\.id) == [conversation.id])
     }

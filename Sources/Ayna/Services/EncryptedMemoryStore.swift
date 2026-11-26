@@ -1,15 +1,7 @@
-//
-//  EncryptedMemoryStore.swift
-//  ayna
-//
-//  Created on 12/25/25.
-//
-
 import CryptoKit
 import Foundation
 import os.log
 
-/// Errors specific to the encrypted memory store.
 enum EncryptedMemoryStoreError: LocalizedError {
     case keyLost
     case encodingFailed
@@ -32,8 +24,6 @@ private struct StoredConversationSummaries: Codable {
     var completedCleanupToken: String?
 }
 
-/// Encrypted storage for user memory facts.
-/// Uses the same encryption pattern as EncryptedConversationStore.
 final class EncryptedMemoryStore: Sendable {
     nonisolated static let shared = EncryptedMemoryStore()
 
@@ -80,7 +70,6 @@ final class EncryptedMemoryStore: Sendable {
                 return SymmetricKey(data: existing)
             }
 
-            // Check if we previously had a key (flag exists but key is missing)
             if (try? keychain.string(for: flagKey)) != nil {
                 DiagnosticsLogger.log(
                     .encryptedStore,
@@ -90,7 +79,6 @@ final class EncryptedMemoryStore: Sendable {
                 throw EncryptedMemoryStoreError.keyLost
             }
 
-            // First-time setup: generate new key and set initialization flag
             let newKey = SymmetricKey(size: .bits256)
             let keyData = newKey.withUnsafeBytes { Data($0) }
             try keychain.setData(keyData, for: keyIdentifier)
@@ -133,9 +121,6 @@ final class EncryptedMemoryStore: Sendable {
         encryptionKeyCache = EncryptionKeyCache(keyIdentifier: keyIdentifier, keychain: keychain)
     }
 
-    // MARK: - User Memory Operations
-
-    /// Loads the user memory store from encrypted storage.
     func loadMemory() async throws -> UserMemoryStore {
         try await Task.detached(priority: .userInitiated) { [fileURL, encryptionKeyCache] in
             guard FileManager.default.fileExists(atPath: fileURL.path) else {
@@ -150,7 +135,6 @@ final class EncryptedMemoryStore: Sendable {
         }.value
     }
 
-    /// Saves the user memory store to encrypted storage.
     func saveMemory(_ store: UserMemoryStore) async throws {
         let fileURL = fileURL
         let encryptionKeyCache = encryptionKeyCache
@@ -175,7 +159,6 @@ final class EncryptedMemoryStore: Sendable {
         }.value
     }
 
-    /// Clears all user memory.
     func clearMemory() async throws {
         let fileURL = fileURL
         try await Task.detached(priority: .userInitiated) {
@@ -190,9 +173,6 @@ final class EncryptedMemoryStore: Sendable {
         )
     }
 
-    // MARK: - Conversation Summary Operations
-
-    /// Loads the conversation summaries digest from encrypted storage.
     func loadSummaries() async throws -> RecentConversationsDigest {
         try await Task.detached(priority: .userInitiated) { [summaryFileURL, encryptionKeyCache] in
             guard FileManager.default.fileExists(atPath: summaryFileURL.path) else {
@@ -211,7 +191,6 @@ final class EncryptedMemoryStore: Sendable {
         }.value
     }
 
-    /// Saves the conversation summaries digest to encrypted storage.
     func saveSummaries(_ digest: RecentConversationsDigest) async throws {
         let summaryFileURL = summaryFileURL
         let encryptionKeyCache = encryptionKeyCache
@@ -310,7 +289,6 @@ final class EncryptedMemoryStore: Sendable {
         }.value
     }
 
-    /// Clears all conversation summaries.
     func clearSummaries() throws {
         if FileManager.default.fileExists(atPath: summaryFileURL.path) {
             try FileManager.default.removeItem(at: summaryFileURL)
