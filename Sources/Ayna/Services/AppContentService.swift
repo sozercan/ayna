@@ -660,16 +660,13 @@
 
         private func findURLInHierarchy(root: AXUIElement, accessibility: AccessibilityService) -> String? {
             let maxDepth = 8
-            let maxVisitedElements = 300
+            let maxEnqueuedElements = 300
             var queue: [(element: AXUIElement, depth: Int)] = [(root, 0)]
             var queueIndex = 0
-            var visitedCount = 0
-            var fallbackCandidate: String?
 
-            while queueIndex < queue.count, visitedCount < maxVisitedElements {
+            while queueIndex < queue.count {
                 let current = queue[queueIndex]
                 queueIndex += 1
-                visitedCount += 1
 
                 if current.depth > 0 {
                     let role = accessibility.getRole(current.element)
@@ -682,33 +679,29 @@
                         }
                     }
 
-                    if Self.isAddressBarRole(role) {
-                        let candidate = Self.normalizedBrowserURL(from: accessibility.getValue(current.element))
-                            ?? Self.normalizedBrowserURL(from: accessibility.getURL(current.element))
-                        if let candidate {
-                            if Self.isAddressBarDescriptor(
-                                identifier: accessibility.getIdentifier(current.element),
-                                description: accessibility.getDescription(current.element),
-                                title: accessibility.getTitle(current.element),
-                                subrole: accessibility.getSubrole(current.element)
-                            ) {
-                                return candidate
-                            }
-                            if fallbackCandidate == nil {
-                                fallbackCandidate = candidate
-                            }
-                        }
+                    if Self.isAddressBarRole(role),
+                       Self.isAddressBarDescriptor(
+                           identifier: accessibility.getIdentifier(current.element),
+                           description: accessibility.getDescription(current.element),
+                           title: accessibility.getTitle(current.element),
+                           subrole: accessibility.getSubrole(current.element)
+                       ),
+                       let candidate = Self.normalizedBrowserURL(from: accessibility.getValue(current.element))
+                       ?? Self.normalizedBrowserURL(from: accessibility.getURL(current.element))
+                    {
+                        return candidate
                     }
                 }
 
-                guard current.depth < maxDepth else { continue }
+                guard current.depth < maxDepth, queue.count < maxEnqueuedElements else { continue }
 
-                for child in accessibility.getChildren(current.element) {
+                let remainingCapacity = maxEnqueuedElements - queue.count
+                for child in accessibility.getChildren(current.element).prefix(remainingCapacity) {
                     queue.append((child, current.depth + 1))
                 }
             }
 
-            return fallbackCandidate
+            return nil
         }
 
         private func isAddressBarCandidate(_ element: AXUIElement, accessibility: AccessibilityService) -> Bool {
@@ -763,7 +756,7 @@
                 return nil
             }
 
-            if trimmed.contains("://") || trimmed.lowercased().hasPrefix("file:") {
+            if hasLeadingSchemeSeparator(trimmed) || trimmed.lowercased().hasPrefix("file:") {
                 guard let url = URL(string: trimmed),
                       let scheme = url.scheme?.lowercased()
                 else {
@@ -792,7 +785,6 @@
                   prefixedURL.user == nil,
                   prefixedURL.password == nil,
                   let host = prefixedURL.host,
-                  host == host.lowercased(),
                   isValidWebHost(host)
             else {
                 return nil
@@ -801,9 +793,45 @@
             return prefixedURL.absoluteString
         }
 
+        private static func hasLeadingSchemeSeparator(_ value: String) -> Bool {
+            guard let schemeEnd = value.range(of: "://")?.lowerBound else {
+                return false
+            }
+            let prefix = value[..<schemeEnd]
+            guard let first = prefix.first, first.isASCII, first.isLetter else {
+                return false
+            }
+            return prefix.allSatisfy { char in
+                char.isASCII && (char.isLetter || char.isNumber || char == "+" || char == "-" || char == ".")
+            }
+        }
+
         private static func hasUnsupportedSchemePrefix(_ value: String) -> Bool {
             let authorityEnd = value.firstIndex { $0 == "/" || $0 == "?" || $0 == "#" } ?? value.endIndex
             let authority = value[..<authorityEnd]
+
+            if authority.hasPrefix("[") {
+                guard let closingBracket = authority.firstIndex(of: "]") else {
+                    return true
+                }
+                let afterBracket = authority[authority.index(after: closingBracket)...]
+                if afterBracket.isEmpty {
+                    return false
+                }
+                guard afterBracket.hasPrefix(":") else {
+                    return true
+                }
+                let portString = afterBracket.dropFirst()
+                guard !portString.isEmpty,
+                      portString.allSatisfy(\.isNumber),
+                      let port = Int(portString),
+                      (1 ... 65535).contains(port)
+                else {
+                    return true
+                }
+                return false
+            }
+
             guard let colonIndex = authority.firstIndex(of: ":") else {
                 return false
             }
@@ -845,8 +873,7 @@
 
             guard labels.count >= 2,
                   let tld = labels.last,
-                  tld.count >= 2,
-                  tld.allSatisfy(\.isLetter)
+                  isValidTLD(tld)
             else {
                 return false
             }
@@ -857,6 +884,20 @@
                     !label.hasSuffix("-") &&
                     label.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" }
             }
+        }
+
+        private static func isValidTLD(_ tld: Substring) -> Bool {
+            if tld.count >= 2, tld.allSatisfy(\.isLetter) {
+                return true
+            }
+            if tld.hasPrefix("xn--"),
+               tld.count > 4,
+               !tld.hasSuffix("-"),
+               tld.dropFirst(4).allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") })
+            {
+                return true
+            }
+            return false
         }
 
         private func createContent(
