@@ -1,27 +1,14 @@
-//
-//  AynaComplication.swift
-//  Ayna Watch App
-//
-//  Watch complication providing quick access to Ayna chat.
-//
-
 #if os(watchOS)
 
     import SwiftUI
     import WidgetKit
 
-    // MARK: - Timeline Entry
-
-    /// Entry representing the complication's data at a point in time
     struct AynaComplicationEntry: TimelineEntry {
         let date: Date
         let conversationCount: Int
         let lastConversationTitle: String?
     }
 
-    // MARK: - Timeline Provider
-
-    /// Provides timeline entries for the complication
     struct AynaComplicationProvider: TimelineProvider {
         func placeholder(in _: Context) -> AynaComplicationEntry {
             AynaComplicationEntry(
@@ -32,7 +19,6 @@
         }
 
         func getSnapshot(in _: Context, completion: @escaping (AynaComplicationEntry) -> Void) {
-            // For snapshot, provide sample data
             let entry = AynaComplicationEntry(
                 date: Date(),
                 conversationCount: 3,
@@ -42,7 +28,6 @@
         }
 
         func getTimeline(in _: Context, completion: @escaping (Timeline<AynaComplicationEntry>) -> Void) {
-            // Load conversation data from UserDefaults (shared with main app)
             let conversationData = loadConversationData()
 
             let entry = AynaComplicationEntry(
@@ -51,7 +36,6 @@
                 lastConversationTitle: conversationData.lastTitle
             )
 
-            // Refresh every 15 minutes
             let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date()
             let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
             completion(timeline)
@@ -75,17 +59,11 @@
         }
     }
 
-    // MARK: - Minimal Data Model for Complication
-
-    /// Minimal conversation model for decoding in complication (avoids Core dependencies)
     private struct ComplicationConversation: Codable {
         let id: UUID
         let title: String
     }
 
-    // MARK: - Complication Views
-
-    /// Circular complication view - shows app icon
     struct AynaCircularComplicationView: View {
         var entry: AynaComplicationEntry
 
@@ -100,7 +78,6 @@
         }
     }
 
-    /// Corner complication view - shows icon with optional count
     struct AynaCornerComplicationView: View {
         var entry: AynaComplicationEntry
 
@@ -118,7 +95,6 @@
         }
     }
 
-    /// Rectangular complication view - shows last conversation or prompt to start
     struct AynaRectangularComplicationView: View {
         var entry: AynaComplicationEntry
 
@@ -152,7 +128,6 @@
         }
     }
 
-    /// Inline complication view - shows text only
     struct AynaInlineComplicationView: View {
         var entry: AynaComplicationEntry
 
@@ -165,9 +140,6 @@
         }
     }
 
-    // MARK: - Widget Configuration
-
-    /// Main widget/complication configuration
     struct AynaComplication: Widget {
         let kind: String = "AynaComplication"
 
@@ -186,7 +158,6 @@
         }
     }
 
-    /// Entry view that renders appropriate complication based on family
     struct AynaComplicationEntryView: View {
         @Environment(\.widgetFamily) var widgetFamily
         var entry: AynaComplicationEntry
@@ -206,8 +177,6 @@
             }
         }
     }
-
-    // MARK: - Preview
 
     #if DEBUG
         #Preview("Circular", as: .accessoryCircular) {

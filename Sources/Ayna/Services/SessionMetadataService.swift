@@ -1,33 +1,20 @@
-//
-//  SessionMetadataService.swift
-//  ayna
-//
-//  Created on 12/25/25.
-//
-
 import Foundation
 import SwiftUI
 
-/// Service for collecting and formatting session metadata.
-/// Metadata is ephemeral and generated fresh each session.
 @MainActor
 @Observable
 final class SessionMetadataService {
     static let shared = SessionMetadataService()
 
-    /// Whether session metadata collection is enabled.
-    /// User can opt-out for privacy.
     var isEnabled: Bool {
         get { AppPreferences.storage.bool(forKey: "sessionMetadataEnabled") }
         set { AppPreferences.storage.set(newValue, forKey: "sessionMetadataEnabled") }
     }
 
     private init() {
-        // Register default
         AppPreferences.storage.register(defaults: ["sessionMetadataEnabled": true])
     }
 
-    /// Collects current session metadata.
     func collectMetadata() -> SessionMetadata {
         SessionMetadata(
             deviceType: currentDeviceType,
@@ -36,24 +23,19 @@ final class SessionMetadataService {
             localTime: Date(),
             timezone: .current,
             isDarkMode: isDarkModeEnabled,
-            conversationPatterns: nil // Computed separately if needed
+            conversationPatterns: nil
         )
     }
 
-    /// Formats metadata for context injection.
-    /// Returns nil if metadata collection is disabled.
     func formattedForContext() -> String? {
         guard isEnabled else { return nil }
         return collectMetadata().formattedForContext()
     }
 
-    // MARK: - Private Helpers
-
     private var currentDeviceType: SessionMetadata.DeviceType {
         #if os(macOS)
             .desktop
         #elseif os(iOS)
-            // Check if iPad
             if UIDevice.current.userInterfaceIdiom == .pad {
                 .tablet
             } else {
@@ -80,7 +62,6 @@ final class SessionMetadataService {
 
     private var currentAppVersion: String {
         (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
-            // The SwiftPM binary embeds Info.plist without expanding build settings.
             .flatMap { $0.hasPrefix("$(") ? nil : $0 } ?? "1.0"
     }
 
@@ -88,23 +69,17 @@ final class SessionMetadataService {
         #if os(macOS)
             NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         #elseif os(iOS)
-            // This requires being on the main thread and having access to a window
-            // For simplicity, we'll use the current trait collection
             UITraitCollection.current.userInterfaceStyle == .dark
         #elseif os(watchOS)
-            // watchOS is always dark
             true
         #else
             false
         #endif
     }
 
-    /// Computes conversation patterns from recent conversations.
-    /// This is an optional enhancement that analyzes user behavior.
     func computeConversationPatterns(from conversations: [Conversation]) -> SessionMetadata.ConversationPatterns? {
         guard !conversations.isEmpty else { return nil }
 
-        // Calculate average message length
         let allUserMessages = conversations.flatMap { $0.messages.filter { $0.role == .user } }
         let averageLength: Int? = if !allUserMessages.isEmpty {
             allUserMessages.map(\.content.count).reduce(0, +) / allUserMessages.count
@@ -112,21 +87,18 @@ final class SessionMetadataService {
             nil
         }
 
-        // Calculate average conversation depth
         let averageDepth: Int? = if !conversations.isEmpty {
             conversations.map(\.messages.count).reduce(0, +) / conversations.count
         } else {
             nil
         }
 
-        // Calculate recent activity
         let recentDays: Int? = if let mostRecent = conversations.first?.updatedAt {
             Calendar.current.dateComponents([.day], from: mostRecent, to: Date()).day
         } else {
             nil
         }
 
-        // Calculate preferred models
         var modelUsage: [String: Int] = [:]
         for conversation in conversations {
             modelUsage[conversation.model, default: 0] += 1

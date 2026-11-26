@@ -36,7 +36,6 @@ struct WatchConversationTests {
     func initFromConversationLimitsMessages() {
         var conversation = Conversation(title: "Long Chat", model: "gpt-4o")
 
-        // Add 30 messages
         for idx in 1 ... 30 {
             conversation.addMessage(Message(role: .user, content: "Message \(idx)"))
         }
@@ -44,7 +43,6 @@ struct WatchConversationTests {
         let watchConv = WatchConversation(from: conversation)
 
         #expect(watchConv.messages.count == 20, "Should limit to 20 messages")
-        // Should keep the last 20 messages (11-30)
         #expect(watchConv.messages.first?.content == "Message 11")
         #expect(watchConv.messages.last?.content == "Message 30")
     }
@@ -65,7 +63,6 @@ struct WatchConversationTests {
         conversation.addMessage(Message(role: .user, content: "Hello"))
         conversation.addMessage(Message(role: .assistant, content: "Hi!", model: model))
 
-        // Round trip
         let watchConv = WatchConversation(from: conversation)
         let restored = watchConv.toConversation()
 
@@ -173,7 +170,6 @@ struct WatchMessageTests {
             model: model
         )
 
-        // Round trip
         let watchMsg = WatchMessage(from: original)
         let restored = watchMsg.toMessage()
 
@@ -275,7 +271,6 @@ struct WatchMessageTests {
         let message = Message(role: .user, content: specialContent)
         let watchMsg = WatchMessage(from: message)
 
-        // Encode and decode to test JSON handling
         let data = try JSONEncoder().encode(watchMsg)
         let decoded = try JSONDecoder().decode(WatchMessage.self, from: data)
 
@@ -317,10 +312,8 @@ struct WatchConversationArrayTests {
             conversations.append(conv)
         }
 
-        // Convert to watch format
         let watchConversations = conversations.map { WatchConversation(from: $0) }
 
-        // Convert back
         let restored = watchConversations.map { $0.toConversation() }
 
         #expect(restored.count == 5)
@@ -384,7 +377,6 @@ struct WatchConversationEdgeCasesTests {
         let watchConv = WatchConversation(from: conversation)
 
         #expect(watchConv.messages.count == 20)
-        // Should keep messages 2-21 (last 20)
         #expect(watchConv.messages.first?.content == "Message 2")
         #expect(watchConv.messages.last?.content == "Message 21")
     }
@@ -399,7 +391,6 @@ struct WatchConversationEdgeCasesTests {
 
         #expect(watchConv.messages.first?.content.count == 10000)
 
-        // Test Codable with long content
         let data = try JSONEncoder().encode(watchConv)
         let decoded = try JSONDecoder().decode(WatchConversation.self, from: data)
 
@@ -425,7 +416,6 @@ struct WatchConversationEdgeCasesTests {
 
         #expect(watchConv.title == specialTitle)
 
-        // Test Codable
         let data = try JSONEncoder().encode(watchConv)
         let decoded = try JSONDecoder().decode(WatchConversation.self, from: data)
 
@@ -443,11 +433,9 @@ struct WatchConversationEdgeCasesTests {
 
         let watchConv = WatchConversation(from: conversation)
 
-        // Encode and decode
         let data = try JSONEncoder().encode(watchConv)
         let decoded = try JSONDecoder().decode(WatchConversation.self, from: data)
 
-        // Convert back
         let restored = decoded.toConversation()
 
         #expect(restored.id == convId)

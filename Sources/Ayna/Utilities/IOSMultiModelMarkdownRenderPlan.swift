@@ -1,8 +1,3 @@
-//
-//  IOSMultiModelMarkdownRenderPlan.swift
-//  Ayna
-//
-
 struct IOSMultiModelMarkdownRenderPlan {
     let initialBlocks: [ContentBlock]
     let deferredContent: String

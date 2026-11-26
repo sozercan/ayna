@@ -1,10 +1,3 @@
-//
-//  GitContextServiceTests.swift
-//  aynaTests
-//
-//  Unit tests for GitContextService.
-//
-
 #if os(macOS)
     @testable import Ayna
     import Foundation
@@ -13,8 +6,6 @@
     @Suite("GitContextService Tests")
     @MainActor
     struct GitContextServiceTests {
-        // MARK: - GitStatus Tests
-
         @Suite("GitStatus")
         struct GitStatusTests {
             @Test("Empty status is clean")
@@ -81,8 +72,6 @@
             }
         }
 
-        // MARK: - GitCommit Tests
-
         @Suite("GitCommit")
         struct GitCommitTests {
             @Test("Commit summary format")
@@ -109,8 +98,6 @@
                 #expect(commit.id == "unique-sha")
             }
         }
-
-        // MARK: - Service Tests
 
         @Suite("Service")
         @MainActor
@@ -155,8 +142,6 @@
                 #expect(sut.briefSummary() == nil)
             }
         }
-
-        // MARK: - GitCommandResult Tests
 
         @Suite("GitCommandResult")
         struct GitCommandResultTests {

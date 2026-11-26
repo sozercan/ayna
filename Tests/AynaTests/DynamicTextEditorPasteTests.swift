@@ -326,7 +326,6 @@
         var droppedFiles: [URL] = []
     }
 
-    /// Minimal drag session for exercising the editor's drop handling without a mouse.
     @MainActor
     private final class FakeDraggingInfo: NSObject, NSDraggingInfo {
         let draggingPasteboard: NSPasteboard

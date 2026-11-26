@@ -1,24 +1,10 @@
-//
-//  WebSearchModels.swift
-//  Ayna
-//
-//  Common models for web search results, shared across providers
-//  (Tavily, DuckDuckGo, etc.).
-//
-
 import Foundation
 
-// MARK: - Search Provider
-
-/// Identifies which web search provider produced results
 enum WebSearchProvider: String, Codable, Sendable {
     case tavily
     case duckDuckGo
 }
 
-// MARK: - Response
-
-/// Unified web search response produced by all search providers
 struct WebSearchResponse: Codable, Sendable {
     let query: String
     let answer: String?
@@ -27,9 +13,6 @@ struct WebSearchResponse: Codable, Sendable {
     let provider: WebSearchProvider
 }
 
-// MARK: - Result
-
-/// Individual web search result from any provider
 struct WebSearchResult: Codable, Sendable {
     let title: String
     let url: String
@@ -37,14 +20,7 @@ struct WebSearchResult: Codable, Sendable {
     let favicon: String?
 }
 
-// MARK: - Formatting Extension
-
 extension WebSearchResponse {
-    /// Formats the search response as a markdown string for the model.
-    ///
-    /// Includes an instruction preamble so the model synthesizes information
-    /// rather than just listing links. URLs and reference numbers are omitted
-    /// because sources are displayed separately in the UI.
     func formattedForModel(maxResults: Int = 3) -> String {
         var output = ""
 
@@ -71,7 +47,6 @@ extension WebSearchResponse {
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Converts search results to CitationReference array for inline display
     func toCitationReferences(maxResults: Int = 5) -> [CitationReference] {
         let topResults = Array(results.prefix(maxResults))
         return topResults.enumerated().map { index, result in

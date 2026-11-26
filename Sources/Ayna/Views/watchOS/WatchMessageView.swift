@@ -1,23 +1,11 @@
 // swiftformat:options --ifdef no-indent
 #if os(watchOS)
-//
-//  WatchMessageView.swift
-//  Ayna Watch App
-//
-//  Created on 11/29/25.
-//
 
 #if os(watchOS)
 
 import Foundation
 import SwiftUI
 
-// MARK: - Design System Integration
-
-// Uses Theme, Typography, Spacing from Design/
-
-/// Compact message bubble for Watch
-/// iMessage-style with user messages on right (blue) and assistant on left (gray)
 struct WatchMessageView: View {
     let message: WatchMessage
     var showTimestamp: Bool = false
@@ -46,7 +34,6 @@ struct WatchMessageView: View {
                     Spacer(minLength: Spacing.Component.bubbleMinWidth - 20)
                 }
 
-                // Message content and web-search sources.
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     if !message.visibleContent.isEmpty {
                         Text(renderedContent)
@@ -80,7 +67,6 @@ struct WatchMessageView: View {
                 }
             }
 
-            // Timestamp (optional, shown for last message)
             if showTimestamp {
                 Text(formattedTime)
                     .font(Typography.micro)
@@ -102,7 +88,6 @@ struct WatchMessageView: View {
     }
 }
 
-/// Custom bubble shape with tail like iMessage
 struct BubbleShape: Shape {
     let isUser: Bool
 
@@ -114,63 +99,43 @@ struct BubbleShape: Shape {
         var path = Path()
 
         if isUser {
-            // User bubble - tail on bottom right
-            // Start top left
             path.move(to: CGPoint(x: radius, y: 0))
 
-            // Top edge
             path.addLine(to: CGPoint(x: width - radius, y: 0))
 
-            // Top right corner
             path.addArc(center: CGPoint(x: width - radius, y: radius), radius: radius, startAngle: Angle(degrees: -90), endAngle: Angle(degrees: 0), clockwise: false)
 
-            // Right edge
             path.addLine(to: CGPoint(x: width, y: height - radius))
 
-            // Bottom right (Tail) - Sharp corner
             path.addLine(to: CGPoint(x: width, y: height))
             path.addLine(to: CGPoint(x: width - radius, y: height))
 
-            // Bottom edge
             path.addLine(to: CGPoint(x: radius, y: height))
 
-            // Bottom left corner
             path.addArc(center: CGPoint(x: radius, y: height - radius), radius: radius, startAngle: Angle(degrees: 90), endAngle: Angle(degrees: 180), clockwise: false)
 
-            // Left edge
             path.addLine(to: CGPoint(x: 0, y: radius))
 
-            // Top left corner
             path.addArc(center: CGPoint(x: radius, y: radius), radius: radius, startAngle: Angle(degrees: 180), endAngle: Angle(degrees: 270), clockwise: false)
 
         } else {
-            // Assistant bubble - tail on bottom left
-            // Start top right
             path.move(to: CGPoint(x: width - radius, y: 0))
 
-            // Top edge
             path.addLine(to: CGPoint(x: radius, y: 0))
 
-            // Top left corner
             path.addArc(center: CGPoint(x: radius, y: radius), radius: radius, startAngle: Angle(degrees: -90), endAngle: Angle(degrees: -180), clockwise: true)
 
-            // Left edge
             path.addLine(to: CGPoint(x: 0, y: height - radius))
 
-            // Bottom left (Tail) - Sharp corner
             path.addLine(to: CGPoint(x: 0, y: height))
             path.addLine(to: CGPoint(x: radius, y: height))
 
-            // Bottom edge
             path.addLine(to: CGPoint(x: width - radius, y: height))
 
-            // Bottom right corner
             path.addArc(center: CGPoint(x: width - radius, y: height - radius), radius: radius, startAngle: Angle(degrees: 90), endAngle: Angle(degrees: 0), clockwise: true)
 
-            // Right edge
             path.addLine(to: CGPoint(x: width, y: radius))
 
-            // Top right corner
             path.addArc(center: CGPoint(x: width - radius, y: radius), radius: radius, startAngle: Angle(degrees: 0), endAngle: Angle(degrees: -90), clockwise: true)
         }
 
@@ -178,7 +143,6 @@ struct BubbleShape: Shape {
     }
 }
 
-/// Streaming message view that shows typing indicator then content
 struct WatchStreamingMessageView: View {
     let content: String
     let isStreaming: Bool
@@ -193,7 +157,6 @@ struct WatchStreamingMessageView: View {
     var body: some View {
         HStack {
             if content.isEmpty, isStreaming {
-                // Typing indicator
                 HStack(spacing: Spacing.xxs) {
                     ForEach(0 ..< 3, id: \.self) { _ in
                         Circle()
@@ -206,7 +169,6 @@ struct WatchStreamingMessageView: View {
                 .background(Theme.assistantBubble)
                 .clipShape(RoundedRectangle(cornerRadius: Spacing.CornerRadius.xxl))
             } else {
-                // Content
                 Text(renderedContent)
                     .font(Typography.body)
                     .foregroundStyle(.primary)

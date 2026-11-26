@@ -218,22 +218,17 @@ struct ConversationManagerTests {
         let keyId = "test-key-id"
         let manager = makeManager(directory: directory, keychain: keychain, keyIdentifier: keyId)
 
-        // Create conversation directly without triggering debounced save
         let conversation = Conversation(title: "Test Conversation", model: "test-model")
         manager.conversations.insert(conversation, at: 0)
 
-        // Manually update the conversation in the array (simulating what ChatView does with chunks)
         if let index = manager.conversations.firstIndex(where: { $0.id == conversation.id }) {
             manager.conversations[index].messages.append(Message(role: .assistant, content: "Partial content"))
         }
 
-        // Save immediately
         let saveTask = try manager.saveImmediately(#require(manager.conversations.first))
 
-        // Wait for the save task to complete
         _ = await saveTask.value
 
-        // Create a new manager to load from disk using the SAME keychain and keyIdentifier
         let newManager = makeManager(
             directory: directory,
             keychain: keychain,
@@ -551,7 +546,6 @@ struct ConversationManagerTests {
 
         #expect(manager.conversation(byId: conversationId)?.title == "Saved During Reload")
 
-        // Once saved, a later refresh takes a newer copy written elsewhere.
         var external = try #require(try await store.loadConversation(id: conversationId))
         external.title = "Renamed elsewhere"
         external.updatedAt = external.updatedAt.addingTimeInterval(60)
@@ -1026,10 +1020,8 @@ struct ConversationManagerTests {
         manager.conversations = [dirty]
         manager.save(dirty)
 
-        // Give the save() Task time to enqueue the pending save.
         try await Task.sleep(for: .milliseconds(50))
 
-        // Confirm it's not on disk yet (debounce is long)
         let diskBefore = try await store.loadConversations()
         #expect(diskBefore.isEmpty)
 
@@ -1037,7 +1029,6 @@ struct ConversationManagerTests {
 
         #expect(manager.conversations.contains(where: { $0.id == dirty.id }))
 
-        // Clean up pending saves to avoid test cross-talk.
         manager.clearAllConversations()
     }
 
@@ -1090,9 +1081,7 @@ struct ConversationManagerTests {
         let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
         _ = await manager.loadingTask?.value
         _ = try #require(await manager.ensureConversationLoaded(conversation.id))
-        // Let any save from loading settle, so the conversation is not dirty when streaming starts.
         await manager.flushPendingSaves()
-        // Streaming chunks change memory only; the reply is saved when it finishes.
         #expect(manager.appendToMessage(conversationId: conversation.id, messageId: reply.id, chunk: "Partial answer"))
 
         await manager.reloadConversations()
@@ -1121,7 +1110,6 @@ struct ConversationManagerTests {
         let finished = try #require(manager.conversations.first { $0.id == conversation.id })
         await manager.saveImmediately(finished).value
 
-        // Another writer (for example the Watch) renames it on disk afterwards.
         var external = finished
         external.title = "Renamed elsewhere"
         external.updatedAt = finished.updatedAt.addingTimeInterval(60)
@@ -1139,7 +1127,6 @@ struct ConversationManagerTests {
         let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: "test-watch-commit-reload-key", keychain: InMemoryKeychainStorage())
         let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
         _ = await manager.loadingTask?.value
-        // The Watch path saves first, then commits the saved conversation to the manager.
         let created = TestHelpers.sampleConversation(title: "From Watch")
         try await store.save(created)
         manager.commitPersistedConversation(created)
@@ -1175,7 +1162,7 @@ struct ConversationManagerTests {
         await manager.flushPendingSaves()
         #expect(manager.appendToMessage(conversationId: conversation.id, messageId: reply.id, chunk: "Partial answer"))
 
-        await manager.reloadConversations() // fails, then retries
+        await manager.reloadConversations()
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(5))
         while await loads.calls < 3, clock.now < deadline {
@@ -1204,7 +1191,6 @@ struct ConversationManagerTests {
         let loaded = try #require(await manager.ensureConversationLoaded(stored.id))
         await manager.flushPendingSaves()
 
-        // The reload reads metadata, then a local rename is saved before it reconciles.
         let reloadTask = Task { @MainActor in await manager.reloadConversations() }
         await metadataGate.waitUntilReloadStarted()
         manager.renameConversation(loaded, newTitle: "Renamed here")
@@ -1235,7 +1221,6 @@ struct ConversationManagerTests {
         let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
         _ = await manager.loadingTask?.value
         _ = try #require(await manager.ensureConversationLoaded(conversation.id))
-        // The empty reply placeholder is saved, so memory matches disk until the first chunk.
         await manager.flushPendingSaves()
         manager.setGenerating(true, for: conversation.id)
 
@@ -1243,7 +1228,6 @@ struct ConversationManagerTests {
 
         #expect(manager.appendToMessage(conversationId: conversation.id, messageId: reply.id, chunk: "First chunk"))
 
-        // Once the reply is over, a refresh takes the stored copy again.
         manager.setGenerating(false, for: conversation.id)
         let finished = try #require(manager.conversations.first { $0.id == conversation.id })
         await manager.saveImmediately(finished).value
@@ -1271,8 +1255,6 @@ struct ConversationManagerTests {
 }
 
 extension ConversationManagerTests {
-    // MARK: - Edit Message Tests
-
     @Test
     @MainActor
     func `edit message updates content and marks as edited`() throws {
@@ -1431,7 +1413,6 @@ private actor ConversationMetadataLoadGate {
     }
 }
 
-/// Metadata loads that fail on one call and succeed otherwise.
 private actor FlakyMetadataLoads {
     private let store: EncryptedConversationStore
     private let failingCall: Int
@@ -2075,7 +2056,6 @@ extension ConversationManagerTests {
         let rollback = manager.clearAllConversations()
         await clearGate.started.wait()
 
-        // Reassigning nil represents a newer explicit switch to New Chat.
         manager.selectedConversationId = nil
         await clearGate.releaseGate.open()
         await rollback.value

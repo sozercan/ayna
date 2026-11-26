@@ -1,15 +1,8 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  MIMETypeHelper.swift
-//  ayna
-//
-//  Maps attachment file extensions to MIME types.
-//
 
 import Foundation
 
-/// Helper to get MIME type from file URL
 enum MIMETypeHelper {
     static func getMimeType(for url: URL) -> String {
         let pathExtension = url.pathExtension.lowercased()

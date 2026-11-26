@@ -43,12 +43,6 @@ enum WatchSyncIdentity {
     static let legacyPeerID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
 }
 
-/// Canonicalizes conversation collections at sync protocol boundaries.
-///
-/// Duplicate phone conversation IDs choose the greatest `updatedAt`. Duplicate Watch IDs choose
-/// the greatest `watchRevision`, then `updatedAt`. Exact ties choose the lexicographically greatest
-/// stable encoding, so the winner is independent of input order. Within a Watch conversation, the
-/// last value for a duplicate message ID wins while its first position is retained.
 enum WatchConversationCanonicalizer {
     static func phoneConversations(
         _ conversations: some Sequence<Conversation>
@@ -174,7 +168,6 @@ struct WatchSyncPageCycleCursor: Codable, Equatable, Hashable, Sendable {
     let manifestOffset: Int
     let configurationOffset: Int
     let tombstoneOffset: Int
-    /// True when every configuration consumed before this cursor was delivered losslessly.
     let precedingConfigurationsAreLossless: Bool
 
     init(
@@ -237,12 +230,9 @@ struct WatchSyncPageCycleCursor: Codable, Equatable, Hashable, Sendable {
 
 struct WatchSyncPageSection: Codable, Equatable, Sendable {
     let offset: Int
-    /// Number of records present in the payload.
     let itemCount: Int
     let totalCount: Int
-    /// Number of source records consumed to prevent a deferred record from pinning the cursor.
     let cursorAdvanceCount: Int
-    /// True when a delivered configuration intentionally clears an unavailable prompt.
     let containsUnavailablePromptGate: Bool
 
     init(
@@ -513,8 +503,6 @@ struct WatchConversationMutationFields: OptionSet, Codable, Equatable, Hashable,
 
 typealias WatchConversationMutationFlags = WatchConversationMutationFields
 
-/// A durable Watch-originated mutation. Every envelope carries a full bounded state so
-/// queued operations can be safely coalesced while the flags retain mutation intent.
 struct WatchConversationMutation: Codable, Equatable, Identifiable, Sendable {
     typealias Fields = WatchConversationMutationFields
 
@@ -772,8 +760,6 @@ struct PhoneWatchSyncState: Equatable, Sendable {
     var conversations: [Conversation]
     var acknowledgedWatchRevisions: [UUID: WatchSyncRevision]
     var tombstoneRevisions: [UUID: WatchSyncRevision]
-    /// Conversations known only by metadata. They stay in the manifest but never ship as bodies,
-    /// so the Watch keeps its copy instead of receiving an empty history.
     var bodyUnavailableConversationIDs: Set<UUID>
 
     init(
@@ -967,8 +953,6 @@ struct WatchSyncLocalState: Equatable, Sendable {
 struct WatchConversationDraft: Codable, Equatable, Identifiable, Sendable {
     var conversation: WatchConversation
     var ownedMessageIDs: Set<UUID>
-    /// Mutation intent retained locally when the conversation revision cannot advance.
-    /// Optional for backward-compatible decoding of drafts persisted before overflow handling.
     var deferredMutationFields: WatchConversationMutationFields?
 
     init(
@@ -1277,7 +1261,6 @@ struct WatchSyncPayloadConfiguration: Equatable, Sendable {
     var maximumMessagesPerConversation = 20
     var maximumContentCharacters = 4000
     var maximumTitleCharacters = 160
-    /// Legacy sizing threshold. Model identifiers remain lossless; byte pressure removes records instead.
     var maximumModelCharacters = 160
     var maximumSystemPromptCharacters = 4000
     var maximumToolCallsPerMessage = 4
@@ -1317,10 +1300,6 @@ enum WatchSyncPayloadBuilderError: Error, Equatable {
     case mutationExceedsBudget(actualBytes: Int, budget: Int)
 }
 
-/// Publishes an explicit empty default prompt when the current fallback cannot carry the full value.
-///
-/// The phone's durable preference is never changed. A volatile argument-domain override exists only
-/// until the synchronous application-context publication finishes, then the original value is restored.
 enum WatchDefaultSystemPromptPublicationGate {
     private static let argumentDomainName = "NSArgumentDomain"
     private static let preferenceKey = "globalSystemPrompt"
@@ -1630,7 +1609,6 @@ enum WatchSyncPayloadBuilder {
                 }
                 return lhs.key.uuidString < rhs.key.uuidString
             }
-        // Legacy schema-3 publication rotates pages; explicit cycles use exact offsets.
         let tombstonePage = if let pageCycleCursor {
             page(
                 sortedTombstones,

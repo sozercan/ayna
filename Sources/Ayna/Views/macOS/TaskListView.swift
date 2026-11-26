@@ -1,16 +1,8 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  TaskListView.swift
-//  Ayna
-//
-//  View for displaying tasks within a conversation.
-//  Shows task progress, status, and allows manual status updates.
-//
 
 import SwiftUI
 
-/// View for displaying conversation tasks
 struct TaskListView: View {
     @Bindable var taskManager: ConversationTaskManager
     let conversationId: UUID
@@ -22,7 +14,6 @@ struct TaskListView: View {
 
         if !tasks.isEmpty {
             DisclosureGroup(isExpanded: $isExpanded) {
-                // Short lists show in full; longer ones scroll so the composer stays on screen.
                 ViewThatFits(in: .vertical) {
                     rows(tasks)
                     ScrollView {
@@ -41,7 +32,6 @@ struct TaskListView: View {
         }
     }
 
-    /// Tallest the expanded rows get before they scroll.
     private static let maximumRowsHeight: CGFloat = 200
 
     private func rows(_ tasks: [ConversationTask]) -> some View {
@@ -53,7 +43,6 @@ struct TaskListView: View {
                     conversationId: conversationId
                 )
 
-                // Show subtasks
                 let subtasks = taskManager.subtasks(of: task.id)
                 if !subtasks.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
@@ -74,7 +63,6 @@ struct TaskListView: View {
     }
 }
 
-/// Header showing task progress
 struct TaskListHeader: View {
     let statistics: TaskStatistics
 
@@ -89,7 +77,6 @@ struct TaskListHeader: View {
 
             Spacer()
 
-            // Progress indicator
             if statistics.total > 0 {
                 HStack(spacing: 4) {
                     Text("\(statistics.completed)/\(statistics.total)")
@@ -102,7 +89,6 @@ struct TaskListHeader: View {
                 }
             }
 
-            // Status badges
             HStack(spacing: 4) {
                 if statistics.inProgress > 0 {
                     StatusBadge(count: statistics.inProgress, status: .inProgress)
@@ -118,7 +104,6 @@ struct TaskListHeader: View {
     }
 }
 
-/// Individual task row
 struct TaskRowView: View {
     let task: ConversationTask
     @Bindable var taskManager: ConversationTaskManager
@@ -129,7 +114,6 @@ struct TaskRowView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // Status indicator
             Button {
                 cycleStatus()
             } label: {
@@ -142,7 +126,6 @@ struct TaskRowView: View {
             .accessibilityLabel("Task status: \(task.status.displayName)")
             .accessibilityHint("Double-tap to cycle to next status")
 
-            // Task content
             VStack(alignment: .leading, spacing: 2) {
                 Text(task.content)
                     .font(isSubtask ? .caption : .body)
@@ -158,7 +141,6 @@ struct TaskRowView: View {
 
             Spacer()
 
-            // Time indicator
             if isHovering {
                 Text(timeAgo)
                     .font(.caption2)
@@ -226,7 +208,6 @@ struct TaskRowView: View {
     }
 }
 
-/// Small badge showing count for a status
 struct StatusBadge: View {
     let count: Int
     let status: TaskStatus
@@ -254,9 +235,6 @@ struct StatusBadge: View {
     }
 }
 
-// MARK: - Compact Task Indicator
-
-/// Compact indicator for showing task progress in the message area
 struct CompactTaskIndicator: View {
     let statistics: TaskStatistics
 
@@ -285,8 +263,6 @@ struct CompactTaskIndicator: View {
         }
     }
 }
-
-// MARK: - Preview
 
 #Preview("Task List") {
     let manager = ConversationTaskManager()

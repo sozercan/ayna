@@ -1,15 +1,6 @@
-//
-//  OpenAIImageService.swift
-//  ayna
-//
-//  Created on 11/24/25.
-//
-
 import Foundation
 import os
 
-/// Service responsible for image generation via OpenAI-compatible APIs.
-/// Handles both standard OpenAI and Azure OpenAI image endpoints.
 final class OpenAIImageService: @unchecked Sendable {
     private struct RequestHandleState: Sendable {
         var isActive = true
@@ -22,11 +13,6 @@ final class OpenAIImageService: @unchecked Sendable {
         let onError: @Sendable (Error) -> Void
     }
 
-    /// Owns every transport and retry spawned by one logical image request.
-    ///
-    /// The handle is installed by `AIService` before the request starts so Stop can
-    /// synchronously fence callbacks, cancel an active URLSession task, and prevent
-    /// a retry or image download from starting after cancellation.
     final class RequestHandle: @unchecked Sendable {
         private let state = OSAllocatedUnfairLock(initialState: RequestHandleState())
 
@@ -86,8 +72,6 @@ final class OpenAIImageService: @unchecked Sendable {
         }
     }
 
-    // MARK: - Configuration
-
     struct ImageConfig {
         let size: String
         let quality: String
@@ -102,12 +86,10 @@ final class OpenAIImageService: @unchecked Sendable {
         )
     }
 
-    /// Only GPT Image models accept `output_format` and `output_compression`.
     static func supportsOutputOptions(model: String) -> Bool {
         model.lowercased().hasPrefix("gpt-image")
     }
 
-    /// Output fields for this model: the format, plus compression for lossy formats.
     static func outputFields(model: String, config: ImageConfig) -> [(String, String)] {
         guard supportsOutputOptions(model: model) else { return [] }
         var fields = [("output_format", config.outputFormat)]
@@ -117,17 +99,14 @@ final class OpenAIImageService: @unchecked Sendable {
         return fields
     }
 
-    /// One input image for the `/images/edits` endpoint.
     struct SourceImage: Sendable, Equatable {
         let data: Data
         let mimeType: String
         let fileName: String
     }
 
-    /// MIME types accepted by the OpenAI image edit endpoint.
     static let editableImageMIMETypes: Set<String> = ["image/png", "image/jpeg", "image/jpg", "image/webp"]
 
-    /// GPT Image models accept at most 16 input images per edit request.
     static let maxSourceImages = 16
 
     static func isEditableImageMIMEType(_ mimeType: String) -> Bool {
@@ -142,12 +121,8 @@ final class OpenAIImageService: @unchecked Sendable {
         let azureAPIVersion: String
     }
 
-    // MARK: - Properties
-
     private let urlSession: URLSession
     private let retryDelay: @Sendable (Int) async -> Void
-
-    // MARK: - Initialization
 
     init(
         urlSession: URLSession? = nil,
@@ -166,16 +141,6 @@ final class OpenAIImageService: @unchecked Sendable {
         }
     }
 
-    // MARK: - Public API
-
-    /// Generates an image from a text prompt.
-    /// - Parameters:
-    ///   - prompt: The text description of the image to generate
-    ///   - requestConfig: Configuration for the API request (model, key, endpoint)
-    ///   - imageConfig: Image generation settings (size, quality)
-    ///   - onComplete: Callback with the generated image data
-    ///   - onError: Callback with any error that occurred
-    ///   - attempt: Current retry attempt (internal use)
     func generateImage(
         prompt: String,
         requestConfig: RequestConfig,
@@ -185,20 +150,16 @@ final class OpenAIImageService: @unchecked Sendable {
         onError: @escaping @Sendable (Error) -> Void,
         attempt: Int = 0
     ) {
-        // Validate provider
         guard requestConfig.provider == .openai else {
             onError(AynaError.unsupportedProvider(provider: requestConfig.provider.rawValue, operation: "image generation"))
             return
         }
 
-        // Validate API key only for OpenAI-hosted and Azure endpoints. Custom OpenAI-compatible
-        // image proxies may intentionally rely on local/network authentication instead.
         guard !requestConfig.requiresAPIKey || !requestConfig.apiKey.isEmpty else {
             onError(AynaError.missingAPIKey(provider: "OpenAI"))
             return
         }
 
-        // Resolve endpoint URL
         let endpointConfig = OpenAIEndpointResolver.EndpointConfig(
             modelName: requestConfig.model,
             provider: requestConfig.provider,
@@ -218,20 +179,17 @@ final class OpenAIImageService: @unchecked Sendable {
             return
         }
 
-        // Build request
         let usesAzureEndpoint = OpenAIEndpointResolver.isAzureEndpoint(requestConfig.customEndpoint)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        // Set authentication header when required/configured.
         if usesAzureEndpoint {
             request.setValue(requestConfig.apiKey, forHTTPHeaderField: "api-key")
         } else if !requestConfig.apiKey.isEmpty {
             request.setValue("Bearer \(requestConfig.apiKey)", forHTTPHeaderField: "Authorization")
         }
 
-        // Build request body
         var body: [String: Any] = if usesAzureEndpoint {
             [
                 "prompt": prompt,
@@ -240,8 +198,6 @@ final class OpenAIImageService: @unchecked Sendable {
                 "n": 1
             ]
         } else {
-            // GPT Image models reject response_format and return base64 by default.
-            // DALL·E defaults to URLs, which parseResponse downloads immediately.
             [
                 "prompt": prompt,
                 "model": requestConfig.model,
@@ -262,7 +218,6 @@ final class OpenAIImageService: @unchecked Sendable {
             return
         }
 
-        // Execute request
         let context = GenerationContext(
             requestHandle: requestHandle,
             onComplete: onComplete,
@@ -270,8 +225,6 @@ final class OpenAIImageService: @unchecked Sendable {
         )
         executeRequest(request, context: context, attempt: attempt)
     }
-
-    // MARK: - Private Methods
 
     private func executeRequest(
         _ request: URLRequest,
@@ -402,7 +355,6 @@ final class OpenAIImageService: @unchecked Sendable {
                 return
             }
 
-            // Check for error response
             if let errorDict = json["error"] as? [String: Any],
                let code = errorDict["code"] as? String,
                let message = errorDict["message"] as? String
@@ -566,17 +518,6 @@ final class OpenAIImageService: @unchecked Sendable {
             bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50
     }
 
-    // MARK: - Image Editing
-
-    /// Edits images based on a prompt and one or more source images.
-    /// Uses the /v1/images/edits endpoint to modify existing images.
-    /// - Parameters:
-    ///   - prompt: The text description of the desired edit
-    ///   - sourceImages: The source images to edit (PNG, JPEG, or WebP)
-    ///   - requestConfig: Configuration for the API request (model, key, endpoint)
-    ///   - imageConfig: Image generation settings (size, quality)
-    ///   - onComplete: Callback with the edited image data
-    ///   - onError: Callback with any error that occurred
     func editImage(
         prompt: String,
         sourceImages: [SourceImage],
@@ -586,7 +527,6 @@ final class OpenAIImageService: @unchecked Sendable {
         onComplete: @escaping @Sendable (Data) -> Void,
         onError: @escaping @Sendable (Error) -> Void
     ) {
-        // Validate provider
         guard requestConfig.provider == .openai else {
             onError(AynaError.unsupportedProvider(provider: requestConfig.provider.rawValue, operation: "image generation"))
             return
@@ -597,14 +537,11 @@ final class OpenAIImageService: @unchecked Sendable {
             return
         }
 
-        // Validate API key only for OpenAI-hosted and Azure endpoints. Custom OpenAI-compatible
-        // image proxies may intentionally rely on local/network authentication instead.
         guard !requestConfig.requiresAPIKey || !requestConfig.apiKey.isEmpty else {
             onError(AynaError.missingAPIKey(provider: "OpenAI"))
             return
         }
 
-        // Resolve endpoint URL
         let endpointConfig = OpenAIEndpointResolver.EndpointConfig(
             modelName: requestConfig.model,
             provider: requestConfig.provider,
@@ -624,13 +561,11 @@ final class OpenAIImageService: @unchecked Sendable {
             return
         }
 
-        // Build multipart form request
         let boundary = UUID().uuidString
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
-        // Set authentication header when required/configured.
         let usesAzureEndpoint = OpenAIEndpointResolver.isAzureEndpoint(requestConfig.customEndpoint)
         if usesAzureEndpoint {
             request.setValue(requestConfig.apiKey, forHTTPHeaderField: "api-key")
@@ -638,10 +573,8 @@ final class OpenAIImageService: @unchecked Sendable {
             request.setValue("Bearer \(requestConfig.apiKey)", forHTTPHeaderField: "Authorization")
         }
 
-        // Build multipart body
         var body = Data()
 
-        // Add image fields
         for (index, sourceImage) in sourceImages.enumerated() {
             let part = Self.multipartImagePart(for: sourceImage.mimeType)
             body.append(Data("--\(boundary)\r\n".utf8))
@@ -653,13 +586,11 @@ final class OpenAIImageService: @unchecked Sendable {
             body.append(Data("\r\n".utf8))
         }
 
-        // Add prompt field
         body.append(Data("--\(boundary)\r\n".utf8))
         body.append(Data("Content-Disposition: form-data; name=\"prompt\"\r\n\r\n".utf8))
         body.append(Data(prompt.utf8))
         body.append(Data("\r\n".utf8))
 
-        // Add model field (not needed for Azure - deployment is in URL)
         if !usesAzureEndpoint {
             body.append(Data("--\(boundary)\r\n".utf8))
             body.append(Data("Content-Disposition: form-data; name=\"model\"\r\n\r\n".utf8))
@@ -667,13 +598,11 @@ final class OpenAIImageService: @unchecked Sendable {
             body.append(Data("\r\n".utf8))
         }
 
-        // Add size field
         body.append(Data("--\(boundary)\r\n".utf8))
         body.append(Data("Content-Disposition: form-data; name=\"size\"\r\n\r\n".utf8))
         body.append(Data(imageConfig.size.utf8))
         body.append(Data("\r\n".utf8))
 
-        // Add quality field
         body.append(Data("--\(boundary)\r\n".utf8))
         body.append(Data("Content-Disposition: form-data; name=\"quality\"\r\n\r\n".utf8))
         body.append(Data(imageConfig.quality.utf8))
@@ -686,12 +615,10 @@ final class OpenAIImageService: @unchecked Sendable {
             body.append(Data("\r\n".utf8))
         }
 
-        // End boundary
         body.append(Data("--\(boundary)--\r\n".utf8))
 
         request.httpBody = body
 
-        // Execute request
         executeEditRequest(
             request,
             requestHandle: requestHandle,
@@ -700,7 +627,6 @@ final class OpenAIImageService: @unchecked Sendable {
         )
     }
 
-    /// Normalizes the declared MIME type into a header-safe content type and matching file extension.
     private static func multipartImagePart(for mimeType: String) -> (contentType: String, fileExtension: String) {
         switch mimeType.lowercased() {
         case "image/jpeg", "image/jpg": ("image/jpeg", "jpg")

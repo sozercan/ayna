@@ -380,7 +380,6 @@
             aiService.customModels = [model]
             aiService.selectedModel = model
             aiService.modelProviders[model] = .anthropic
-            // The model needs its own key; without one the send stops before image validation.
             aiService.modelAPIKeys[model] = "sk-ant-test"
             let viewModel = IOSChatViewModel(
                 conversationId: conversation.id,
@@ -390,7 +389,6 @@
             )
 
             viewModel.retryMessage(beforeMessage: assistantMessage)
-            // Four bytes are rejected as an unsupported image before the response is touched.
             let sawValidationError = await waitUntil {
                 viewModel.errorMessage?.contains("corrupt.png") == true
             }

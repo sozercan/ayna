@@ -1,11 +1,5 @@
 // swiftformat:options --ifdef no-indent
 // swiftlint:disable file_length
-//
-//  IOSChatViewModel.swift
-//  ayna
-//
-//  Created on 11/24/25.
-//
 
 #if os(iOS)
 
@@ -15,8 +9,6 @@ import os.log
 import PhotosUI
 import SwiftUI
 
-/// A wrapper to make non-Sendable types Sendable by unchecked conformance.
-/// Use this only when you are sure the value is thread-safe or accessed safely.
 private struct UncheckedSendable<T>: @unchecked Sendable {
     nonisolated(unsafe) let value: T
     nonisolated init(_ value: T) {
@@ -29,12 +21,7 @@ typealias IOSBuiltInToolExecutor = @MainActor (
     _ arguments: [String: Any]
 ) async -> (String, [CitationReference]?)
 
-/// IOSChatViewModel consolidates iOS chat logic to avoid duplicating state across views.
-/// A shared ViewModel that encapsulates common chat logic for iOS views.
-/// Used by both `IOSChatView` (existing conversations) and `IOSNewChatView` (new conversations).
 @MainActor final class IOSChatViewModel: ObservableObject {
-    // MARK: - Published State
-
     @Published var messageText = ""
     @Published var isGenerating = false {
         didSet {
@@ -51,20 +38,14 @@ typealias IOSBuiltInToolExecutor = @MainActor (
     @Published var isImportingPastedImages = false
     @Published private(set) var messageContentRevision = 0
 
-    /// The name of the tool currently being executed (for UI indicator)
     @Published var currentToolName: String?
 
-    /// The last failed message content, stored for retry functionality
     @Published var failedMessage: String?
 
-    /// Recovery suggestion for the current error (if available)
     @Published var errorRecoverySuggestion: String?
 
-    /// The conversation this view model told the manager it is generating for.
     private var generatingConversationId: UUID?
 
-    /// Keeps the manager's in-progress set in step with `isGenerating`, so a sidebar refresh
-    /// doesn't replace the conversation a reply is streaming into.
     private func registerGeneration() {
         if let previous = generatingConversationId {
             conversationManager.setGenerating(false, for: previous)
@@ -76,8 +57,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         }
     }
 
-    // MARK: - Dependencies
-
     var conversationManager: ConversationManager
     let aiService: AIService
     private let executeBuiltInTool: IOSBuiltInToolExecutor
@@ -86,12 +65,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
     private let toolChainCoordinator = ToolChainCoordinator()
     private let toolCallRequestRoundCoordinator = ToolCallRequestRoundCoordinator<ToolExecutionResult>()
 
-    // MARK: - Tool Call State
-
-    /// Tracks the depth of recursive tool calls to prevent infinite loops
     private var toolCallDepth = 0
     private var activeAssistantMessageId: UUID?
-    /// The reply whose first text already played the response-started haptic.
     private var responseStartedMessageID: UUID?
     private var activeMultiModelResponseGroupId: UUID?
     private var pendingAutoSendTask: Task<Void, Never>?
@@ -105,13 +80,8 @@ typealias IOSBuiltInToolExecutor = @MainActor (
     private var isProcessingMultiModelChunkCallback = false
     private var pendingResetForNewChat = false
 
-    /// Maximum tool chain depth for iOS.
-    /// Lower than macOS (25) due to mobile resource constraints and typical mobile use cases.
-    /// This prevents runaway tool chains while still allowing reasonable agentic workflows.
     private let maxToolCallDepth = 10
 
-    /// Captures the accepted send independently from the live composer so retry never
-    /// overwrites or combines with a draft created while the request was running.
     private var pendingSendPayload: PreparedSend?
     private var failedSendPayload: PreparedSend?
 
@@ -174,10 +144,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         ToolCallRequestRoundCoordinator<ToolExecutionResult>.ToolToken: ToolExecutionState
     ] = [:]
 
-    // MARK: - Configuration
-
-    /// The conversation ID this view model is managing.
-    /// For new chats, this starts as nil and gets set when first message is sent.
     var conversationId: UUID? {
         didSet {
             if isGenerating, conversationId != oldValue {
@@ -186,23 +152,14 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         }
     }
 
-    /// Whether this is a "new chat" view model (creates conversation on first message).
     let isNewChatMode: Bool
 
-    /// Selected model for new chats (ignored for existing conversations).
     @Published var selectedModel: String
 
-    /// Selected models for multi-model chat
     @Published var selectedModels: Set<String> = []
 
-    /// Callback when a new conversation is created and first response completes.
-    /// Used by IOSNewChatView to navigate to IOSChatView.
     var onConversationCreated: ((UUID) -> Void)?
 
-    // MARK: - Initialization
-
-    /// Create a placeholder ViewModel for use with @StateObject.
-    /// Must call `configure(with:conversationId:)` in onAppear.
     static func placeholder() -> IOSChatViewModel {
         IOSChatViewModel(
             conversationManager: ConversationManager(),
@@ -210,7 +167,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         )
     }
 
-    /// Initialize for an existing conversation.
     init(
         conversationId: UUID,
         conversationManager: ConversationManager,
@@ -234,7 +190,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         selectedModels = [resolvedAIService.selectedModel]
     }
 
-    /// Initialize for a new chat (no conversation yet).
     init(
         conversationManager: ConversationManager,
         aiService: AIService? = nil,
@@ -257,18 +212,11 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         selectedModels = [resolvedAIService.selectedModel]
     }
 
-    // MARK: - Computed Properties
-
-    /// The current conversation being managed.
     var conversation: Conversation? {
         guard let id = conversationId else { return nil }
         return conversationManager.conversation(byId: id)
     }
 
-    // MARK: - Configuration Update
-
-    /// Update the conversation manager reference.
-    /// Used when view model was created before environment was available.
     func configure(with manager: ConversationManager) {
         if conversationManager !== manager {
             cancelOwnedOperations()
@@ -276,8 +224,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         conversationManager = manager
     }
 
-    /// Configure with conversation manager and conversation ID.
-    /// Used for existing conversation views.
     func configure(with manager: ConversationManager, conversationId: UUID) {
         if self.conversationId != conversationId || conversationManager !== manager {
             cancelOwnedOperations()
@@ -285,11 +231,9 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         conversationManager = manager
         self.conversationId = conversationId
 
-        // Check for pending auto-send prompt (from deep link)
         checkAndProcessPendingPrompt()
     }
 
-    /// The model to use for sending messages.
     private var effectiveModel: String {
         if isNewChatMode {
             return selectedModel
@@ -297,9 +241,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         return conversation?.model ?? selectedModel
     }
 
-    // MARK: - Public Methods
-
-    /// Reset state for a fresh new chat session.
     func resetForNewChat() {
         if isProcessingMultiModelChunkCallback {
             pendingResetForNewChat = true
@@ -334,8 +275,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         )
     }
 
-    /// Check for and process a pending auto-send prompt from deep link.
-    /// This should be called after the view model is configured with a conversation.
     private func checkAndProcessPendingPrompt() {
         guard let convId = conversationId,
               let index = conversationManager.conversations.firstIndex(where: { $0.id == convId }),
@@ -368,17 +307,14 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             metadata: ["promptLength": "\(prompt.count)"]
         )
 
-        // Clear and persist the prompt before claiming it so view recreation cannot resend it.
         conversationManager.conversations[claimIndex].pendingAutoSendPrompt = nil
         conversationManager.saveImmediately(conversationManager.conversations[claimIndex])
 
-        // Set the message text and send
         messageText = prompt
         pendingAutoSendDraft = prompt
         pendingAutoSendConversationID = convId
         let autoSendID = UUID()
         pendingAutoSendID = autoSendID
-        // Use a small delay to ensure the view is fully loaded
         let task = Task { @MainActor [weak self] in
             do {
                 try await Task.sleep(for: .milliseconds(100))
@@ -452,7 +388,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         pendingAutoSendConversationID = nil
     }
 
-    /// Retry the last failed message
     func retryFailedMessage() {
         guard !isGenerating else { return }
         guard let payload = failedSendPayload else { return }
@@ -471,7 +406,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         prepareOrSendPayload(payload, consuming: nil)
     }
 
-    /// Dismiss the current error without retrying
     func dismissError() {
         failedMessage = nil
         failedSendPayload = nil
@@ -485,12 +419,10 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         pendingSendPayload = nil
     }
 
-    /// Handle file import results from the file importer.
     func handleFileImport(_ result: Result<[URL], Error>) {
         switch result {
         case let .success(urls):
             for url in urls {
-                // Start accessing the security-scoped resource
                 let accessing = url.startAccessingSecurityScopedResource()
                 defer {
                     if accessing {
@@ -507,7 +439,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
                     continue
                 }
 
-                // Copy to temporary location immediately
                 do {
                     let tempURL = try copyToTemporaryDirectory(url: url)
                     attachedFiles.append(tempURL)
@@ -535,7 +466,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         }
     }
 
-    /// Handle photo selection from the photo picker.
     func handlePhotoSelection(_ items: [PhotosPickerItem]) async {
         for item in items {
             do {
@@ -565,7 +495,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         }
     }
 
-    /// Cancel the current generation.
     func cancelGeneration() {
         let logMetadata: [String: String] = conversationId.map { ["conversationId": $0.uuidString] } ?? [:]
         DiagnosticsLogger.log(
@@ -590,7 +519,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         pendingSendPayload = nil
     }
 
-    /// Send a message in the current conversation.
     func sendMessage() {
         guard !isImportingPastedImages else {
             DiagnosticsLogger.log(
@@ -653,7 +581,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             }
         }
 
-        // Prevent sending while already generating
         guard !isGenerating, sendPreparationTask == nil else {
             DiagnosticsLogger.log(
                 .chatView,
@@ -665,8 +592,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
 
         pasteImportSessionID = UUID()
 
-        // A manual send during the short deep-link delay takes over the same durable claim.
-        // Keep ownership until the user message is committed so failed hydration can restore it.
         preparePendingAutoSendClaimForSend()
 
         if !isNewChatMode,
@@ -821,7 +746,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         consuming preparation: SendPreparation?,
         attachmentErrors: [String] = []
     ) {
-        // Check for multi-model mode
         if payload.selectedModels.count >= 2 {
             sendToMultipleModels(
                 payload,
@@ -831,7 +755,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             return
         }
 
-        // Get or create conversation
         let targetConversation: Conversation
         if let existing = conversation {
             targetConversation = existing
@@ -841,7 +764,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             targetConversation = newConv
             conversationId = newConv.id
 
-            // Update model if different from default
             if newConv.model != payload.selectedModel {
                 conversationManager.updateModel(for: newConv, model: payload.selectedModel)
             }
@@ -853,7 +775,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
                 metadata: ["conversationId": newConv.id.uuidString]
             )
         } else {
-            // No conversation and not in new chat mode - shouldn't happen
             DiagnosticsLogger.log(
                 .chatView,
                 level: .error,
@@ -905,7 +826,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             metadata: ["userMessageId": userMessage.id.uuidString]
         )
 
-        // Create a capability-aware placeholder so cancellation/rollback can identify image work.
         let requestModel = payload.requestModel.isEmpty
             ? targetConversation.model
             : payload.requestModel
@@ -923,7 +843,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             metadata: ["assistantMessageId": assistantMessage.id.uuidString]
         )
 
-        // Re-fetch conversation with updated messages
         guard let updatedConversation = conversation else {
             DiagnosticsLogger.log(
                 .chatView,
@@ -944,17 +863,13 @@ typealias IOSBuiltInToolExecutor = @MainActor (
             return
         }
 
-        // Linearize multi-model history and omit failed/empty placeholders. The newly added
-        // empty assistant is also excluded by effective-history filtering.
         var messagesToSend = updatedConversation.getEffectiveHistory()
 
-        // Prepend system prompt if configured
         if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
 
-        // Get available tools (Tavily web search on iOS)
         let tools = aiService.getAllAvailableTools()
         toolCallDepth = 0
 
@@ -981,7 +896,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
 }
 
 private extension IOSChatViewModel {
-    /// Helper method to send messages with tool call support
     private func sendMessageWithToolSupport( // swiftlint:disable:this function_body_length
         messages: [Message],
         model: String,
@@ -1576,7 +1490,6 @@ private extension IOSChatViewModel {
         return didPersist
     }
 
-    /// Get the ID of the last assistant message in the conversation
     private func getLastAssistantMessageId(conversationId: UUID) -> UUID? {
         guard let conv = conversationManager.conversation(byId: conversationId),
               let lastMessage = conv.messages.last,
@@ -1586,10 +1499,6 @@ private extension IOSChatViewModel {
         }
         return lastMessage.id
     }
-
-    // MARK: - Multi-Model Message Sending
-
-    // MARK: - Private Methods
 
     private func enqueueStreamingChunk(
         conversationId: UUID,
@@ -1667,7 +1576,6 @@ private extension IOSChatViewModel {
     }
 
     private func updateAssistantMessage(_ messageId: UUID, appendingChunk chunk: String, conversationId: UUID) {
-        // Use safe ID-based append instead of index-based access
         let success = conversationManager.appendToMessage(
             conversationId: conversationId,
             messageId: messageId,
@@ -1687,14 +1595,10 @@ private extension IOSChatViewModel {
     }
 }
 
-// MARK: - File Handling Helpers
-
 private extension IOSChatViewModel {
-    /// Copies a security-scoped file to a temporary location.
     func copyToTemporaryDirectory(url: URL) throws -> URL {
         let tempDir = FileManager.default.temporaryDirectory
         let fileName = url.lastPathComponent
-        // Use UUID to avoid collisions
         let uniqueTempDir = tempDir.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: uniqueTempDir, withIntermediateDirectories: true, attributes: nil)
         let destinationURL = uniqueTempDir.appendingPathComponent(fileName)
@@ -1702,7 +1606,6 @@ private extension IOSChatViewModel {
         return destinationURL
     }
 
-    /// Cleans up temporary attached files.
     func cleanupAttachedFiles() {
         cleanupAttachedFiles(attachedFiles)
     }
@@ -1866,8 +1769,6 @@ extension IOSChatViewModel {
                 return
             }
 
-            // Release preparation ownership before the synchronous handoff. This keeps the
-            // existing multi-model guard and stop-button semantics unchanged.
             sendPreparationTask = nil
             sendPreparationID = nil
             isGenerating = false
@@ -1951,10 +1852,7 @@ extension IOSChatViewModel {
     }
 }
 
-// MARK: - Message Retry and Editing
-
 extension IOSChatViewModel {
-    /// Retry from a specific assistant message.
     func retryMessage(beforeMessage: Message) {
         guard let conversation else { return }
         scheduleRetry(
@@ -1990,7 +1888,6 @@ extension IOSChatViewModel {
         )
     }
 
-    /// Re-send the last user message to get a new AI response after editing.
     func resendAfterEdit() {
         guard !isGenerating else { return }
         guard let conversation else { return }
@@ -2001,7 +1898,6 @@ extension IOSChatViewModel {
         isGenerating = true
         errorMessage = nil
 
-        // Add empty assistant message placeholder
         let resendModel = updatedConversation.model
         let isImageResend = aiService.getModelCapability(resendModel) == .imageGeneration
         var assistantMessage = Message(role: .assistant, content: "", model: resendModel)
@@ -2010,7 +1906,6 @@ extension IOSChatViewModel {
         }
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
-        // Build messages to send (everything except the new empty assistant message)
         guard let refreshed = self.conversation else {
             isGenerating = false
             return
@@ -2030,7 +1925,6 @@ extension IOSChatViewModel {
         }
         var messagesToSend = refreshed.getEffectiveHistory()
 
-        // Prepend system prompt if configured
         if let systemPrompt = conversationManager.effectiveSystemPrompt(for: refreshed) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
@@ -2048,8 +1942,6 @@ extension IOSChatViewModel {
         )
     }
 
-    /// Switch to a different model and retry the message.
-    /// This retries with the specified model without changing the conversation's default model.
     func switchModelAndRetry(beforeMessage: Message, newModel: String) {
         scheduleRetry(beforeMessageID: beforeMessage.id, model: newModel)
     }
@@ -2222,8 +2114,6 @@ extension IOSChatViewModel {
     }
 }
 
-// MARK: - Multi-Model Message Sending
-
 extension IOSChatViewModel {
     private func sendMultiModelImageIfNeeded(
         _ payload: PreparedSend,
@@ -2251,7 +2141,6 @@ extension IOSChatViewModel {
         return true
     }
 
-    /// Sends a message to multiple models in parallel for comparison
     private func sendToMultipleModels(
         _ payload: PreparedSend,
         consuming preparation: SendPreparation?,
@@ -2317,7 +2206,6 @@ extension IOSChatViewModel {
             messagesToSend.insert(Message(role: .system, content: systemPrompt), at: 0)
         }
 
-        // Send to all models under this view model's owner-specific operation.
         let coordinator = toolChainCoordinator
         activeAssistantMessageId = nil
         activeMultiModelResponseGroupId = responseGroupId
@@ -2449,7 +2337,6 @@ extension IOSChatViewModel {
         }
     }
 
-    /// Gets or creates a conversation configured for multi-model mode
     func getOrCreateConversationForMultiModel(selectedModels: Set<String>) -> Conversation? {
         if let existing = conversation {
             return existing
@@ -2473,7 +2360,6 @@ extension IOSChatViewModel {
         return updatedConv
     }
 
-    /// Creates the immutable setup for a multi-model request.
     func createResponsePlanForMultiModel(
         models: [String],
         userMessageId: UUID,
@@ -2488,7 +2374,6 @@ extension IOSChatViewModel {
         )
     }
 
-    /// Processes a streaming chunk for a specific model in multi-model mode
     func processMultiModelChunk(
         model: String,
         chunk: String,
@@ -2542,7 +2427,6 @@ extension IOSChatViewModel {
         }.append(reasoning)
     }
 
-    /// Processes completion for a specific model in multi-model mode
     func processMultiModelCompletion(
         model: String,
         messageIds: [String: UUID],
@@ -2574,7 +2458,6 @@ extension IOSChatViewModel {
         }
     }
 
-    /// Processes an error for a specific model in multi-model mode
     func processMultiModelError(
         model: String,
         error: Error,
@@ -2623,11 +2506,7 @@ extension IOSChatViewModel {
     }
 }
 
-// MARK: - Image Generation
-
 extension IOSChatViewModel {
-    /// Cancels only image and tool-chain work owned by this view model.
-    /// Used on disappearance so an old view cannot mutate or cancel a replacement owned elsewhere.
     func cancelOwnedOperations() {
         let cancelledAutoSend = cancelPendingAutoSend()
         let cancelledPreparation = cancelSendPreparation()
@@ -2681,7 +2560,6 @@ extension IOSChatViewModel {
         activeMultiModelResponseGroupId = nil
     }
 
-    /// Handles image generation or editing for a single model
     func generateImage(
         text: String,
         assistantMessage: Message,
@@ -2811,7 +2689,6 @@ extension IOSChatViewModel {
         coordinator.track(task, for: operationID)
     }
 
-    /// Generates images from multiple models in parallel for comparison
     func generateImagesWithMultipleModels(
         prompt: String,
         models: [String],
@@ -2964,7 +2841,6 @@ extension IOSChatViewModel {
         coordinator.track(task, for: operationID)
     }
 
-    /// Processes successful image generation for a model
     private func processImageSuccess(
         imageData: Data,
         conversationId: UUID,
@@ -3039,7 +2915,6 @@ extension IOSChatViewModel {
         }
     }
 
-    /// Processes an error during image generation for a model
     private func processImageError(
         error: Error,
         model: String,
@@ -3081,7 +2956,6 @@ extension IOSChatViewModel {
         }
     }
 
-    /// Updates the status of a response in a response group for image generation
     private func updateImageResponseGroupStatus(
         conversationId: UUID,
         responseGroupId: UUID,
@@ -3099,7 +2973,6 @@ extension IOSChatViewModel {
         }
     }
 
-    /// Finalizes a batch of image generation requests
     private func finalizeImageGenerationBatch(
         conversationId: UUID,
         responseGroupId: UUID,
@@ -3129,7 +3002,6 @@ extension IOSChatViewModel {
         for editContext: ImageEditContext?
     ) async throws -> [OpenAIImageService.SourceImage] {
         guard let editContext else { return [] }
-        // User attachments live in the injected store; generated images are saved to the shared one.
         let storage = editContext.origin == .attachments ? attachmentStorage : AttachmentStorage.shared
         return try await editContext.loadSourceImages { path in
             await storage.loadData(path: path)

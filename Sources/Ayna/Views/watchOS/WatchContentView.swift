@@ -1,18 +1,10 @@
 // swiftformat:options --ifdef no-indent
 #if os(watchOS)
-//
-//  WatchContentView.swift
-//  Ayna Watch App
-//
-//  Created on 11/29/25.
-//
 
 #if os(watchOS)
 
 import SwiftUI
 
-/// Main content view for Watch app
-/// Shows conversation list with navigation to chat
 struct WatchContentView: View {
     @EnvironmentObject var conversationStore: WatchConversationStore
     @EnvironmentObject var connectivityService: WatchConnectivityService
@@ -33,7 +25,6 @@ struct WatchContentView: View {
                 }
         }
         .onAppear {
-            // Configure services
             connectivityService.configure(with: conversationStore)
         }
     }

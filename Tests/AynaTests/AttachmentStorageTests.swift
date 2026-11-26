@@ -8,7 +8,6 @@ struct AttachmentStorageTests {
     @Test
     func `default directories are isolated per environment, never production`() {
         let environmentDirectory = RuntimeEnvironment.defaultApplicationSupportDirectoryURL
-        // Unit tests resolve to the test directory, so cleanup can never reach production data.
         #expect(environmentDirectory.lastPathComponent == RuntimeEnvironment.unitTestApplicationSupportDirectoryName)
 
         #expect(AttachmentStorage.defaultDirectoryURL.deletingLastPathComponent().standardized == environmentDirectory.standardized)

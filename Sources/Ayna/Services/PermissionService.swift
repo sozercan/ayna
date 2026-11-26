@@ -1,10 +1,3 @@
-//
-//  PermissionService.swift
-//  Ayna
-//
-//  Manages permission checks and approval workflow for agentic tool operations.
-//
-
 import Foundation
 import os.log
 import UserNotifications
@@ -13,14 +6,9 @@ import UserNotifications
     import AppKit
 #endif
 
-// MARK: - Notifications
-
 extension Notification.Name {
-    /// Posted when pending approvals change (added or removed)
     static let pendingApprovalsChanged = Notification.Name("pendingApprovalsChanged")
 }
-
-// MARK: - System Notification Constants
 
 private enum ApprovalNotificationConstants {
     static let categoryIdentifier = "TOOL_APPROVAL"
@@ -28,16 +16,12 @@ private enum ApprovalNotificationConstants {
     static let denyActionIdentifier = "DENY_ACTION"
 }
 
-// MARK: - Permission Level
-
-/// Permission level for tool operations
 enum PermissionLevel: String, Codable, CaseIterable, Sendable {
-    case automatic // Read-only operations, web search
-    case askOnce // Approve once per session (file writes in project directory)
-    case askAlways // Always confirm (shell commands, writes outside project)
-    case denied // Never allow (destructive commands, sensitive paths)
+    case automatic
+    case askOnce
+    case askAlways
+    case denied
 
-    /// Forward-compatible decoding (new cases default to askAlways)
     init(from decoder: Decoder) throws {
         let value = try decoder.singleValueContainer().decode(String.self)
         self = PermissionLevel(rawValue: value) ?? .askAlways
@@ -62,20 +46,14 @@ enum PermissionLevel: String, Codable, CaseIterable, Sendable {
     }
 }
 
-// MARK: - Pending Approval
-
-/// Represents a pending approval request
 struct PendingApproval: Identifiable, Sendable, Equatable {
     let id: UUID
     let toolName: String
     let description: String
-    let details: String // File path or command
-    let diffPreview: String? // For edit operations, show what will change
+    let details: String
+    let diffPreview: String?
     let createdAt: Date
-    let conversationId: UUID // Track which conversation this belongs to
-
-    // Callbacks are not Sendable, so we use a different approach
-    // The PermissionService will handle the callbacks internally
+    let conversationId: UUID
 
     static func == (lhs: PendingApproval, rhs: PendingApproval) -> Bool {
         lhs.id == rhs.id
@@ -105,68 +83,41 @@ private final class CancelledApprovalRegistry: @unchecked Sendable {
     }
 }
 
-// MARK: - Permission Service
-
-/// Manages approval workflow for dangerous operations.
-///
-/// Approval queue behavior:
-/// - Concurrent approvals: Processed in order, UI shows queue count
-/// - User closes conversation: Pending approvals auto-denied
-/// - App terminates: Pending approvals lost (not persisted)
-/// - Timeout: Auto-deny after timeout period (configurable)
 @Observable @MainActor
 final class PermissionService {
-    // MARK: - Properties
-
-    /// Pending approvals waiting for user action
     private(set) var pendingApprovals: [PendingApproval] = []
 
-    /// Approval timeout in seconds (default 5 minutes)
     var approvalTimeoutSeconds: Int = 300
 
-    /// Session approvals - tools that have been approved for this session
-    /// Key format: "toolName:path" or "toolName:command"
     private var sessionApprovals: Set<String> = []
     private var committedSessionApprovalKeys: Set<String> = []
     private var pendingSessionApprovalOwners: [UUID: String] = [:]
 
-    /// Whether to persist approvals across sessions
     var persistApprovalsAcrossSessions: Bool = false
 
-    /// Continuations for async approval flow
     private var approvalContinuations: [UUID: CheckedContinuation<Bool, Never>] = [:]
     private nonisolated let cancelledApprovals = CancelledApprovalRegistry()
 
-    /// Timeout tasks for auto-deny
     private var timeoutTasks: [UUID: Task<Void, Never>] = [:]
 
     #if os(macOS)
-        /// Notification delegate for handling system notification responses
         private let notificationDelegate = ApprovalNotificationDelegate()
 
-        /// Whether system notifications are enabled
         private var systemNotificationsEnabled: Bool = false
     #endif
-
-    // MARK: - Initialization
 
     init() {
         setupNotifications()
     }
 
-    // MARK: - System Notification Setup
-
     private func setupNotifications() {
         #if os(macOS)
-            // UNUserNotificationCenter requires an app bundle; skip in test/CLI context
             guard Bundle.main.bundlePath.hasSuffix(".app") else { return }
 
             let center = UNUserNotificationCenter.current()
 
-            // Set delegate to handle notification actions
             notificationDelegate.permissionService = self
 
-            // Request notification permissions
             center.requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, error in
                 Task { @MainActor in
                     if granted {
@@ -180,7 +131,6 @@ final class PermissionService {
                 }
             }
 
-            // Configure notification actions
             let approveAction = UNNotificationAction(
                 identifier: ApprovalNotificationConstants.approveActionIdentifier,
                 title: "Approve",
@@ -204,7 +154,6 @@ final class PermissionService {
         #endif
     }
 
-    /// Shows a system notification for an approval request
     private func showSystemNotification(for approval: PendingApproval) {
         #if os(macOS)
             guard systemNotificationsEnabled else { return }
@@ -220,7 +169,7 @@ final class PermissionService {
             let request = UNNotificationRequest(
                 identifier: approval.id.uuidString,
                 content: content,
-                trigger: nil // Deliver immediately
+                trigger: nil
             )
 
             UNUserNotificationCenter.current().add(request) { [weak self] error in
@@ -237,7 +186,6 @@ final class PermissionService {
         #endif
     }
 
-    /// Removes a system notification for an approval
     private func removeSystemNotification(for approvalId: UUID) {
         #if os(macOS)
             guard systemNotificationsEnabled else { return }
@@ -246,21 +194,11 @@ final class PermissionService {
         #endif
     }
 
-    // MARK: - Permission Checking
-
-    /// Checks the permission level for a tool operation.
-    ///
-    /// - Parameters:
-    ///   - tool: The tool name
-    ///   - details: Additional details (path, command, etc.)
-    ///   - defaultLevel: The default permission level for this tool
-    /// - Returns: The effective permission level
     func checkPermission(
         tool: String,
         details: String,
         defaultLevel: PermissionLevel
     ) -> PermissionLevel {
-        // Check if already approved this session
         let key = approvalKey(tool: tool, details: details)
         if sessionApprovals.contains(key) {
             return .automatic
@@ -269,11 +207,6 @@ final class PermissionService {
         return defaultLevel
     }
 
-    /// Records a session approval for a tool operation.
-    ///
-    /// - Parameters:
-    ///   - tool: The tool name
-    ///   - details: The specific details that were approved
     func recordSessionApproval(tool: String, details: String) {
         let key = approvalKey(tool: tool, details: details)
         sessionApprovals.insert(key)
@@ -282,11 +215,6 @@ final class PermissionService {
         log(.info, "Session approval recorded", metadata: ["tool": tool, "key": key])
     }
 
-    /// Records a session approval for a directory (for batch approvals).
-    ///
-    /// - Parameters:
-    ///   - tool: The tool name
-    ///   - directory: The directory path
     func recordDirectoryApproval(tool: String, directory: String) {
         let key = "dir:\(tool):\(directory)"
         sessionApprovals.insert(key)
@@ -294,26 +222,11 @@ final class PermissionService {
         log(.info, "Directory approval recorded", metadata: ["tool": tool, "directory": directory])
     }
 
-    /// Checks if a directory has been approved.
     func isDirectoryApproved(tool: String, directory: String) -> Bool {
         let key = "dir:\(tool):\(directory)"
         return sessionApprovals.contains(key)
     }
 
-    // MARK: - Approval Workflow
-
-    /// Requests approval for a tool operation.
-    ///
-    /// This method suspends until the user approves or denies the request,
-    /// or the request times out.
-    ///
-    /// - Parameters:
-    ///   - toolName: Name of the tool requesting approval
-    ///   - description: Human-readable description of the operation
-    ///   - details: Specific details (file path, command, etc.)
-    ///   - diffPreview: Optional diff preview for edit operations
-    ///   - conversationId: The conversation this request belongs to
-    /// - Returns: true if approved, false if denied
     func requestApproval(
         toolName: String,
         description: String,
@@ -331,15 +244,11 @@ final class PermissionService {
             conversationId: conversationId
         )
 
-        // Store the continuation before exposing the request so approval, denial,
-        // timeout, and task cancellation all race through the same exact ID.
         let approved = await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 approvalContinuations[approval.id] = continuation
                 pendingApprovals.append(approval)
 
-                // Cancellation can win before the continuation is installed.
-                // Recheck after insertion so this request is never orphaned.
                 guard !Task.isCancelled else {
                     deny(approval.id)
                     return
@@ -370,11 +279,6 @@ final class PermissionService {
         return accepted
     }
 
-    /// Approves a pending request.
-    ///
-    /// - Parameters:
-    ///   - approvalId: The ID of the pending approval
-    ///   - rememberForSession: Whether to remember this approval for the session
     func approve(_ approvalId: UUID, rememberForSession: Bool = false) {
         guard !cancelledApprovals.contains(approvalId) else {
             deny(approvalId)
@@ -386,23 +290,18 @@ final class PermissionService {
 
         let approval = pendingApprovals[index]
 
-        // Record session approval if requested
         if rememberForSession {
             let key = approvalKey(tool: approval.toolName, details: approval.details)
             pendingSessionApprovalOwners[approvalId] = key
         }
 
-        // Remove from pending
         pendingApprovals.remove(at: index)
 
-        // Cancel timeout
         timeoutTasks[approvalId]?.cancel()
         timeoutTasks.removeValue(forKey: approvalId)
 
-        // Remove system notification
         removeSystemNotification(for: approvalId)
 
-        // Resume continuation
         if let continuation = approvalContinuations.removeValue(forKey: approvalId) {
             continuation.resume(returning: true)
         }
@@ -413,16 +312,12 @@ final class PermissionService {
             "id": approvalId.uuidString
         ])
 
-        // Post notification for UI updates
         NotificationCenter.default.post(name: .pendingApprovalsChanged, object: nil, userInfo: [
             "conversationId": approval.conversationId,
             "count": pendingApprovals.count
         ])
     }
 
-    /// Denies a pending request.
-    ///
-    /// - Parameter approvalId: The ID of the pending approval
     func deny(_ approvalId: UUID) {
         guard let index = pendingApprovals.firstIndex(where: { $0.id == approvalId }) else {
             cancelledApprovals.clear(approvalId)
@@ -431,17 +326,13 @@ final class PermissionService {
 
         let approval = pendingApprovals[index]
 
-        // Remove from pending
         pendingApprovals.remove(at: index)
 
-        // Cancel timeout
         timeoutTasks[approvalId]?.cancel()
         timeoutTasks.removeValue(forKey: approvalId)
 
-        // Remove system notification
         removeSystemNotification(for: approvalId)
 
-        // Resume continuation
         if let continuation = approvalContinuations.removeValue(forKey: approvalId) {
             continuation.resume(returning: false)
         }
@@ -453,14 +344,12 @@ final class PermissionService {
             "id": approvalId.uuidString
         ])
 
-        // Post notification for UI updates
         NotificationCenter.default.post(name: .pendingApprovalsChanged, object: nil, userInfo: [
             "conversationId": approval.conversationId,
             "count": pendingApprovals.count
         ])
     }
 
-    /// Approves every pending request for a conversation (the "Allow All" action).
     func approveAllPending(forConversation conversationId: UUID) {
         let toApprove = pendingApprovals.filter { $0.conversationId == conversationId }
         for approval in toApprove {
@@ -469,11 +358,6 @@ final class PermissionService {
         log(.info, "All pending approvals granted", metadata: ["count": "\(toApprove.count)"])
     }
 
-    /// Denies all pending approvals for a conversation.
-    ///
-    /// - Parameters:
-    ///   - conversationId: The conversation ID
-    ///   - reason: The reason for denial
     func denyAllPending(forConversation conversationId: UUID, reason: String) {
         let toRemove = pendingApprovals.filter { $0.conversationId == conversationId }
 
@@ -487,7 +371,6 @@ final class PermissionService {
         ])
     }
 
-    /// Clears all session approvals.
     func clearSessionApprovals() {
         sessionApprovals.removeAll()
         committedSessionApprovalKeys.removeAll()
@@ -495,12 +378,9 @@ final class PermissionService {
         log(.info, "Session approvals cleared")
     }
 
-    /// Returns the count of pending approvals for a conversation.
     func pendingCount(forConversation conversationId: UUID) -> Int {
         pendingApprovals.count(where: { $0.conversationId == conversationId })
     }
-
-    // MARK: - Timeout Management
 
     private func handleCancelledApproval(_ approval: PendingApproval) {
         if let key = pendingSessionApprovalOwners.removeValue(forKey: approval.id),
@@ -519,23 +399,18 @@ final class PermissionService {
         committedSessionApprovalKeys.insert(key)
     }
 
-    // MARK: - Private Helpers
-
     private func approvalKey(tool: String, details: String) -> String {
         "\(tool):\(details)"
     }
 
     private func startTimeoutTask(for approvalId: UUID) {
         let timeout = approvalTimeoutSeconds
-        // 0 means "No timeout" in settings; never auto-deny in that case.
         guard timeout > 0 else { return }
         timeoutTasks[approvalId] = Task { [weak self] in
             do {
                 try await Task.sleep(for: .seconds(timeout))
                 self?.deny(approvalId)
-            } catch {
-                // Task was cancelled, which is expected
-            }
+            } catch {}
         }
     }
 
@@ -544,10 +419,7 @@ final class PermissionService {
     }
 }
 
-// MARK: - Default Permission Levels
-
 extension PermissionService {
-    /// Returns the default permission level for a tool.
     static func defaultPermissionLevel(for tool: String) -> PermissionLevel {
         switch tool {
         case "read_file", "list_directory", "search_files", "web_fetch":
@@ -562,18 +434,10 @@ extension PermissionService {
     }
 }
 
-// MARK: - Notification Delegate
-
-// Handles system notification responses for approval requests
-// Note: This class is intentionally NOT @MainActor to avoid sendability issues with
-// UNUserNotificationCenterDelegate on older Xcode versions (16.x). The delegate methods
-// are nonisolated and hop to @MainActor via Task where needed.
-// Marked @unchecked Sendable because permissionService is only accessed from MainActor context.
 #if os(macOS)
     private final class ApprovalNotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
         weak var permissionService: PermissionService?
 
-        /// Called when user interacts with a notification action (Approve/Deny buttons)
         nonisolated func userNotificationCenter(
             _: UNUserNotificationCenter,
             didReceive response: UNNotificationResponse,
@@ -589,7 +453,6 @@ extension PermissionService {
                 return
             }
 
-            // Process the action asynchronously
             Task { @MainActor [weak self] in
                 switch actionIdentifier {
                 case ApprovalNotificationConstants.approveActionIdentifier:
@@ -612,8 +475,6 @@ extension PermissionService {
                     )
 
                 case UNNotificationDefaultActionIdentifier:
-                    // User clicked the notification itself - bring app to front
-                    // The in-app UI can handle the approval
                     NSApp.activate(ignoringOtherApps: true)
 
                 default:
@@ -621,17 +482,14 @@ extension PermissionService {
                 }
             }
 
-            // Call completion handler immediately - the async work happens independently
             completionHandler()
         }
 
-        /// Called when notification is about to be presented while app is in foreground
         nonisolated func userNotificationCenter(
             _: UNUserNotificationCenter,
             willPresent _: UNNotification,
             withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
         ) {
-            // Show notification even when app is in foreground
             completionHandler([.banner, .sound, .badge])
         }
     }

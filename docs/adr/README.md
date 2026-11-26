@@ -54,6 +54,11 @@ What trade-offs are we accepting?
 | [0006](0006-native-agentic-tools.md) | Native Agentic Tools Architecture | Proposed |
 | [0007](0007-revisioned-watch-sync.md) | Revisioned Durable Watch Sync | Accepted |
 | [0008](0008-provider-request-routing.md) | Provider Request Routing | Accepted |
+| [0009](0009-request-ownership-and-streaming-pipeline.md) | Request Ownership, Streaming Pipeline, and Tool-Chain Coordination | Accepted |
+| [0010](0010-credential-and-storage-environment-isolation.md) | Credential, Diagnostics Privacy, and Storage Environment Isolation | Accepted |
+| [0011](0011-agentic-tool-security-and-mcp-isolation.md) | Agentic Tool Security, Subprocess Isolation, and MCP Namespacing | Accepted |
+| [0012](0012-user-memory-and-conversation-summaries.md) | User Memory and Conversation Summary Architecture | Accepted |
+| [0013](0013-platform-ui-and-interaction-decisions.md) | Platform UI, Multimodal Input, and Interaction Decisions | Accepted |
 
 ## When to Create an ADR
 

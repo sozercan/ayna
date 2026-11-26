@@ -1,10 +1,3 @@
-//
-//  UserMemoryServiceTests.swift
-//  ayna
-//
-//  Created on 12/25/25.
-//
-
 @testable import Ayna
 import Foundation
 import Testing
@@ -471,8 +464,6 @@ struct UserMemoryServiceTests {
         return false
     }
 
-    // MARK: - Fact Management
-
     @Test
     func `add fact stores fact correctly`() {
         let service = UserMemoryService()
@@ -494,7 +485,6 @@ struct UserMemoryServiceTests {
 
         let facts = service.activeFacts()
         #expect(facts.count == 3)
-        // Facts are inserted at index 0, so most recent is first
         #expect(facts[0].content == "Fact 3")
         #expect(facts[1].content == "Fact 2")
         #expect(facts[2].content == "Fact 1")
@@ -526,15 +516,12 @@ struct UserMemoryServiceTests {
             return
         }
 
-        // Initially active
         #expect(service.activeFacts().count == 1)
 
-        // Toggle off
         service.toggleFact(factId, active: false)
         #expect(service.activeFacts().isEmpty)
         #expect(service.facts.count == 1)
 
-        // Toggle back on
         service.toggleFact(factId, active: true)
         #expect(service.activeFacts().count == 1)
     }
@@ -568,8 +555,6 @@ struct UserMemoryServiceTests {
         #expect(service.activeFacts().isEmpty)
     }
 
-    // MARK: - Context Formatting
-
     @Test
     func `formatted for context returns nil when empty`() {
         let service = UserMemoryService()
@@ -582,7 +567,6 @@ struct UserMemoryServiceTests {
         service.addFact("Active fact")
         service.addFact("Inactive fact")
 
-        // Deactivate second fact (which is now first in list due to insert at 0)
         if let factId = service.facts.first?.id {
             service.toggleFact(factId, active: false)
         }
@@ -595,18 +579,13 @@ struct UserMemoryServiceTests {
     @Test
     func `formatted for context respects token budget`() {
         let service = UserMemoryService()
-        // Add a long fact
         let longContent = String(repeating: "This is a very long fact. ", count: 100)
         service.addFact(longContent)
         service.addFact("Short fact")
 
-        // Very small budget should limit output
         let context = service.formattedForContext(tokenBudget: 50)
-        // Should have some content but be limited
         #expect(context != nil)
     }
-
-    // MARK: - Memory Summary
 
     @Test
     func `memory summary reflects fact count`() {
@@ -619,8 +598,6 @@ struct UserMemoryServiceTests {
         service.addFact("Fact 2")
         #expect(service.memorySummary == "2 facts stored")
     }
-
-    // MARK: - Command Processing
 
     @Test
     func `process store command adds fact`() {
@@ -638,7 +615,6 @@ struct UserMemoryServiceTests {
         service.addFact("I love coding")
         #expect(service.activeFacts().count == 1)
 
-        // "love coding" has 2/3 word overlap with "I love coding", which is >50%
         let response = service.processCommand(.remove(content: "love coding"))
 
         #expect(response != nil)
@@ -666,7 +642,6 @@ struct UserMemoryServiceTests {
         let response = service.processCommand(.clearAll)
 
         #expect(response != nil)
-        // clearAll doesn't actually clear - it returns guidance to use settings
         #expect(response?.contains("Settings") == true)
     }
 
@@ -822,8 +797,6 @@ private final class NotificationCounter: @unchecked Sendable {
     }
 }
 
-// MARK: - MemoryCommandPattern Tests
-
 @Suite("MemoryCommandPattern Tests")
 struct MemoryCommandPatternTests {
     @Test
@@ -853,7 +826,6 @@ struct MemoryCommandPatternTests {
         let command = MemoryCommandPattern.detect(in: "What do you remember about me?")
 
         if case .query = command {
-            // Success
         } else {
             Issue.record("Expected query command")
         }
@@ -864,7 +836,6 @@ struct MemoryCommandPatternTests {
         let command = MemoryCommandPattern.detect(in: "Clear my memory")
 
         if case .clearAll = command {
-            // Success
         } else {
             Issue.record("Expected clearAll command")
         }
@@ -887,7 +858,6 @@ struct MemoryCommandPatternTests {
         let command = MemoryCommandPattern.detect(in: "Tell me about Swift programming")
 
         if case .none = command {
-            // Success
         } else {
             Issue.record("Expected none command")
         }
@@ -895,11 +865,9 @@ struct MemoryCommandPatternTests {
 
     @Test
     func `avoid false positive for 'I can't remember that'`() {
-        // This should NOT trigger a store command
         let command = MemoryCommandPattern.detect(in: "I can't remember that password")
 
         if case .none = command {
-            // Success - correctly avoided false positive
         } else {
             Issue.record("Expected none command, but got \(command)")
         }
@@ -907,11 +875,9 @@ struct MemoryCommandPatternTests {
 
     @Test
     func `avoid false positive when 'remember that' is mid-sentence`() {
-        // This should NOT trigger a store command
         let command = MemoryCommandPattern.detect(in: "Do you remember that meeting we had?")
 
         if case .none = command {
-            // Success - correctly avoided false positive
         } else {
             Issue.record("Expected none command, but got \(command)")
         }

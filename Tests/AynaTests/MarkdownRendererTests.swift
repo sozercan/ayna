@@ -30,7 +30,6 @@ struct MarkdownRendererTests {
             Issue.record("Expected paragraph block")
         }
         if case .divider = blocks[2].type {
-            // success
         } else {
             Issue.record("Expected divider block")
         }

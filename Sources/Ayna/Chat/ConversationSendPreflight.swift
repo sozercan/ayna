@@ -93,8 +93,6 @@ enum ConversationSendPreflight {
         )
     }
 
-    /// Image edits operate on the attachments themselves, so a selected file that could not be
-    /// read must stop the send instead of silently editing a different image or none at all.
     static func unreadableAttachmentFailure(
         models: [String],
         selectedAttachmentCount: Int,

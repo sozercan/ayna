@@ -1,10 +1,3 @@
-//
-//  OpenAIEndpointResolverTests.swift
-//  aynaTests
-//
-//  Created on 3/17/26.
-//
-
 @testable import Ayna
 import Testing
 

@@ -1,17 +1,7 @@
-//
-//  BuiltinToolService+Definitions.swift
-//  Ayna
-//
-//  Tool definitions for builtin tool service.
-//
-
 import Foundation
 
 #if os(macOS)
     extension BuiltinToolService {
-        // MARK: - Tool Definitions
-
-        /// Returns all tool definitions in OpenAI function format.
         func allToolDefinitions() -> [[String: Any]] {
             guard isEnabled else { return [] }
 
@@ -31,7 +21,6 @@ import Foundation
             }
         }
 
-        /// Returns context to inject into the system prompt describing agentic capabilities.
         func systemPromptContext() -> String? {
             guard isEnabled else { return nil }
 
@@ -68,14 +57,12 @@ import Foundation
             return context
         }
 
-        /// Tool name constant for use in tool call routing
         static let toolNames: Set<String> = [
             "read_file", "write_file", "edit_file",
             "list_directory", "search_files", "run_command",
             "git_context", "project_context", "update_tasks"
         ]
 
-        /// Checks if a tool name is a builtin tool
         static func isBuiltinTool(_ name: String) -> Bool {
             toolNames.contains(name)
         }

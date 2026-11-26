@@ -1,15 +1,5 @@
-//
-//  BuiltinToolModels.swift
-//  Ayna
-//
-//  Result types and errors for builtin tool operations.
-//
-
 import Foundation
 
-// MARK: - Tool Result Types
-
-/// Result of a file operation
 struct FileEntry: Codable, Sendable {
     let name: String
     let path: String
@@ -18,7 +8,6 @@ struct FileEntry: Codable, Sendable {
     let modifiedDate: Date?
 }
 
-/// Result of a file search
 struct SearchResult: Codable, Sendable {
     let path: String
     let lineNumber: Int
@@ -27,41 +16,30 @@ struct SearchResult: Codable, Sendable {
     let matchEnd: Int
 }
 
-/// Result of a command execution
 struct CommandResult: Codable, Sendable {
     let exitCode: Int32
     let stdout: String
     let stderr: String
     let duration: TimeInterval
-    /// The command hit the timeout and was terminated; output is partial.
     var timedOut = false
 }
 
-// MARK: - Tool Execution Error
-
-/// Errors that can occur during tool execution.
-///
-/// Models need to distinguish error types to recover gracefully.
 enum ToolExecutionError: Error, LocalizedError, Sendable {
-    // Permission errors (user declined or policy blocked)
     case permissionDenied(tool: String, reason: String)
     case sandboxBlocked(command: String, reason: String)
 
-    // Execution errors (tool ran but failed)
     case fileNotFound(path: String)
     case fileNotReadable(path: String, underlying: String)
     case fileNotWritable(path: String, underlying: String)
     case commandFailed(command: String, exitCode: Int32, stdout: String, stderr: String)
     case commandTimeout(command: String, timeoutSeconds: Int, stdout: String, stderr: String)
 
-    // Validation errors (bad input)
     case invalidPath(path: String, reason: String)
     case editAmbiguous(path: String, matchCount: Int)
     case editNotFound(path: String, searchText: String)
     case binaryFileUnsupported(path: String)
     case emptySearchText
 
-    // System errors
     case resourceLimitExceeded(resource: String, limit: String)
     case serviceDisabled
 
@@ -100,7 +78,6 @@ enum ToolExecutionError: Error, LocalizedError, Sendable {
         }
     }
 
-    /// Structured error message for model consumption
     var modelFacingDescription: String {
         switch self {
         case let .permissionDenied(tool, reason):
@@ -147,8 +124,6 @@ private extension ToolExecutionError {
         return section
     }
 }
-
-// MARK: - String Extension for Range Finding
 
 extension String {
     func ranges(of searchString: String) -> [Range<String.Index>] {

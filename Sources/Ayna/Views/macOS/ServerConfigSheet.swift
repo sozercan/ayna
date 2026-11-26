@@ -1,16 +1,8 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  ServerConfigSheet.swift
-//  ayna
-//
-//  Created on 11/3/25.
-//
 
 import Foundation
 import SwiftUI
-
-// MARK: - Server Config Sheet
 
 struct ServerConfigSheet: View {
     let config: MCPServerConfig?
@@ -35,7 +27,6 @@ struct ServerConfigSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
             HStack {
                 Text(config == nil ? "Add MCP Server" : "Edit MCP Server")
                     .font(Typography.title2)
@@ -51,7 +42,6 @@ struct ServerConfigSheet: View {
 
             Divider()
 
-            // Form
             Form {
                 Section {
                     TextField("Server Name", text: $name)
@@ -97,7 +87,6 @@ struct ServerConfigSheet: View {
 
             Divider()
 
-            // Footer
             HStack {
                 Spacer()
 
@@ -133,8 +122,6 @@ struct ServerConfigSheet: View {
         .frame(width: 600, height: 500)
     }
 }
-
-// MARK: - Helper Types
 
 struct EnvVar: Identifiable {
     let id = UUID()

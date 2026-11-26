@@ -1,12 +1,3 @@
-//
-//  SoundEngine.swift
-//  ayna
-//
-//  Design System: Sound Feedback
-//  Centralized audio feedback for key user interactions.
-//  Respects system silent switch and accessibility settings.
-//
-
 import AVFoundation
 import os.log
 import SwiftUI
@@ -15,41 +6,17 @@ import SwiftUI
     import AudioToolbox
 #endif
 
-// MARK: - SoundEngine
-
-/// Centralized sound engine for the Ayna design system.
-/// Provides consistent audio feedback for key interactions.
-///
-/// Sounds are designed to be:
-/// - Subtle and non-intrusive
-/// - Respectful of silent switch (iOS) and mute settings
-/// - Consistent with Apple's audio design guidelines
-///
-/// Usage:
-/// ```swift
-/// SoundEngine.play(.messageSent)
-/// SoundEngine.play(.messageReceived)
-/// ```
 @MainActor
 public final class SoundEngine {
-    // MARK: - Singleton
-
     public static let shared = SoundEngine()
 
-    // MARK: - Properties
-
-    /// Whether sounds are enabled (user preference)
     @AppStorage("soundEffectsEnabled") private var soundsEnabled: Bool = true
 
-    /// Audio players for custom sounds (cached for performance)
     private var players: [Sound: AVAudioPlayer] = [:]
 
-    // System sound IDs for iOS system sounds
     #if os(iOS)
         private var systemSoundIDs: [Sound: SystemSoundID] = [:]
     #endif
-
-    // MARK: - Initialization
 
     private init() {
         configureAudioSession()
@@ -58,7 +25,6 @@ public final class SoundEngine {
     private func configureAudioSession() {
         #if os(iOS)
             do {
-                // Use ambient category to respect silent switch and mix with other audio
                 try AVAudioSession.sharedInstance().setCategory(
                     .ambient,
                     mode: .default,
@@ -75,71 +41,52 @@ public final class SoundEngine {
         #endif
     }
 
-    // MARK: - Sound Definitions
-
-    /// Available sound effects
     public enum Sound: String, CaseIterable {
-        /// Played when user sends a message
         case messageSent = "message_sent"
 
-        /// Played when AI response completes
         case messageReceived = "message_received"
 
-        /// Played when an error occurs
         case error
 
-        /// Played when a new conversation is created
         case newConversation = "new_conversation"
 
-        /// Played on successful action (copy, etc.)
         case success
 
         #if os(iOS)
-            /// System sound ID for this sound (using Apple's built-in sounds)
             var systemSoundID: SystemSoundID {
                 switch self {
                 case .messageSent:
-                    // Message sent - short "swoosh" sound (like iMessage)
-                    1004 // Mail Sent
+                    1004
                 case .messageReceived:
-                    // Message received - gentle notification
-                    1007 // SMS Received (subtle tri-tone)
+                    1007
                 case .error:
-                    // Error - system alert
-                    1073 // Shake (error-like)
+                    1073
                 case .newConversation:
-                    // New conversation - light tap
-                    1104 // Begin recording (subtle)
+                    1104
                 case .success:
-                    // Success - confirmation
-                    1057 // Photo shutter (subtle click)
+                    1057
                 }
             }
         #endif
 
         #if os(macOS)
-            /// System sound name for macOS
             var macOSSoundName: NSSound.Name? {
                 switch self {
                 case .messageSent:
-                    NSSound.Name("Morse") // Short, subtle
+                    NSSound.Name("Morse")
                 case .messageReceived:
-                    NSSound.Name("Tink") // Gentle notification
+                    NSSound.Name("Tink")
                 case .error:
-                    NSSound.Name("Basso") // Error sound
+                    NSSound.Name("Basso")
                 case .newConversation:
-                    NSSound.Name("Pop") // Light tap
+                    NSSound.Name("Pop")
                 case .success:
-                    NSSound.Name("Purr") // Confirmation
+                    NSSound.Name("Purr")
                 }
             }
         #endif
     }
 
-    // MARK: - Playback
-
-    /// Play a sound effect
-    /// - Parameter sound: The sound to play
     public func play(_ sound: Sound) {
         guard soundsEnabled else { return }
 
@@ -152,8 +99,6 @@ public final class SoundEngine {
 
     #if os(iOS)
         private func playSystemSound(_ sound: Sound) {
-            // Use AudioServicesPlaySystemSound for silent switch support
-            // This automatically respects the hardware silent switch
             AudioServicesPlaySystemSound(sound.systemSoundID)
 
             DiagnosticsLogger.log(
@@ -177,7 +122,6 @@ public final class SoundEngine {
                 return
             }
 
-            // Play asynchronously to not block UI
             nsSound.play()
 
             DiagnosticsLogger.log(
@@ -188,36 +132,26 @@ public final class SoundEngine {
         }
     #endif
 
-    // MARK: - Convenience Methods
-
-    /// Play message sent sound
     public static func messageSent() {
         shared.play(.messageSent)
     }
 
-    /// Play message received sound
     public static func messageReceived() {
         shared.play(.messageReceived)
     }
 
-    /// Play error sound
     public static func error() {
         shared.play(.error)
     }
 
-    /// Play new conversation sound
     public static func newConversation() {
         shared.play(.newConversation)
     }
 
-    /// Play success sound
     public static func success() {
         shared.play(.success)
     }
 
-    // MARK: - Settings
-
-    /// Toggle sound effects on/off
     public var isEnabled: Bool {
         get { soundsEnabled }
         set { soundsEnabled = newValue }

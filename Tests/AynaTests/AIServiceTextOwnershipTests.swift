@@ -700,8 +700,6 @@ extension AIServiceTests {
         )
         let staleProvider = try #require(factory.providers.first)
 
-        // These callbacks are enqueued while the first flight still owns the provider.
-        // Replacement occurs before the main-actor forwarder can drain them.
         staleProvider.emitChunk("stale chunk")
         staleProvider.emitReasoning("stale reasoning")
         staleProvider.emitToolRequest(name: "stale_tool")

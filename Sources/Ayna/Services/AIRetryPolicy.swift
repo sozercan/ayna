@@ -1,20 +1,9 @@
-//
-//  AIRetryPolicy.swift
-//  ayna
-//
-//  Created on 11/24/25.
-//
-
 import Foundation
 
 #if canImport(os)
     import os
 #endif
 
-// MARK: - Circuit Breaker
-
-/// Thread-safe circuit breaker that prevents hammering failing endpoints.
-/// States: Closed (normal) → Open (failing fast) → Half-Open (testing recovery)
 final class CircuitBreaker: @unchecked Sendable {
     enum State: Sendable {
         case closed
@@ -23,11 +12,8 @@ final class CircuitBreaker: @unchecked Sendable {
     }
 
     struct Config: Sendable {
-        /// Number of consecutive failures before opening the circuit
         let failureThreshold: Int
-        /// How long the circuit stays open before allowing a test request
         let openDuration: TimeInterval
-        /// Number of successes needed in half-open state to close
         let successThreshold: Int
 
         nonisolated static let `default` = Config(
@@ -47,12 +33,10 @@ final class CircuitBreaker: @unchecked Sendable {
         self.config = config
     }
 
-    /// Current state of the circuit breaker
     var state: State {
         lock.lock()
         defer { lock.unlock() }
 
-        // Auto-transition from open to half-open if timeout expired
         if case let .open(until) = _state, Date() >= until {
             _state = .halfOpen
             consecutiveSuccesses = 0
@@ -65,7 +49,6 @@ final class CircuitBreaker: @unchecked Sendable {
         return _state
     }
 
-    /// Check if requests should be allowed through
     var shouldAllowRequest: Bool {
         switch state {
         case .closed, .halfOpen:
@@ -75,7 +58,6 @@ final class CircuitBreaker: @unchecked Sendable {
         }
     }
 
-    /// Record a successful request
     func recordSuccess() {
         lock.lock()
         defer { lock.unlock() }
@@ -99,7 +81,6 @@ final class CircuitBreaker: @unchecked Sendable {
         }
     }
 
-    /// Record a failed request
     func recordFailure() {
         lock.lock()
         defer { lock.unlock() }
@@ -120,7 +101,6 @@ final class CircuitBreaker: @unchecked Sendable {
                 )
             }
         case .halfOpen:
-            // Failed during test - reopen the circuit
             let openUntil = Date().addingTimeInterval(config.openDuration)
             _state = .open(until: openUntil)
             DiagnosticsLogger.log(
@@ -133,7 +113,6 @@ final class CircuitBreaker: @unchecked Sendable {
         }
     }
 
-    /// Reset the circuit breaker to closed state (for testing or manual override)
     func reset() {
         lock.lock()
         defer { lock.unlock() }
@@ -142,7 +121,6 @@ final class CircuitBreaker: @unchecked Sendable {
         consecutiveSuccesses = 0
     }
 
-    /// Time remaining until circuit transitions from open to half-open
     var timeUntilHalfOpen: TimeInterval? {
         lock.lock()
         defer { lock.unlock() }
@@ -153,9 +131,6 @@ final class CircuitBreaker: @unchecked Sendable {
     }
 }
 
-// MARK: - Circuit Breaker Registry
-
-/// Manages circuit breakers per endpoint/provider to isolate failures
 final class CircuitBreakerRegistry: @unchecked Sendable {
     static let shared = CircuitBreakerRegistry()
 
@@ -167,7 +142,6 @@ final class CircuitBreakerRegistry: @unchecked Sendable {
         defaultConfig = config
     }
 
-    /// Get or create a circuit breaker for a specific endpoint
     func breaker(for endpoint: String) -> CircuitBreaker {
         lock.lock()
         defer { lock.unlock() }
@@ -185,7 +159,6 @@ final class CircuitBreakerRegistry: @unchecked Sendable {
         return newBreaker
     }
 
-    /// Reset all circuit breakers (for testing)
     func resetAll() {
         lock.lock()
         defer { lock.unlock() }
@@ -194,12 +167,6 @@ final class CircuitBreakerRegistry: @unchecked Sendable {
     }
 }
 
-// MARK: - Circuit Breaker Convenience
-
-/// Thin convenience wrapper around the app's circuit breaker implementation.
-///
-/// Providers can use this to fail fast when an endpoint is consistently failing,
-/// and to record success/failure signals to close/open the breaker.
 enum NetworkCircuitBreaker {
     static func key(for url: URL?, label: String) -> String {
         guard let url else { return label }
@@ -264,13 +231,9 @@ enum NetworkCircuitBreaker {
     }
 }
 
-// MARK: - HTTP Status Error
-
-/// A non-success HTTP status from a provider, carrying the server's retry hint.
 struct HTTPStatusError: LocalizedError, Sendable {
     let statusCode: Int
     let message: String
-    /// When the server asked us to retry (`retry-after-ms` or `Retry-After`), if it said.
     let retryAfter: Date?
 
     init(statusCode: Int, message: String, response: HTTPURLResponse? = nil, now: Date = Date()) {
@@ -283,12 +246,10 @@ struct HTTPStatusError: LocalizedError, Sendable {
         message
     }
 
-    /// Request timeout, conflict, rate limit, and server errors are worth another attempt.
     var isRetryable: Bool {
         [408, 409, 429].contains(statusCode) || (500 ... 599).contains(statusCode)
     }
 
-    /// Reads `retry-after-ms` (milliseconds), then `Retry-After` (seconds or an HTTP date).
     static func retryAfterDate(from response: HTTPURLResponse, now: Date = Date()) -> Date? {
         if let milliseconds = response.value(forHTTPHeaderField: "retry-after-ms").flatMap(Double.init),
            milliseconds >= 0
@@ -311,11 +272,7 @@ struct HTTPStatusError: LocalizedError, Sendable {
     }
 }
 
-/// Stateless helper that determines retry behavior for API requests.
-/// Implements exponential backoff with jitter for transient failures.
 enum AIRetryPolicy {
-    // MARK: - Configuration
-
     struct Config {
         let maxRetries: Int
         let initialDelay: TimeInterval
@@ -328,45 +285,30 @@ enum AIRetryPolicy {
         )
     }
 
-    // MARK: - Public API
-
-    /// Determines if a request should be retried based on the error and attempt count.
-    /// - Parameters:
-    ///   - error: The error that occurred
-    ///   - attempt: The current attempt number (0-based)
-    ///   - hasReceivedData: Whether any data was received before the error
-    ///   - config: Retry configuration (defaults to standard settings)
-    /// - Returns: `true` if the request should be retried
     static func shouldRetry(
         error: Error,
         attempt: Int,
         hasReceivedData: Bool = false,
         config: Config = .default
     ) -> Bool {
-        // Don't retry if we've exceeded max attempts
         guard attempt < config.maxRetries else { return false }
 
-        // Don't retry if we already received data (partial response)
         guard !hasReceivedData else { return false }
 
-        // Don't retry cancellations
         if isCancellationError(error) { return false }
 
         if let statusError = error as? HTTPStatusError {
             return statusError.isRetryable
         }
 
-        // Check for retryable URL errors
         if let urlError = error as? URLError {
             return isRetryableURLError(urlError)
         }
 
-        // Check for retryable API errors (AynaError)
         if let aynaError = error as? AynaError {
             return isRetryableAynaError(aynaError)
         }
 
-        // Legacy support for AIService.AIError
         if let openAIError = error as? AIService.AIError {
             return isRetryableAPIError(openAIError)
         }
@@ -374,42 +316,26 @@ enum AIRetryPolicy {
         return false
     }
 
-    /// The server's requested retry time for an error, if it sent one.
     static func retryAfterDate(for error: Error) -> Date? {
         (error as? HTTPStatusError)?.retryAfter
     }
 
-    /// Calculates the delay before the next retry attempt.
-    /// Uses exponential backoff with jitter to avoid thundering herd.
-    /// If a retry-after date is provided (from rate limit headers), uses that instead.
-    /// - Parameters:
-    ///   - attempt: The current attempt number (0-based)
-    ///   - retryAfterDate: Optional date from retry-after header
-    ///   - config: Retry configuration
-    /// - Returns: The delay in seconds
     static func delay(
         for attempt: Int,
         retryAfterDate: Date? = nil,
         config: Config = .default
     ) -> TimeInterval {
-        // If we have a retry-after date, use that (capped at 60s to avoid very long waits)
         if let retryAfter = retryAfterDate {
             let retryDelay = max(0, retryAfter.timeIntervalSinceNow)
             return min(retryDelay, 60.0)
         }
 
-        // Fall back to exponential backoff with jitter
         let exponentialDelay = config.initialDelay * pow(2.0, Double(attempt))
         let cappedDelay = min(exponentialDelay, config.maxDelay)
         let jitter = Double.random(in: 0 ... 0.1)
         return cappedDelay + jitter
     }
 
-    /// Async helper that waits for the appropriate retry delay.
-    /// - Parameters:
-    ///   - attempt: The current attempt number (0-based)
-    ///   - retryAfterDate: Optional date from retry-after header
-    ///   - config: Retry configuration
     static func wait(
         for attempt: Int,
         retryAfterDate: Date? = nil,
@@ -418,8 +344,6 @@ enum AIRetryPolicy {
         let delaySeconds = delay(for: attempt, retryAfterDate: retryAfterDate, config: config)
         try? await Task.sleep(for: .seconds(delaySeconds))
     }
-
-    // MARK: - Error Classification
 
     private static func isCancellationError(_ error: Error) -> Bool {
         if let urlError = error as? URLError, urlError.code == .cancelled {
@@ -447,7 +371,6 @@ enum AIRetryPolicy {
     private static func isRetryableAPIError(_ error: AIService.AIError) -> Bool {
         switch error {
         case let .apiError(message):
-            // Retry on rate limits and server errors
             let retryableStatusCodes = ["429", "500", "502", "503", "504"]
             return retryableStatusCodes.contains { message.contains($0) }
         default:
@@ -458,7 +381,6 @@ enum AIRetryPolicy {
     private static func isRetryableAynaError(_ error: AynaError) -> Bool {
         switch error {
         case let .apiError(message):
-            // Retry on rate limits and server errors
             let retryableStatusCodes = ["429", "500", "502", "503", "504"]
             return retryableStatusCodes.contains { message.contains($0) }
         case .rateLimited:

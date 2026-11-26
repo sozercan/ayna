@@ -1,26 +1,8 @@
-//
-//  AnthropicEndpointResolver.swift
-//  ayna
-//
-//  Created on 1/30/26.
-//
-
 import Foundation
 
-/// Stateless helper that resolves API endpoint URLs for Anthropic.
-/// Handles default and custom endpoints with validation.
 enum AnthropicEndpointResolver {
-    // MARK: - Default Endpoints
-
     private static let defaultMessagesURL = "https://api.anthropic.com/v1/messages"
 
-    // MARK: - Public API
-
-    /// Resolves the messages endpoint URL.
-    ///
-    /// - Parameter customEndpoint: Optional custom endpoint URL.
-    /// - Returns: The resolved URL for the messages endpoint.
-    /// - Throws: `AynaError.invalidEndpoint` if the URL is malformed or uses HTTP (except localhost).
     static func messagesURL(customEndpoint: String?) throws -> URL {
         guard let customEndpoint, !customEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             guard let url = URL(string: defaultMessagesURL) else {
@@ -31,17 +13,14 @@ enum AnthropicEndpointResolver {
 
         let trimmed = customEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Validate URL structure
         guard let url = URL(string: trimmed) else {
             throw AynaError.invalidEndpoint(trimmed)
         }
 
-        // Validate scheme
         guard let scheme = url.scheme?.lowercased() else {
             throw AynaError.invalidEndpoint(trimmed)
         }
 
-        // Allow loopback HTTP for local development/testing only.
         let isLoopbackHTTP = scheme == "http" && Self.isLoopbackHost(url.host)
 
         if scheme == "http", !isLoopbackHTTP {
@@ -52,7 +31,6 @@ enum AnthropicEndpointResolver {
             throw AynaError.invalidEndpoint("Invalid URL scheme: \(scheme)")
         }
 
-        // Build the final URL
         let finalURL = appendMessagesPathIfNeeded(trimmed)
 
         guard let result = URL(string: finalURL) else {
@@ -62,38 +40,30 @@ enum AnthropicEndpointResolver {
         return result
     }
 
-    // MARK: - Private Helpers
-
     private static func isLoopbackHost(_ host: String?) -> Bool {
         guard let host = host?.lowercased() else { return false }
         return host == "localhost" || host == "127.0.0.1" || host == "::1"
     }
 
-    /// Sanitizes a base endpoint by trimming whitespace and trailing slashes.
     private static func sanitizedBaseEndpoint(_ endpoint: String) -> String {
         endpoint
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     }
 
-    /// Appends `/v1/messages` path if not already present.
     private static func appendMessagesPathIfNeeded(_ endpoint: String) -> String {
         let cleanBase = sanitizedBaseEndpoint(endpoint)
         let messagesPath = "/v1/messages"
 
-        // If the endpoint already ends with /messages or /v1/messages, use as-is
         if cleanBase.hasSuffix("/messages") || cleanBase.hasSuffix("/v1/messages") {
             return cleanBase
         }
 
-        // If the endpoint ends with /v1, append /messages directly
         if cleanBase.hasSuffix("/v1") {
             return cleanBase + "/messages"
         }
 
-        // If it contains /v1/ but not /messages, check if it's complete
         if cleanBase.contains("/v1/") {
-            // Already has a path under /v1/, use as-is
             return cleanBase
         }
 

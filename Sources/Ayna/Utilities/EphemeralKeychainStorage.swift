@@ -1,7 +1,6 @@
 import Foundation
 import Security
 
-/// Lightweight in-memory implementation used when running UI tests so we never touch the real Keychain.
 final class EphemeralKeychainStorage: KeychainStoring, @unchecked Sendable {
     private var storage: [String: Data] = [:]
     private let lock = NSLock()

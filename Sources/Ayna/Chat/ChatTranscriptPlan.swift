@@ -1,13 +1,5 @@
-//
-//  ChatTranscriptPlan.swift
-//  ayna
-//
-//  Plans the transcript items that chat views should render.
-//
-
 import Foundation
 
-/// How a visible message should be interpreted by transcript renderers.
 enum ChatTranscriptDisplayKind: Equatable, Sendable {
     case text
     case toolResult
@@ -16,7 +8,6 @@ enum ChatTranscriptDisplayKind: Equatable, Sendable {
     case citationsOnly
 }
 
-/// A visible transcript message plus the display semantics used to make it visible.
 struct ChatTranscriptMessage: Identifiable, Equatable, Sendable {
     let message: Message
     let displayKind: ChatTranscriptDisplayKind
@@ -26,7 +17,6 @@ struct ChatTranscriptMessage: Identifiable, Equatable, Sendable {
     }
 }
 
-/// A visible group of parallel model responses.
 struct ChatTranscriptResponseGroup: Identifiable, Equatable, Sendable {
     let id: UUID
     let responses: [ChatTranscriptMessage]
@@ -38,7 +28,6 @@ struct ChatTranscriptResponseGroup: Identifiable, Equatable, Sendable {
     }
 }
 
-/// Represents either a single visible message or one grouped set of parallel responses.
 enum ChatTranscriptItem: Identifiable, Equatable, Sendable {
     case message(ChatTranscriptMessage)
     case responseGroup(ChatTranscriptResponseGroup)
@@ -53,13 +42,11 @@ enum ChatTranscriptItem: Identifiable, Equatable, Sendable {
     }
 }
 
-/// A response that should be auto-selected if the user continues from an unselected group.
 struct ChatTranscriptResponseSelection: Equatable, Sendable {
     let groupId: UUID
     let messageId: UUID
 }
 
-/// Pure display plan for a conversation transcript.
 struct ChatTranscriptPlan: Equatable, Sendable {
     let visibleMessages: [ChatTranscriptMessage]
     let items: [ChatTranscriptItem]

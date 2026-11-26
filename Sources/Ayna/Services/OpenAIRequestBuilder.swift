@@ -1,16 +1,12 @@
 import Foundation
 import os
 
-/// Represents a tool call from the model.
-/// Note: Uses @unchecked Sendable because arguments are copied on init and
-/// the struct is immutable, making it effectively thread-safe.
 struct ToolCallInfo: @unchecked Sendable {
     let id: String
     let name: String
     let arguments: [String: Any]
 }
 
-/// Sendable wrapper for immutable JSON-compatible tool definitions.
 struct RequestBuilderToolDefinitions: @unchecked Sendable {
     static let none = RequestBuilderToolDefinitions(nil)
 
@@ -21,8 +17,6 @@ struct RequestBuilderToolDefinitions: @unchecked Sendable {
     }
 }
 
-/// Resolves file-backed image attachments before request serialization leaves
-/// the main actor.
 enum RequestBuilderAttachmentResolver {
     typealias AttachmentDataLoader = @Sendable (String) async -> Data?
 
@@ -64,51 +58,26 @@ enum RequestBuilderAttachmentResolver {
     }
 }
 
-/// Builder for constructing OpenAI API requests.
-///
-/// Handles:
-/// - Chat Completions API message payloads
-/// - Responses API input/output formats
-/// - Request header configuration
-/// - Authentication (Bearer token, Azure api-key)
 enum OpenAIRequestBuilder {
-    // MARK: - Chat Completions API
-
-    /// Build a message payload for the Chat Completions API.
-    ///
-    /// Handles:
-    /// - Tool role messages (tool results)
-    /// - Assistant messages with tool calls
-    /// - Multimodal content (text + images)
-    /// - Simple text content
-    ///
-    /// - Parameter message: The message to convert
-    /// - Returns: Dictionary suitable for JSON serialization
     static func buildMessagePayload(from message: Message) -> [String: Any] {
         var payload: [String: Any] = ["role": message.role.rawValue]
 
-        // Handle tool role messages (tool results)
         if message.role == .tool {
             payload["content"] = message.content
-            // Tool messages need tool_call_id from the assistant's tool call
             if let toolCalls = message.toolCalls, let firstToolCall = toolCalls.first {
                 payload["tool_call_id"] = firstToolCall.id
             }
             return payload
         }
 
-        // Handle assistant messages with tool calls
         if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-            // Assistant message that made tool calls
             if !message.content.isEmpty {
                 payload["content"] = message.content
             } else {
-                payload["content"] = "" // Empty content when only tool calls
+                payload["content"] = ""
             }
 
-            // Add tool_calls array
             let toolCallsArray = toolCalls.compactMap { toolCall -> [String: Any]? in
-                // Convert AnyCodable arguments to JSON string safely
                 var argumentsDict: [String: Any] = [:]
                 for (key, anyCodable) in toolCall.arguments {
                     argumentsDict[key] = anyCodable.value
@@ -142,11 +111,9 @@ enum OpenAIRequestBuilder {
             return payload
         }
 
-        // Check if message has attachments (multimodal content)
         if let attachments = message.attachments, !attachments.isEmpty {
             var contentArray: [[String: Any]] = []
 
-            // Add text content if present
             if !message.content.isEmpty {
                 contentArray.append([
                     "type": "text",
@@ -154,7 +121,6 @@ enum OpenAIRequestBuilder {
                 ])
             }
 
-            // Add image attachments
             for attachment in attachments where attachment.mimeType.starts(with: "image/") {
                 if let data = attachment.data {
                     let base64Image = data.base64EncodedString()
@@ -169,21 +135,12 @@ enum OpenAIRequestBuilder {
 
             payload["content"] = contentArray
         } else {
-            // Simple text content
             payload["content"] = message.content
         }
 
         return payload
     }
 
-    /// Build a chat completions request body.
-    ///
-    /// - Parameters:
-    ///   - messages: Messages to include
-    ///   - model: Model identifier
-    ///   - stream: Whether to stream the response
-    ///   - tools: Optional tool definitions
-    /// - Returns: Dictionary suitable for JSON serialization
     static func buildChatCompletionsBody(
         messages: [Message],
         model: String,
@@ -193,8 +150,6 @@ enum OpenAIRequestBuilder {
     ) -> [String: Any] {
         let sanitizedMessages = ToolTranscriptSanitizer.sanitize(messages)
 
-        // Build a set of valid tool_call_ids that have matching tool responses
-        // First, collect all tool messages and their tool_call_ids
         var toolResponseIds = Set<String>()
         for message in sanitizedMessages {
             if message.role == .tool, let toolCallId = message.toolCalls?.first?.id {
@@ -202,14 +157,9 @@ enum OpenAIRequestBuilder {
             }
         }
 
-        // Now filter messages:
-        // 1. Keep all non-tool, non-assistant messages
-        // 2. For assistant messages with tool_calls, only keep tool_calls that have matching responses
-        // 3. For tool messages, only keep if preceding assistant has the matching tool_call
         var filteredMessages: [Message] = []
         for (index, message) in sanitizedMessages.enumerated() {
             if message.role == .tool {
-                // Get the tool_call_id from this tool message
                 guard let toolCallId = message.toolCalls?.first?.id else {
                     DiagnosticsLogger.log(
                         .aiService,
@@ -220,7 +170,6 @@ enum OpenAIRequestBuilder {
                     continue
                 }
 
-                // Check if a preceding assistant message has matching tool_call
                 if index == 0 {
                     DiagnosticsLogger.log(
                         .aiService,
@@ -240,13 +189,12 @@ enum OpenAIRequestBuilder {
                             }
                             break
                         } else if prevMessage.role == .tool {
-                            continue // Skip other tool messages in the sequence
+                            continue
                         } else {
                             break
                         }
                     }
                     if foundAssistant {
-                        // Valid tool message with matching ID - keep it
                         filteredMessages.append(message)
                     } else {
                         DiagnosticsLogger.log(
@@ -258,11 +206,9 @@ enum OpenAIRequestBuilder {
                     }
                 }
             } else if message.role == .assistant, let toolCalls = message.toolCalls, !toolCalls.isEmpty {
-                // For assistant messages with tool_calls, filter to only those with matching tool responses
                 let validToolCalls = toolCalls.filter { toolResponseIds.contains($0.id) }
 
                 if validToolCalls.isEmpty {
-                    // No valid tool calls - add assistant without tool_calls
                     var modifiedMessage = message
                     modifiedMessage.toolCalls = nil
                     filteredMessages.append(modifiedMessage)
@@ -276,7 +222,6 @@ enum OpenAIRequestBuilder {
                         ]
                     )
                 } else if validToolCalls.count < toolCalls.count {
-                    // Some tool calls are orphaned - keep only valid ones
                     var modifiedMessage = message
                     modifiedMessage.toolCalls = validToolCalls
                     filteredMessages.append(modifiedMessage)
@@ -291,7 +236,6 @@ enum OpenAIRequestBuilder {
                         ]
                     )
                 } else {
-                    // All tool calls have matching responses - keep as-is
                     filteredMessages.append(message)
                 }
             } else {
@@ -313,7 +257,6 @@ enum OpenAIRequestBuilder {
             "stream": stream
         ]
 
-        // Add tools if provided
         if let tools, !tools.isEmpty {
             body["tools"] = tools
             body["tool_choice"] = "auto"
@@ -325,20 +268,6 @@ enum OpenAIRequestBuilder {
         return body
     }
 
-    // MARK: - Responses API
-
-    /// Build input array for the Responses API.
-    ///
-    /// The Responses API uses a different format than Chat Completions:
-    /// - Messages are wrapped in `type: "message"` objects
-    /// - Content types are `input_text`/`output_text` instead of just `text`
-    /// - Images use `input_image` type
-    /// - System messages are skipped here and promoted to top-level `instructions` by `buildResponsesBody`
-    /// - Tool results use `function_call_output` type (not "tool" role)
-    /// - Assistant tool calls use `function_call` type in output
-    ///
-    /// - Parameter messages: Messages to convert
-    /// - Returns: Array of input items for the Responses API
     static func buildResponsesInput(from messages: [Message]) -> [[String: Any]] {
         let sanitizedMessages = ToolTranscriptSanitizer.sanitize(messages)
         var inputArray: [[String: Any]] = []
@@ -352,8 +281,6 @@ enum OpenAIRequestBuilder {
                 continue
             }
 
-            // Orphan tool outputs are never emitted independently. A valid tool
-            // round is handled with its preceding assistant call below.
             if message.role == .tool {
                 messageIndex += 1
                 continue
@@ -370,8 +297,6 @@ enum OpenAIRequestBuilder {
                     ])
                 }
 
-                // Tool outputs belong to this round only while they are contiguous
-                // and immediately follow the assistant call.
                 var resultByCallID: [String: Message] = [:]
                 var nextIndex = messageIndex + 1
                 while nextIndex < sanitizedMessages.count, sanitizedMessages[nextIndex].role == .tool {
@@ -460,21 +385,12 @@ enum OpenAIRequestBuilder {
         return inputArray
     }
 
-    /// Convert tools from Chat Completions format to Responses API format.
-    ///
-    /// Chat Completions: `{"type": "function", "function": {"name": "...", "description": "...", "parameters": {...}}}`
-    /// Responses API: `{"type": "function", "name": "...", "description": "...", "parameters": {...}}`
-    ///
-    /// - Parameter tools: Tools in Chat Completions format
-    /// - Returns: Tools in Responses API format
     static func convertToolsToResponsesFormat(_ tools: [[String: Any]]) -> [[String: Any]] {
         tools.compactMap { tool -> [String: Any]? in
-            // Check if it's already in Responses format (has top-level "name")
             if tool["name"] != nil {
                 return tool
             }
 
-            // Convert from Chat Completions format
             guard let functionDict = tool["function"] as? [String: Any],
                   let name = functionDict["name"] as? String
             else {
@@ -504,13 +420,6 @@ enum OpenAIRequestBuilder {
         }
     }
 
-    /// Build the Responses API request body.
-    ///
-    /// - Parameters:
-    ///   - model: Model identifier
-    ///   - messages: Messages to include
-    ///   - tools: Optional tool definitions (OpenAI Chat Completions format - will be converted)
-    /// - Returns: Dictionary suitable for JSON serialization
     static func buildResponsesBody(
         model: String,
         messages: [Message],
@@ -534,7 +443,6 @@ enum OpenAIRequestBuilder {
             body["instructions"] = instructions
         }
 
-        // Add tools if provided (convert from Chat Completions format to Responses format)
         if let tools, !tools.isEmpty {
             let responsesTools = convertToolsToResponsesFormat(tools)
             if !responsesTools.isEmpty {
@@ -556,25 +464,11 @@ enum OpenAIRequestBuilder {
         return body
     }
 
-    /// Result from parsing Responses API output
     struct ResponsesOutputResult {
         let hasToolCalls: Bool
         let toolCalls: [ToolCallInfo]
     }
 
-    /// Deliver output from the Responses API to callbacks.
-    ///
-    /// Parses the output array and calls appropriate callbacks for:
-    /// - Reasoning summaries (delivered to `onReasoning`)
-    /// - Message content (delivered to `onChunk`)
-    /// - Tool calls (delivered to `onToolCallRequested`)
-    ///
-    /// - Parameters:
-    ///   - outputArray: The output array from the API response
-    ///   - onChunk: Callback for content chunks
-    ///   - onReasoning: Optional callback for reasoning summaries
-    ///   - onToolCallRequested: Optional callback when a tool call is requested
-    /// - Returns: Result indicating if tool calls were found
     static func deliverResponsesOutput(
         _ outputArray: [[String: Any]],
         onChunk: @escaping (String) -> Void,
@@ -611,7 +505,6 @@ enum OpenAIRequestBuilder {
                     }
                 }
             } else if itemType == "function_call" {
-                // Handle tool/function calls from Responses API
                 guard let callId = outputItem["call_id"] as? String ?? outputItem["id"] as? String,
                       let name = outputItem["name"] as? String
                 else {
@@ -624,7 +517,6 @@ enum OpenAIRequestBuilder {
                     continue
                 }
 
-                // Parse arguments - can be string or dict
                 var arguments: [String: Any] = [:]
                 if let argsString = outputItem["arguments"] as? String,
                    let argsData = argsString.data(using: .utf8),
@@ -650,14 +542,6 @@ enum OpenAIRequestBuilder {
         return ResponsesOutputResult(hasToolCalls: !toolCalls.isEmpty, toolCalls: toolCalls)
     }
 
-    // MARK: - Request Configuration
-
-    /// Configure a URLRequest with standard headers and authentication.
-    ///
-    /// - Parameters:
-    ///   - request: The request to configure (inout)
-    ///   - apiKey: API key for authentication
-    ///   - isAzure: Whether this is an Azure endpoint
     static func configureRequest(
         _ request: inout URLRequest,
         apiKey: String,
@@ -675,7 +559,6 @@ enum OpenAIRequestBuilder {
         }
     }
 
-    /// Creates a Chat Completions request without blocking the caller's actor.
     static func createChatCompletionsRequestAsync(
         url: URL,
         messages: [Message],
@@ -722,17 +605,6 @@ enum OpenAIRequestBuilder {
         }
     }
 
-    /// Create a configured URLRequest for the Chat Completions API.
-    ///
-    /// - Parameters:
-    ///   - url: The API endpoint URL
-    ///   - messages: Messages to include
-    ///   - model: Model identifier
-    ///   - stream: Whether to stream the response
-    ///   - tools: Optional tool definitions
-    ///   - apiKey: API key for authentication
-    ///   - isAzure: Whether this is an Azure endpoint
-    /// - Returns: Configured URLRequest, or nil if body encoding fails
     static func createChatCompletionsRequest(
         url: URL,
         messages: [Message],
@@ -765,7 +637,6 @@ enum OpenAIRequestBuilder {
         return request
     }
 
-    /// Creates a Responses request without blocking the caller's actor.
     static func createResponsesRequestAsync(
         url: URL,
         messages: [Message],
@@ -810,16 +681,6 @@ enum OpenAIRequestBuilder {
         }
     }
 
-    /// Create a configured URLRequest for the Responses API.
-    ///
-    /// - Parameters:
-    ///   - url: The API endpoint URL
-    ///   - messages: Messages to include
-    ///   - model: Model identifier
-    ///   - tools: Optional tool definitions
-    ///   - apiKey: API key for authentication
-    ///   - isAzure: Whether this is an Azure endpoint
-    /// - Returns: Configured URLRequest, or nil if body encoding fails
     static func createResponsesRequest(
         url: URL,
         messages: [Message],
@@ -856,23 +717,6 @@ enum OpenAIRequestBuilder {
         return request
     }
 
-    // MARK: - Memory Context Injection
-
-    /// Builds a complete message array with memory context injected.
-    ///
-    /// Context is injected in this order (following ChatGPT's pattern):
-    /// 1. System prompt (existing)
-    /// 2. Session metadata (ephemeral)
-    /// 3. User memory facts (persistent)
-    /// 4. Recent conversations summary (computed)
-    /// 5. Current conversation history (existing)
-    /// 6. Latest user message
-    ///
-    /// - Parameters:
-    ///   - systemPrompt: The system prompt for this conversation
-    ///   - memoryContext: Memory context from MemoryContextProvider
-    ///   - conversationHistory: The current conversation's message history
-    /// - Returns: Array of messages ready for API request
     static func buildMessagesWithMemory(
         systemPrompt: String?,
         memoryContext: MemoryContext,
@@ -880,33 +724,27 @@ enum OpenAIRequestBuilder {
     ) -> [Message] {
         var messages: [Message] = []
 
-        // [0] System prompt (existing pattern)
         if let systemPrompt, !systemPrompt.isEmpty {
             messages.append(Message(role: .system, content: systemPrompt))
         }
 
-        // Only inject memory context if available
         guard memoryContext.hasContent else {
             messages.append(contentsOf: conversationHistory)
             return messages
         }
 
-        // [1] Session metadata (ephemeral)
         if let sessionMetadata = memoryContext.sessionMetadata {
             messages.append(Message(role: .system, content: sessionMetadata))
         }
 
-        // [2] User memory facts (persistent)
         if let userMemory = memoryContext.userMemory {
             messages.append(Message(role: .system, content: userMemory))
         }
 
-        // [3] Recent conversations summary (computed)
         if let summaries = memoryContext.conversationSummaries {
             messages.append(Message(role: .system, content: summaries))
         }
 
-        // [4-5] Current conversation history + latest message (existing)
         messages.append(contentsOf: conversationHistory)
 
         return messages

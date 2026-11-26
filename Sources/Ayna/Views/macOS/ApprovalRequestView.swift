@@ -1,28 +1,19 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  ApprovalRequestView.swift
-//  Ayna
-//
-//  Inline approval UI for agentic tool operations.
-//  Displays pending approval requests in the chat interface.
-//
 
 import SwiftUI
 
-/// View for displaying a single pending approval request
 struct ApprovalRequestView: View {
     let approval: PendingApproval
-    let onApprove: (Bool) -> Void // Bool indicates whether to remember for session
+    let onApprove: (Bool) -> Void
     let onDeny: () -> Void
-    let pendingCount: Int // Total pending approvals for batch approval option
+    let pendingCount: Int
     var onApproveAll: () -> Void = {}
 
     @State private var showDiff = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Header with icon and tool name
             HStack(spacing: 8) {
                 Image(systemName: iconName)
                     .font(.title3)
@@ -33,21 +24,17 @@ struct ApprovalRequestView: View {
 
                 Spacer()
 
-                // Time since request
                 Text(timeSinceRequest)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            // Description
             Text(approval.description)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            // Details (path or command)
             detailsView
 
-            // Diff preview for edit operations
             if let diff = approval.diffPreview {
                 DisclosureGroup("Show changes", isExpanded: $showDiff) {
                     DiffPreviewView(diff: diff)
@@ -58,7 +45,6 @@ struct ApprovalRequestView: View {
 
             Divider()
 
-            // Action buttons
             actionButtons
         }
         .padding()
@@ -73,12 +59,9 @@ struct ApprovalRequestView: View {
         )
     }
 
-    // MARK: - Subviews
-
     @ViewBuilder
     private var detailsView: some View {
         if approval.toolName == "run_command" {
-            // Command display with monospace font
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(approval.details)
                     .font(.system(.caption, design: .monospaced))
@@ -87,7 +70,6 @@ struct ApprovalRequestView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             }
         } else {
-            // File path display
             HStack(spacing: 4) {
                 Image(systemName: "folder")
                     .font(.caption)
@@ -105,7 +87,6 @@ struct ApprovalRequestView: View {
 
     private var actionButtons: some View {
         HStack(spacing: 12) {
-            // Deny button
             Button(action: onDeny) {
                 Label("Deny", systemImage: "xmark")
             }
@@ -116,7 +97,6 @@ struct ApprovalRequestView: View {
 
             Spacer()
 
-            // Batch approval for every pending request in this conversation
             if pendingCount > 1 {
                 Menu {
                     Button("Allow All (\(pendingCount))") {
@@ -131,7 +111,6 @@ struct ApprovalRequestView: View {
                 .accessibilityHint("Opens menu with batch approval options")
             }
 
-            // Approve button
             Button(action: { onApprove(false) }) {
                 Label("Allow", systemImage: "checkmark")
             }
@@ -140,7 +119,6 @@ struct ApprovalRequestView: View {
             .accessibilityLabel("Allow \(approval.toolName.replacingOccurrences(of: "_", with: " ")) operation")
             .accessibilityHint("Allows this single operation")
 
-            // Remember option
             Button(action: { onApprove(true) }) {
                 Label("Allow & Remember", systemImage: "checkmark.circle")
             }
@@ -150,8 +128,6 @@ struct ApprovalRequestView: View {
             .accessibilityHint("Allows this operation and remembers approval for similar operations in this session")
         }
     }
-
-    // MARK: - Computed Properties
 
     private var iconName: String {
         switch approval.toolName {
@@ -210,9 +186,6 @@ struct ApprovalRequestView: View {
     }
 }
 
-// MARK: - Diff Preview View
-
-/// Displays a diff preview with syntax highlighting
 struct DiffPreviewView: View {
     let diff: String
 
@@ -260,15 +233,10 @@ struct DiffPreviewView: View {
     }
 }
 
-// MARK: - Pending Approvals List View
-
-/// View for displaying all pending approval requests.
-/// Uses NotificationCenter to listen for changes instead of timer-based polling.
 struct PendingApprovalsView: View {
     var permissionService: PermissionService
     let conversationId: UUID
 
-    /// Refresh trigger updated via NotificationCenter instead of timer polling
     @State private var refreshTrigger = false
 
     var body: some View {
@@ -303,25 +271,19 @@ struct PendingApprovalsView: View {
                 ))
             }
         }
-        // Use refreshTrigger to force re-evaluation when approvals change
         .id(refreshTrigger)
         .onReceive(NotificationCenter.default.publisher(for: .pendingApprovalsChanged)) { notification in
-            // Only refresh if the notification is for this conversation or unspecified
             if let notificationConversationId = notification.userInfo?["conversationId"] as? UUID {
                 if notificationConversationId == conversationId {
                     refreshTrigger.toggle()
                 }
             } else {
-                // No conversation specified, refresh anyway
                 refreshTrigger.toggle()
             }
         }
     }
 }
 
-// MARK: - Approval Status Badge
-
-/// Small badge showing pending approval count
 struct ApprovalStatusBadge: View {
     let pendingCount: Int
 
@@ -343,8 +305,6 @@ struct ApprovalStatusBadge: View {
         }
     }
 }
-
-// MARK: - Preview
 
 #Preview("Approval Request - Command") {
     ApprovalRequestView(

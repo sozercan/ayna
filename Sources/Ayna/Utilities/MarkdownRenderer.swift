@@ -2,12 +2,9 @@
 import Foundation
 import SwiftUI
 
-/// Converts markdown text into renderable content blocks tailored for the chat UI.
 enum MarkdownRenderer {
     enum CachePolicy: Sendable {
-        /// Use the shared parse cache for stable, displayable message content.
         case useCache
-        /// Parse without reading or writing the shared cache; useful for transient streaming prefixes.
         case doNotCache
     }
 
@@ -15,8 +12,6 @@ enum MarkdownRenderer {
     nonisolated static let cacheTotalCostLimit = 4 * 1024 * 1024
     nonisolated static let maximumCacheableEntryCost = 512 * 1024
 
-    /// Cache for parsed content blocks to improve performance.
-    /// Configured with count and cost limits to prevent unbounded memory growth.
     private nonisolated(unsafe) static let cache: NSCache<NSString, ContentBlockWrapper> = {
         let cache = NSCache<NSString, ContentBlockWrapper>()
         cache.countLimit = cacheCountLimit
@@ -225,8 +220,6 @@ enum MarkdownRenderer {
         let fence = String(repeating: "`", count: backtickCount)
         var codeLines: [String] = []
         index += 1
-        // Heuristic: If language is markdown, we track nested depth to support
-        // nested code blocks even if the LLM uses the same number of backticks.
         let isMarkdown = language.lowercased() == "markdown" || language.lowercased() == "md"
         var nestedDepth = 0
 
@@ -234,30 +227,22 @@ enum MarkdownRenderer {
             let codeLine = lines[index]
             let codeTrimmed = codeLine.trimmingCharacters(in: .whitespaces)
 
-            // Check for closing fence:
-            // 1. Must start with backticks
-            // 2. Must have at least backtickCount backticks
-            // 3. Must consist ONLY of backticks (no info string allowed on closing fence)
             let lineBackticks = codeTrimmed.prefix(while: { $0 == "`" }).count
             let isClosingFence =
                 lineBackticks >= backtickCount && codeTrimmed.count == lineBackticks
 
             if isClosingFence {
                 if isMarkdown, nestedDepth > 0 {
-                    // It's a closing fence for a nested block
                     nestedDepth -= 1
                     codeLines.append(codeLine)
                     index += 1
                     continue
                 } else {
-                    // It's the closing fence for our block
                     index += 1
                     break
                 }
             }
 
-            // Check for nested opening fence (only if isMarkdown)
-            // If it starts with fence and has content after (language), it's an opening fence.
             if isMarkdown {
                 if codeTrimmed.hasPrefix(fence) {
                     let after = codeTrimmed.dropFirst(backtickCount).trimmingCharacters(

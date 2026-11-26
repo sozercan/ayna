@@ -1,6 +1,5 @@
 import Foundation
 
-/// Serializes callback mutations on the main actor in submission order.
 final class OrderedMainActorEventQueue: @unchecked Sendable {
     private let lock = NSLock()
     private var tailTask: Task<Void, Never>?

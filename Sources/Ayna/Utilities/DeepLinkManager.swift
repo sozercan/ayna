@@ -1,18 +1,8 @@
-//
-//  DeepLinkManager.swift
-//  ayna
-//
-//  Created on 12/8/25.
-//
-
 import Combine
 import Foundation
 import OSLog
 import SwiftUI
 
-// MARK: - Deep Link Error
-
-/// Errors that can occur during deep link handling
 enum DeepLinkError: LocalizedError {
     case invalidURL
     case missingRequiredParameter(String)
@@ -66,9 +56,6 @@ enum DeepLinkError: LocalizedError {
     }
 }
 
-// MARK: - Add Model Request
-
-/// Request to add a new model configuration via deep link
 struct AddModelRequest: Identifiable, Equatable {
     let id = UUID()
     let name: String
@@ -86,33 +73,18 @@ struct AddModelRequest: Identifiable, Equatable {
     }
 }
 
-// MARK: - Chat Request
-
-/// Request to start a chat via deep link
 struct ChatRequest: Equatable {
     let model: String?
     let prompt: String?
     let systemPrompt: String?
-    /// Optional model configuration for unified add+chat flow
     let modelConfig: AddModelRequest?
 }
 
-// MARK: - Deep Link Action
-
-/// Parsed deep link action
 enum DeepLinkAction: Equatable {
     case addModel(AddModelRequest)
     case chat(ChatRequest)
 }
 
-// MARK: - Deep Link Manager
-
-/// Manages deep link URL handling for the Ayna app.
-/// Supports:
-/// - `ayna://add-model?name=...&provider=...&endpoint=...&key=...&type=...`
-/// - `ayna://chat?model=...&prompt=...&system=...&provider=...&endpoint=...&key=...&type=...`
-/// The chat action supports a unified flow: if model config params are provided and the model
-/// doesn't exist, it will prompt to add the model first, then start the chat.
 @MainActor
 final class DeepLinkManager: ObservableObject {
     static let shared = DeepLinkManager()
@@ -122,21 +94,16 @@ final class DeepLinkManager: ObservableObject {
         let deferredChat: ChatRequest?
     }
 
-    /// Pending add-model request awaiting user confirmation
     @Published private(set) var pendingAddModel: AddModelRequest?
 
-    /// Pending chat exposed for diagnostics and compatibility with existing tests.
     var pendingChat: ChatRequest? {
         pendingConfirmation?.deferredChat ?? readyChatQueue.first
     }
 
-    /// Error message to display in error banner
     @Published private(set) var errorMessage: String?
 
-    /// Recovery suggestion for the current error
     @Published private(set) var errorRecoverySuggestion: String?
 
-    /// Whether a confirmation sheet should be shown
     var showAddModelConfirmation: Bool {
         pendingAddModel != nil
     }
@@ -149,11 +116,6 @@ final class DeepLinkManager: ObservableObject {
         self.aiService = aiService ?? .shared
     }
 
-    // MARK: - Public Methods
-
-    /// Handle an incoming URL
-    /// - Parameter url: The URL to handle
-    /// - Returns: The parsed action, or nil if the URL couldn't be handled
     func handle(url: URL) async {
         let safeURL = "\(url.scheme ?? "")://\(url.host ?? "")\(url.path)"
         DiagnosticsLogger.log(
@@ -163,7 +125,6 @@ final class DeepLinkManager: ObservableObject {
             metadata: ["url": safeURL]
         )
 
-        // Clear any previous error
         errorMessage = nil
         errorRecoverySuggestion = nil
 
@@ -181,7 +142,6 @@ final class DeepLinkManager: ObservableObject {
                 )
 
             case let .chat(request):
-                // Check if this is a unified flow (chat with model config)
                 if let modelConfig = request.modelConfig {
                     let modelExists = aiService.customModels.contains(modelConfig.name)
                     print("🔗 DEBUG: modelConfig.name=\(modelConfig.name), modelExists=\(modelExists), customModels=\(aiService.customModels)")
@@ -199,7 +159,6 @@ final class DeepLinkManager: ObservableObject {
                             metadata: ["modelName": modelConfig.name, "hasPrompt": "\(request.prompt != nil)"]
                         )
                     } else {
-                        // Model exists - proceed with chat directly
                         enqueueReadyChat(request)
                         DiagnosticsLogger.log(
                             .app,
@@ -246,8 +205,6 @@ final class DeepLinkManager: ObservableObject {
         }
     }
 
-    /// Confirm and execute the pending add-model request
-    /// If there's a pending chat request, it will proceed after adding the model
     func confirmAddModel(expectedRequestID: UUID) {
         guard let confirmation = pendingConfirmation,
               let request = pendingAddModel,
@@ -266,7 +223,6 @@ final class DeepLinkManager: ObservableObject {
                 message: "✅ Model added via deep link",
                 metadata: ["modelName": request.name]
             )
-            // Note: pendingChat is preserved so the chat can proceed
         } catch let error as DeepLinkError {
             present(error)
         } catch {
@@ -278,8 +234,6 @@ final class DeepLinkManager: ObservableObject {
         pendingAddModel = nil
     }
 
-    /// Cancel the pending add-model request
-    /// Also clears any pending chat that was waiting for the model
     func cancelAddModel(expectedRequestID: UUID) {
         guard let confirmation = pendingConfirmation,
               let request = pendingAddModel,
@@ -296,18 +250,14 @@ final class DeepLinkManager: ObservableObject {
         )
     }
 
-    /// Dismiss the current error
     func dismissError() {
         errorMessage = nil
         errorRecoverySuggestion = nil
     }
 
-    /// Atomically return and clear the next ready chat request in FIFO order.
     func consumeNextReadyChat() -> ChatRequest? {
         popNextReadyChat()
     }
-
-    // MARK: - Private Methods
 
     private func enqueueReadyChat(_ request: ChatRequest) {
         readyChatQueue.append(request)
@@ -349,7 +299,6 @@ final class DeepLinkManager: ObservableObject {
         errorRecoverySuggestion = error.recoverySuggestion
     }
 
-    /// Parse a URL into a deep link action
     private func parseURL(_ url: URL) throws -> DeepLinkAction {
         guard url.scheme == "ayna" else {
             throw DeepLinkError.invalidURL
@@ -371,14 +320,12 @@ final class DeepLinkManager: ObservableObject {
         case "chat":
             return try parseChat(params: params)
         case "main":
-            // Internal action to open main window - no action needed, window will open
             return .chat(ChatRequest(model: nil, prompt: nil, systemPrompt: nil, modelConfig: nil))
         default:
             throw DeepLinkError.unknownAction(host)
         }
     }
 
-    /// Extract query parameters from URL components
     private func extractParameters(from components: URLComponents) -> [String: String] {
         var params: [String: String] = [:]
         components.queryItems?.forEach { item in
@@ -387,19 +334,15 @@ final class DeepLinkManager: ObservableObject {
         return params
     }
 
-    /// Parse add-model action parameters
     private func parseAddModel(params: [String: String]) throws -> DeepLinkAction {
-        // Name is required
         guard let rawName = params["name"] else {
             throw DeepLinkError.missingRequiredParameter("name")
         }
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { throw DeepLinkError.missingRequiredParameter("name") }
 
-        // Provider (optional, defaults to OpenAI)
         let provider: AIProvider
         if let providerString = params["provider"] {
-            // Try to match case-insensitively
             let normalizedProvider = providerString.lowercased()
             switch normalizedProvider {
             case "openai", "open ai":
@@ -409,7 +352,6 @@ final class DeepLinkManager: ObservableObject {
             case "apple", "apple intelligence", "appleintelligence":
                 provider = .appleIntelligence
             default:
-                // Try exact match
                 if let exactMatch = AIProvider.allCases.first(where: { $0.rawValue.lowercased() == normalizedProvider }) {
                     provider = exactMatch
                 } else {
@@ -420,7 +362,6 @@ final class DeepLinkManager: ObservableObject {
             provider = .openai
         }
 
-        // Endpoint type (optional, defaults to chatCompletions)
         let endpointType: APIEndpointType
         if let typeString = params["type"] {
             let normalizedType = typeString.lowercased()
@@ -453,9 +394,6 @@ final class DeepLinkManager: ObservableObject {
         return .addModel(request)
     }
 
-    /// Parse chat action parameters
-    /// Supports unified flow: if provider/endpoint/key/type params are present along with model,
-    /// creates a model config that will be used to add the model if it doesn't exist
     private func parseChat(params: [String: String]) throws -> DeepLinkAction {
         let model: String?
         if let rawModel = params["model"] {
@@ -468,7 +406,6 @@ final class DeepLinkManager: ObservableObject {
             model = nil
         }
 
-        // Check if model configuration params are provided (unified add+chat flow)
         var modelConfig: AddModelRequest?
         if let modelName = model {
             let hasConfigParams = params["provider"] != nil ||
@@ -477,7 +414,6 @@ final class DeepLinkManager: ObservableObject {
                 params["type"] != nil
 
             if hasConfigParams {
-                // Parse provider
                 let provider: AIProvider
                 if let providerString = params["provider"] {
                     let normalizedProvider = providerString.lowercased()
@@ -499,7 +435,6 @@ final class DeepLinkManager: ObservableObject {
                     provider = .openai
                 }
 
-                // Parse endpoint type
                 let endpointType: APIEndpointType
                 if let typeString = params["type"] {
                     let normalizedType = typeString.lowercased()
@@ -540,29 +475,21 @@ final class DeepLinkManager: ObservableObject {
         return .chat(request)
     }
 
-    /// Add a model configuration from a request
     private func addModelConfig(_ request: AddModelRequest) throws {
-        // Check if model already exists
         if aiService.customModels.contains(request.name) {
             throw DeepLinkError.modelAlreadyExists(request.name)
         }
 
-        // Add the model
         aiService.customModels.append(request.name)
         aiService.modelProviders[request.name] = request.provider
         aiService.modelEndpointTypes[request.name] = request.endpointType
 
-        // Set custom endpoint if provided
         if let endpoint = request.endpoint, !endpoint.isEmpty {
             aiService.modelEndpoints[request.name] = endpoint
         }
 
-        // Set API key if provided
         if let apiKey = request.apiKey, !apiKey.isEmpty {
             aiService.modelAPIKeys[request.name] = apiKey
         }
-
-        // Optionally select the new model as default
-        // (We don't auto-select to avoid disrupting user's workflow)
     }
 }

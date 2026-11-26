@@ -1,10 +1,3 @@
-//
-//  EncryptedMemoryStoreTests.swift
-//  ayna
-//
-//  Created on 1/29/26.
-//
-
 @testable import Ayna
 import Foundation
 import Testing
@@ -57,8 +50,6 @@ struct EncryptedMemoryStoreTests {
         }
     }
 
-    // MARK: - User Memory Round-Trip
-
     @Test
     func `save and load memory preserves facts`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
@@ -71,7 +62,6 @@ struct EncryptedMemoryStoreTests {
             keychain: keychain
         )
 
-        // Create test facts
         let facts = [
             UserMemoryFact(content: "Likes Swift programming"),
             UserMemoryFact(content: "Works as a developer"),
@@ -79,10 +69,8 @@ struct EncryptedMemoryStoreTests {
         ]
         let memoryStore = UserMemoryStore(facts: facts)
 
-        // Save
         try await store.saveMemory(memoryStore)
 
-        // Load
         let loaded = try await store.loadMemory()
 
         #expect(loaded.facts.count == 3)
@@ -120,19 +108,14 @@ struct EncryptedMemoryStoreTests {
             keychain: keychain
         )
 
-        // Save some data
         let memoryStore = UserMemoryStore(facts: [UserMemoryFact(content: "Test")])
         try await store.saveMemory(memoryStore)
 
-        // Clear
         try await store.clearMemory()
 
-        // Load should return empty
         let loaded = try await store.loadMemory()
         #expect(loaded.facts.isEmpty)
     }
-
-    // MARK: - Conversation Summaries Round-Trip
 
     @Test
     func `save and load summaries preserves data`() async throws {
@@ -146,7 +129,6 @@ struct EncryptedMemoryStoreTests {
             keychain: keychain
         )
 
-        // Create test summaries
         let summaries = [
             ConversationSummary(
                 id: UUID(),
@@ -163,10 +145,8 @@ struct EncryptedMemoryStoreTests {
         ]
         let digest = RecentConversationsDigest(summaries: summaries)
 
-        // Save
         try await store.saveSummaries(digest)
 
-        // Load
         let loaded = try await store.loadSummaries()
 
         #expect(loaded.summaries.count == 2)
@@ -250,8 +230,6 @@ struct EncryptedMemoryStoreTests {
         #expect(loaded.summaries.isEmpty)
     }
 
-    // MARK: - Key Generation
-
     @Test
     func `new key is generated on first access`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
@@ -265,18 +243,15 @@ struct EncryptedMemoryStoreTests {
             keychain: keychain
         )
 
-        // Keychain should be empty initially
         let keyBefore = try keychain.data(for: keyIdentifier)
         #expect(keyBefore == nil)
 
-        // Trigger key generation by saving
         let memoryStore = UserMemoryStore(facts: [UserMemoryFact(content: "Test")])
         try await store.saveMemory(memoryStore)
 
-        // Key should now exist
         let keyAfter = try keychain.data(for: keyIdentifier)
         #expect(keyAfter != nil)
-        #expect(keyAfter?.count == 32) // 256 bits = 32 bytes
+        #expect(keyAfter?.count == 32)
     }
 
     @Test
@@ -324,13 +299,11 @@ struct EncryptedMemoryStoreTests {
             keychain: keychain
         )
 
-        // First save generates key
         let memoryStore1 = UserMemoryStore(facts: [UserMemoryFact(content: "First")])
         try await store.saveMemory(memoryStore1)
 
         let keyAfterFirst = try keychain.data(for: keyIdentifier)
 
-        // Second save should reuse key
         let memoryStore2 = UserMemoryStore(facts: [UserMemoryFact(content: "Second")])
         try await store.saveMemory(memoryStore2)
 
@@ -338,8 +311,6 @@ struct EncryptedMemoryStoreTests {
 
         #expect(keyAfterFirst == keyAfterSecond)
     }
-
-    // MARK: - Error Handling
 
     @Test
     func `key loss is detected when flag exists but key is missing`() async throws {
@@ -354,14 +325,11 @@ struct EncryptedMemoryStoreTests {
             keychain: keychain
         )
 
-        // First, save to create the key and flag
         let memoryStore = UserMemoryStore(facts: [UserMemoryFact(content: "Test")])
         try await store.saveMemory(memoryStore)
 
-        // Simulate key loss by removing the key but keeping the flag
         try keychain.removeValue(for: keyIdentifier)
 
-        // A fresh store (matching app relaunch) should fail with keyLost error.
         let relaunchedStore = EncryptedMemoryStore(
             directoryURL: directory,
             keyIdentifier: keyIdentifier,

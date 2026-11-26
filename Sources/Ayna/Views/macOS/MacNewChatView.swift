@@ -1,12 +1,6 @@
 // swiftformat:options --ifdef no-indent
 // swiftlint:disable file_length
 #if os(macOS)
-//
-//  MacNewChatView.swift
-//  ayna
-//
-//  New chat view for macOS - handles initial conversation creation and message sending.
-//
 import Combine
 import OSLog
 import SwiftUI
@@ -83,23 +77,18 @@ struct MacNewChatView: View {
     @State var shouldOfferOpenSettings = false
     @State private var failedSendPayload: FailedSendPayload?
 
-    // App content attachment (Attach from App)
     @State private var showAppContentPicker = false
     @State private var attachedAppContent: AppContent?
 
-    /// Get the current conversation being created
     private var currentConversation: Conversation? {
         guard let id = currentConversationId else { return nil }
         return conversationManager.conversations.first(where: { $0.id == id })
     }
 
-    /// Determines the capability type of currently selected models (if any)
     private var selectedCapabilityType: AIService.ModelCapability? {
         guard let firstSelected = selectedModels.first else { return nil }
         return aiService.getModelCapability(firstSelected)
     }
-
-    // MARK: - Multi-Model Display
 
     private var displayableItems: [ChatTranscriptItem] {
         guard let conversation = currentConversation else { return [] }
@@ -148,7 +137,6 @@ struct MacNewChatView: View {
 
     var body: some View {
         ZStack {
-            // Chat background with subtle gradient
             LinearGradient(
                 colors: [
                     Color(nsColor: .windowBackgroundColor),
@@ -163,7 +151,6 @@ struct MacNewChatView: View {
                 ModelSetupPromptView(issues: modelSetupIssues)
             } else {
                 VStack(spacing: 0) {
-                    // Messages or empty state
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(spacing: 0) {
@@ -214,7 +201,6 @@ struct MacNewChatView: View {
                             .padding(.vertical, 24)
                         }
                         .onChange(of: displayableItems.count) { _, _ in
-                            // Scroll to the last item
                             if let lastItem = displayableItems.last {
                                 withAnimation {
                                     proxy.scrollTo(lastItem.id, anchor: .bottom)
@@ -252,7 +238,6 @@ struct MacNewChatView: View {
                         .padding(.top, 8)
                     }
 
-                    // Input Area
                     inputArea
                 }
             }
@@ -273,7 +258,6 @@ struct MacNewChatView: View {
             syncSelectedModelState()
         }
         .onChange(of: aiService.selectedModel) { _, newValue in
-            // Only follow global selection if we don't have a conversation yet
             guard currentConversation == nil else { return }
             selectedModel = newValue
         }
@@ -289,8 +273,6 @@ struct MacNewChatView: View {
             )
         }
     }
-
-    // MARK: - Input Area
 
     private var inputArea: some View {
         ChatInputArea(
@@ -323,8 +305,6 @@ struct MacNewChatView: View {
         )
     }
 
-    // MARK: - Helper Methods
-
     private func resolveModelForSending() -> String? {
         let trimmedSelection = normalizedSelectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedSelection.isEmpty ? nil : trimmedSelection
@@ -350,7 +330,6 @@ struct MacNewChatView: View {
             selectedModels = [aiService.selectedModel]
         }
 
-        // Ensure we have at least one model selected if possible
         if selectedModels.isEmpty, let first = aiService.usableModels.first {
             selectedModels = [first]
             selectedModel = first
@@ -361,28 +340,22 @@ struct MacNewChatView: View {
         let multiModelEnabled = AppPreferences.multiModelSelectionEnabled
 
         if !multiModelEnabled {
-            // Single-select mode: always replace selection
             selectedModels = [model]
             selectedModel = model
             aiService.selectedModel = model
             return
         }
 
-        // Multi-select mode
         if selectedModels.contains(model) {
-            // Always allow removing a model (user can select a different one)
             selectedModels.remove(model)
         } else {
-            // Check if we're trying to mix capability types
             let modelCapability = aiService.getModelCapability(model)
             if let selectedType = selectedCapabilityType, modelCapability != selectedType {
-                // Clear existing selections and start fresh with the new type
                 selectedModels.removeAll()
             }
             selectedModels.insert(model)
         }
 
-        // Update single selection state for compatibility
         if selectedModels.count == 1, let first = selectedModels.first {
             selectedModel = first
             aiService.selectedModel = first
@@ -455,8 +428,6 @@ struct MacNewChatView: View {
             AttachmentStorage.shared.delete(path: path)
         }.value
     }
-
-    // MARK: - Send Message
 
     private func beginSendMessage() {
         if isGenerating || sendPreparationTask != nil {
@@ -678,8 +649,6 @@ struct MacNewChatView: View {
         aiService.selectedModel = activeModel
         ensureConversationModelMatchesSelection(activeModel)
 
-        // Attachment construction is the only suspension in send preparation. Do it before
-        // mutating conversation state, then recheck lifecycle ownership before committing.
         let userMessage: Message
         if let prebuiltUserMessage = preparation.prebuiltUserMessage {
             userMessage = prebuiltUserMessage
@@ -755,14 +724,9 @@ struct MacNewChatView: View {
             activeModel: activeModel
         )
 
-        // DON'T switch views yet - stay in NewChatView so the stop button remains visible
-        // The view switch will happen in the completion handler after generation finishes
-
-        // Check if we're in image generation mode (any selected model is image gen means all are)
         let modelCapability = aiService.getModelCapability(activeModel)
         if modelCapability == .imageGeneration {
             handedOff = true
-            // Image generation flow - handle multi-model image gen
             if selectedModelsToSend.count > 1 {
                 generateMultiModelImages(prompt: textToSend, models: Array(selectedModelsToSend), conversation: conversation)
             } else {
@@ -771,7 +735,6 @@ struct MacNewChatView: View {
             return
         }
 
-        // Send the message immediately (no delay needed)
         if selectedModelsToSend.count > 1 {
             handedOff = true
             sendMultiModelMessage(
@@ -786,7 +749,6 @@ struct MacNewChatView: View {
     }
 
     private func sendMessageForConversation(_ conversation: Conversation, model: String) {
-        // Get the conversation with the user message we just added
         guard
             let updatedConversation = conversationManager.conversations.first(where: {
                 $0.id == conversation.id
@@ -809,11 +771,9 @@ struct MacNewChatView: View {
 
         let currentMessages = updatedConversation.messages
 
-        // Add empty assistant message with current model
         let assistantMessage = Message(role: .assistant, content: "", model: activeModel)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
-        // Get available tools (Tavily + MCP)
         let tools = aiService.getAllAvailableTools()
         toolCallDepth = 0
 
@@ -926,8 +886,6 @@ struct MacNewChatView: View {
         sendMessageForConversation(updatedConversation, model: updatedConversation.model)
     }
 
-    // MARK: - Image Generation
-
     private func generateImage(prompt: String, model: String, conversation: Conversation) {
         let coordinator = imageGenerationCoordinator
         let operationID = coordinator.beginOperation()
@@ -998,7 +956,6 @@ struct MacNewChatView: View {
             }
         }
 
-        // Resolve edit sources from the committed user message before loading them off the actor.
         let editContext = ImageEditContext.resolve(
             in: conversationManager.conversation(byId: conversation.id) ?? conversation
         )
@@ -1024,7 +981,6 @@ struct MacNewChatView: View {
         coordinator.track(task, for: operationID)
     }
 
-    /// Generates images from multiple models in parallel for comparison
     private func generateMultiModelImages(prompt: String, models: [String], conversation: Conversation) {
         let coordinator = imageGenerationCoordinator
         let operationID = coordinator.beginOperation()
@@ -1259,13 +1215,11 @@ struct MacNewChatView: View {
 
         let messageIdsByModel = responsePlan.messageIDsByModel
 
-        // Prepare messages for API
         var messagesToSend = updatedConversation.getEffectiveHistory()
         if let systemPrompt = conversationManager.effectiveSystemPrompt(for: updatedConversation) {
             messagesToSend.insert(Message(role: .system, content: systemPrompt), at: 0)
         }
 
-        // Send to all models in parallel under this view's owner-specific operation.
         let coordinator = toolChainCoordinator
         activeAssistantMessageID = nil
         activeMultiModelResponseGroupID = responseGroupId
@@ -1287,7 +1241,6 @@ struct MacNewChatView: View {
                     else { return }
 
                     conversationManager.conversations[convIndex].messages[msgIndex].content += chunk
-                    // Persist during streaming so content isn't lost on quit
                     conversationManager.save(conversationManager.conversations[convIndex])
                 }
             },
@@ -1312,7 +1265,6 @@ struct MacNewChatView: View {
                     isGenerating = false
                     logNewChat("🏁 All models completed", level: .info)
 
-                    // Save the conversation immediately on completion
                     if let convIndex = conversationManager.conversations.firstIndex(where: {
                         $0.id == conversationId
                     }) {
@@ -1330,7 +1282,6 @@ struct MacNewChatView: View {
                     }
                     failedSendPayload = nil
 
-                    // Switch to chat view
                     selectedConversationId = conversationId
                 }
             },

@@ -1,10 +1,3 @@
-//
-//  ToolTranscriptSanitizer.swift
-//  ayna
-//
-//  Keeps only complete, locally paired tool-call rounds in persisted history.
-//
-
 import Foundation
 
 enum ToolTranscriptSanitizer {

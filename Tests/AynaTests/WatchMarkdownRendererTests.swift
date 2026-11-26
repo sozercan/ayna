@@ -1,21 +1,12 @@
 // swiftformat:options --ifdef no-indent
 #if os(watchOS)
 
-//
-//  WatchMarkdownRendererTests.swift
-//  Ayna-watchOSTests
-//
-//  Unit tests for WatchMarkdownRenderer on watchOS
-//
-
 @testable import Ayna
 import Foundation
 import Testing
 
 @Suite("WatchMarkdownRenderer Tests")
 struct WatchMarkdownRendererTests {
-    // MARK: - Basic Rendering Tests
-
     @Test("Render plain text")
     func renderPlainText() {
         let text = "Hello, World!"
@@ -29,7 +20,6 @@ struct WatchMarkdownRendererTests {
         let text = "Hello **bold** world"
         let result = WatchMarkdownRenderer.render(text)
 
-        // The AttributedString should contain the text with bold formatting
         #expect(String(result.characters).contains("bold"))
     }
 
@@ -60,8 +50,6 @@ struct WatchMarkdownRendererTests {
         #expect(chars.contains("code"))
     }
 
-    // MARK: - Styled Rendering Tests
-
     @Test("Render styled user message")
     func renderStyledUserMessage() {
         let text = "Hello from user"
@@ -77,8 +65,6 @@ struct WatchMarkdownRendererTests {
 
         #expect(String(result.characters) == text)
     }
-
-    // MARK: - Strip Markdown Tests
 
     @Test("Strip markdown bold")
     func stripMarkdownBold() {
@@ -150,8 +136,6 @@ struct WatchMarkdownRendererTests {
         #expect(result == "bold")
     }
 
-    // MARK: - Edge Cases
-
     @Test("Render empty string")
     func renderEmptyString() {
         let result = WatchMarkdownRenderer.render("")
@@ -163,7 +147,6 @@ struct WatchMarkdownRendererTests {
         let text = "Hello & < > \" ' characters"
         let result = WatchMarkdownRenderer.render(text)
 
-        // Should handle special characters gracefully
         #expect(!String(result.characters).isEmpty)
     }
 

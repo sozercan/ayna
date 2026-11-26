@@ -60,8 +60,6 @@ struct ConversationManagerClearTests {
         edited.updatedAt = Date().addingTimeInterval(1)
         manager.conversations = [edited]
         manager.save(edited)
-        // Do not yield between save and delete: the preparation task has not reached
-        // the persistence coordinator when optimistic deletion invalidates it.
         manager.deleteConversation(edited)
         await manager.flushPendingSaves()
 

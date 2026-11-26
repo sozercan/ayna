@@ -80,7 +80,6 @@ struct ConversationSendPreflightTests {
         #expect(service.attachmentHistorySupportError(for: [imageModel], messages: [tooMany])?
             .contains("at most \(OpenAIImageService.maxSourceImages)") == true)
 
-        // Image requests only send the latest user turn, so older attachments do not block them.
         let earlierDocument = Message(role: .user, content: "Summarize", attachments: [document])
         #expect(service.attachmentHistorySupportError(
             for: [imageModel],

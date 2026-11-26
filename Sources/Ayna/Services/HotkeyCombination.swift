@@ -1,29 +1,17 @@
-//
-//  HotkeyCombination.swift
-//  Ayna
-//
-//  A global hotkey as a key code plus Carbon modifiers, with its display string.
-//  It is saved as numbers, so the shortcut never depends on the keyboard layout; the
-//  label of a printable key comes from the active layout, so it matches the keycap.
-//
-
 #if os(macOS)
     import AppKit
     import Carbon.HIToolbox
 
     struct HotkeyCombination: Equatable, Sendable {
         let keyCode: UInt32
-        /// Carbon modifier mask (`cmdKey`, `shiftKey`, `optionKey`, `controlKey`).
         let modifiers: UInt32
 
         static let `default` = HotkeyCombination(keyCode: UInt32(kVK_Space), modifiers: UInt32(cmdKey | shiftKey))
 
-        /// Modifier symbols in the order macOS shows them.
         private static let modifierSymbols: [(mask: Int, symbol: String)] = [
             (controlKey, "⌃"), (optionKey, "⌥"), (shiftKey, "⇧"), (cmdKey, "⌘")
         ]
 
-        /// US-layout names, used to parse older saved strings and when a layout has no label.
         private static let keyNames: [UInt32: String] = {
             var names: [Int: String] = [
                 kVK_Space: "Space", kVK_Return: "Return", kVK_Tab: "Tab", kVK_Escape: "Escape",
@@ -60,7 +48,6 @@
             return Dictionary(uniqueKeysWithValues: names.map { (UInt32($0.key), $0.value) })
         }()
 
-        /// Keys whose character depends on the keyboard layout (letters, digits, punctuation).
         private static let layoutDependentKeyCodes: Set<UInt32> = Set(
             [
                 kVK_ANSI_A, kVK_ANSI_B, kVK_ANSI_C, kVK_ANSI_D, kVK_ANSI_E, kVK_ANSI_F, kVK_ANSI_G,
@@ -75,7 +62,6 @@
             ].map(UInt32.init)
         )
 
-        /// System shortcuts that win over an app hotkey, so registering one silently does nothing.
         private static let systemShortcuts: [HotkeyCombination: String] = [
             HotkeyCombination(keyCode: UInt32(kVK_Space), modifiers: UInt32(cmdKey)): "Spotlight",
             HotkeyCombination(keyCode: UInt32(kVK_Space), modifiers: UInt32(cmdKey | optionKey)): "Finder search",
@@ -90,24 +76,19 @@
             HotkeyCombination(keyCode: UInt32(kVK_ANSI_Q), modifiers: UInt32(controlKey | cmdKey)): "Lock Screen"
         ]
 
-        /// How the combination is saved: `<modifiers>:<keyCode>`, independent of the layout.
         var storageString: String {
             "\(modifiers):\(keyCode)"
         }
 
-        /// Reads a saved combination: the numeric form, or an older display string.
         init?(storage: String) {
             let parts = storage.split(separator: ":", omittingEmptySubsequences: false)
             if parts.count == 2, let modifiers = UInt32(parts[0]), let keyCode = UInt32(parts[1]) {
                 self.init(keyCode: keyCode, modifiers: modifiers)
                 return
             }
-            // Older versions saved the display string, built from the US names below, so
-            // parsing it with those names gives back the key code that was recorded.
             self.init(string: storage)
         }
 
-        /// The shortcut as shown to the user, with printable keys labeled by the active layout.
         @MainActor
         var displayString: String {
             displayString(layoutCharacter: Self.activeLayoutCharacter)
@@ -119,7 +100,6 @@
             return symbols + (layoutName ?? Self.keyNames[keyCode] ?? "Key \(keyCode)")
         }
 
-        /// The character the key types with no modifiers in the current keyboard layout.
         @MainActor
         private static func activeLayoutCharacter(for keyCode: UInt32) -> String? {
             let sources = [TISCopyCurrentKeyboardLayoutInputSource, TISCopyCurrentASCIICapableKeyboardLayoutInputSource]
@@ -160,17 +140,14 @@
             return nil
         }
 
-        /// A global hotkey needs ⌘, ⌃, or ⌥; Shift alone would swallow ordinary typing.
         var hasRequiredModifier: Bool {
             modifiers & UInt32(cmdKey | controlKey | optionKey) != 0
         }
 
-        /// The system feature that already uses this shortcut, if any.
         var systemConflict: String? {
             Self.systemShortcuts[self]
         }
 
-        /// Parses US-layout strings like "⌘⇧Space", "⌃⌥K", or the older "cmd+shift+space".
         init?(string: String) {
             var modifiers: UInt32 = 0
             var remainder = string
@@ -194,7 +171,6 @@
                 self.init(keyCode: keyCode, modifiers: modifiers)
                 return
             }
-            // Keys without a name (keypad, F13+, ...) are saved as "Key <code>".
             if target.hasPrefix("key "), let keyCode = UInt32(target.dropFirst(4)) {
                 self.init(keyCode: keyCode, modifiers: modifiers)
                 return
@@ -207,7 +183,6 @@
             self.modifiers = modifiers
         }
 
-        /// The combination a key-down event represents.
         init(event: NSEvent) {
             var modifiers: UInt32 = 0
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)

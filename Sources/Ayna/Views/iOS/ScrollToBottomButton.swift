@@ -1,22 +1,9 @@
 // swiftformat:options --ifdef no-indent
 #if os(iOS)
-//
-//  ScrollToBottomButton.swift
-//  ayna
-//
-//  Design System: Scroll-to-Bottom Button
-//  A floating pill button that appears when user scrolls up from bottom.
-//  Apple-native design with blur background and spring animation.
-//
 
 import SwiftUI
 
-// MARK: - iOS Scroll-to-Bottom Button
-
 #if os(iOS)
-/// A floating pill button that scrolls to the bottom of a message list.
-/// Appears with spring animation when user scrolls away from bottom.
-/// Uses materials for native blur effect.
 struct ScrollToBottomButton: View {
     let isVisible: Bool
     let unreadCount: Int
@@ -52,9 +39,6 @@ struct ScrollToBottomButton: View {
     }
 }
 
-// MARK: - Scroll Position Tracker
-
-/// A preference key to track scroll position relative to content
 struct ScrollOffsetPreferenceKey: PreferenceKey {
     nonisolated(unsafe) static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -62,7 +46,6 @@ struct ScrollOffsetPreferenceKey: PreferenceKey {
     }
 }
 
-/// A view modifier that tracks scroll position and shows/hides the scroll-to-bottom button
 struct ScrollToBottomModifier: ViewModifier {
     @Binding var showButton: Bool
     let threshold: CGFloat
@@ -81,17 +64,13 @@ struct ScrollToBottomModifier: ViewModifier {
 }
 
 extension View {
-    /// Tracks scroll position for scroll-to-bottom button visibility
     func trackScrollPosition(showButton: Binding<Bool>, threshold: CGFloat = 100) -> some View {
         modifier(ScrollToBottomModifier(showButton: showButton, threshold: threshold))
     }
 }
 #endif
 
-// MARK: - macOS Version (Placeholder)
-
 #if os(macOS)
-/// macOS version - simplified since macOS has native scroll behavior
 struct ScrollToBottomButton: View {
     let isVisible: Bool
     let unreadCount: Int

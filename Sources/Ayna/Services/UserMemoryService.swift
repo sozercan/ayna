@@ -1,10 +1,3 @@
-//
-//  UserMemoryService.swift
-//  ayna
-//
-//  Created on 12/25/25.
-//
-
 import Foundation
 import os.log
 
@@ -16,8 +9,6 @@ protocol UserMemoryStoreAdapter: Sendable {
 
 extension EncryptedMemoryStore: UserMemoryStoreAdapter {}
 
-/// Service for managing user memory facts.
-/// Provides CRUD operations and formatting for context injection.
 @MainActor
 @Observable
 final class UserMemoryService {
@@ -31,31 +22,24 @@ final class UserMemoryService {
 
     private(set) var facts: [UserMemoryFact] = []
     private(set) var isLoaded = false
-    /// True only when `facts` exactly matches a successfully persisted generation.
     private(set) var hasAuthoritativeFacts = false
 
     private let store: any UserMemoryStoreAdapter
     private let notificationCenter: NotificationCenter
     private let saveDebounceDuration: Duration
     @ObservationIgnored private nonisolated(unsafe) var saveTask: Task<Void, Never>?
-    /// Storage writes wait for this task so initial disk state cannot be overwritten before it is reconciled.
     @ObservationIgnored private nonisolated(unsafe) var initialLoadTask: Task<Void, Never>?
-    /// Serializes physical writes so an older snapshot cannot finish after a newer one.
     @ObservationIgnored private nonisolated(unsafe) var persistenceTask: Task<Void, Never>?
     private var factsGeneration: UInt64 = 0
     private var durableGeneration: UInt64?
-    /// Prevents a load retry from replacing optimistic local or synced facts with stale disk state.
     private var hasInMemoryAuthority = false
-    /// True after stored facts were loaded successfully or intentionally replaced in full.
     private var hasReconciledStoredFacts = false
     private var initialLoadID: UUID?
     private var initialLoadMutations: [InitialLoadMutation] = []
     private var initialLoadWasSuperseded = false
 
-    /// Maximum number of facts to store
     static let maxFacts = 100
 
-    /// Token budget for memory context (approximate)
     static let defaultTokenBudget = 1000
 
     init(
@@ -74,9 +58,6 @@ final class UserMemoryService {
         persistenceTask?.cancel()
     }
 
-    // MARK: - Loading
-
-    /// Loads facts from encrypted storage.
     func loadFacts() async {
         if let initialLoadTask {
             await initialLoadTask.value
@@ -113,14 +94,12 @@ final class UserMemoryService {
         await operation.value
     }
 
-    /// Loads facts received from iOS sync (watchOS only).
-    /// Replaces local facts with synced facts and persists to disk.
     func loadFactsFromSync(_ syncedFacts: [UserMemoryFact]) {
         supersedeInitialLoad()
         facts = Array(syncedFacts.prefix(Self.maxFacts))
         isLoaded = true
         hasReconciledStoredFacts = true
-        scheduleSave() // Persist to disk for offline access
+        scheduleSave()
 
         DiagnosticsLogger.log(
             .conversationManager,
@@ -130,9 +109,6 @@ final class UserMemoryService {
         )
     }
 
-    // MARK: - CRUD Operations
-
-    /// Adds a new fact to memory.
     @discardableResult
     func addFact(
         _ content: String,
@@ -158,7 +134,6 @@ final class UserMemoryService {
         return fact
     }
 
-    /// Updates an existing fact's content.
     func updateFact(_ id: UUID, content: String) {
         guard let index = facts.firstIndex(where: { $0.id == id }) else { return }
 
@@ -167,7 +142,6 @@ final class UserMemoryService {
         scheduleSave(initialLoadMutation: .upsert(facts[index]))
     }
 
-    /// Deletes a fact (hard delete).
     func deleteFact(_ id: UUID) {
         facts.removeAll { $0.id == id }
         scheduleSave(initialLoadMutation: .delete(id))
@@ -179,7 +153,6 @@ final class UserMemoryService {
         )
     }
 
-    /// Toggles a fact's active state (soft delete/restore).
     func toggleFact(_ id: UUID, active: Bool) {
         guard let index = facts.firstIndex(where: { $0.id == id }) else { return }
 
@@ -188,7 +161,6 @@ final class UserMemoryService {
         scheduleSave(initialLoadMutation: .upsert(facts[index]))
     }
 
-    /// Clears all facts.
     func clearAllFacts() async {
         saveTask?.cancel()
         saveTask = nil
@@ -202,14 +174,10 @@ final class UserMemoryService {
         await operation.value
     }
 
-    // MARK: - Query
-
-    /// Returns only active facts.
     func activeFacts() -> [UserMemoryFact] {
         facts.filter(\.isActive)
     }
 
-    /// Searches facts for a query string.
     func searchFacts(query: String) -> [UserMemoryFact] {
         guard !query.isEmpty else { return activeFacts() }
         let lowercased = query.lowercased()
@@ -218,28 +186,21 @@ final class UserMemoryService {
         }
     }
 
-    /// Finds facts similar to the given content (for deduplication).
     func findSimilarFacts(to content: String) -> [UserMemoryFact] {
         let words = Set(content.lowercased().components(separatedBy: .whitespacesAndNewlines))
         return facts.filter { fact in
             let factWords = Set(fact.content.lowercased().components(separatedBy: .whitespacesAndNewlines))
             let intersection = words.intersection(factWords)
-            // Consider similar if >50% of words overlap
             let similarity = Double(intersection.count) / Double(max(words.count, factWords.count))
             return similarity > 0.5
         }
     }
 
-    // MARK: - Context Formatting
-
-    /// Formats active facts for injection into AI context.
-    /// - Parameter tokenBudget: Approximate token budget (4 chars ≈ 1 token)
-    /// - Returns: Formatted string for context injection, or nil if no facts.
     func formattedForContext(tokenBudget: Int = defaultTokenBudget) -> String? {
         let active = activeFacts()
         guard !active.isEmpty else { return nil }
 
-        let charBudget = tokenBudget * 4 // Rough token-to-char ratio
+        let charBudget = tokenBudget * 4
 
         var lines = ["User Facts:"]
         var totalChars = lines[0].count
@@ -247,18 +208,15 @@ final class UserMemoryService {
         for fact in active {
             let line = "- \(fact.content)"
             if totalChars + line.count + 1 > charBudget {
-                // Budget exceeded
                 break
             }
             lines.append(line)
             totalChars += line.count + 1
         }
 
-        // Only return if we have actual facts (not just header)
         return lines.count > 1 ? lines.joined(separator: "\n") : nil
     }
 
-    /// Returns a summary of memory for display (e.g., "5 facts stored").
     var memorySummary: String {
         let activeCount = activeFacts().count
         if activeCount == 0 {
@@ -270,10 +228,6 @@ final class UserMemoryService {
         }
     }
 
-    // MARK: - Memory Command Processing
-
-    /// Processes a memory command detected in a user message.
-    /// - Returns: A response message if the command was handled, nil otherwise.
     func processCommand(_ command: MemoryCommandPattern.CommandType) -> String? {
         switch command {
         case let .store(content):
@@ -281,7 +235,6 @@ final class UserMemoryService {
             return "I'll remember that: \"\(fact.content)\""
 
         case let .remove(content):
-            // Find and remove matching fact
             let similar = findSimilarFacts(to: content)
             if let match = similar.first {
                 deleteFact(match.id)
@@ -306,15 +259,12 @@ final class UserMemoryService {
             }
 
         case .clearAll:
-            // Don't actually clear - require confirmation in UI
             return "To clear all memory, please go to Settings → Memory and use the 'Clear All Memory' option."
 
         case .none:
             return nil
         }
     }
-
-    // MARK: - Persistence
 
     private func scheduleSave(initialLoadMutation: InitialLoadMutation? = nil) {
         recordFactsChange(initialLoadMutation: initialLoadMutation)
@@ -324,7 +274,7 @@ final class UserMemoryService {
             do {
                 try await Task.sleep(for: debounceDuration)
             } catch {
-                return // Cancelled
+                return
             }
 
             guard let self else { return }
@@ -558,7 +508,6 @@ final class UserMemoryService {
         notificationCenter.post(name: .watchSyncContextDidChange, object: nil)
     }
 
-    /// Forces an immediate save (e.g., before app termination).
     func saveImmediately() async {
         saveTask?.cancel()
         saveTask = nil

@@ -1,10 +1,3 @@
-//
-//  BuiltinToolServiceTests.swift
-//  aynaTests
-//
-//  Unit tests for BuiltinToolService.
-//
-
 #if os(macOS)
     // swiftlint:disable identifier_name
     @testable import Ayna
@@ -15,8 +8,6 @@
     @Suite("BuiltinToolService Tests")
     @MainActor
     struct BuiltinToolServiceTests {
-        // MARK: - Tool Name Detection
-
         @Suite("Tool Name Detection")
         @MainActor
         struct ToolNameDetectionTests {
@@ -42,8 +33,6 @@
             }
         }
 
-        // MARK: - Tool Definitions
-
         @Suite("Tool Definitions")
         @MainActor
         struct ToolDefinitionTests {
@@ -56,13 +45,11 @@
                 #expect(!definitions.isEmpty)
 
                 for definition in definitions {
-                    // Each definition should have type and function
                     #expect(definition["type"] as? String == "function")
 
                     let function = definition["function"] as? [String: Any]
                     #expect(function != nil)
 
-                    // Function should have name, description, parameters
                     #expect(function?["name"] is String)
                     #expect(function?["description"] is String)
                     #expect(function?["parameters"] is [String: Any])
@@ -86,7 +73,6 @@
                 #expect(toolNames.contains("list_directory"))
                 #expect(toolNames.contains("search_files"))
                 #expect(toolNames.contains("run_command"))
-                // web_fetch is served by WebFetchService, not duplicated here.
                 #expect(!toolNames.contains("web_fetch"))
             }
 
@@ -113,8 +99,6 @@
                 #expect(names.count == BuiltinToolService.toolNames.count - 1)
             }
         }
-
-        // MARK: - Service Configuration
 
         @Suite("Service Configuration")
         @MainActor
@@ -176,8 +160,6 @@
             }
         }
 
-        // MARK: - Formatting and Search Performance Checks
-
         @Suite("Formatting and Search Performance Checks")
         @MainActor
         struct FormattingAndSearchPerformanceTests {
@@ -199,8 +181,6 @@
 
             @Test("Search files handles bulk text tree")
             func searchFilesHandlesBulkTextTree() async throws {
-                // Use /tmp explicitly; FileManager.temporaryDirectory may resolve under /var/folders,
-                // which is intentionally protected by PathValidator and would require approval.
                 let root = URL(fileURLWithPath: "/tmp").appendingPathComponent(UUID().uuidString)
                 try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
                 defer { try? FileManager.default.removeItem(at: root) }
@@ -230,8 +210,6 @@
                 print("BENCH BuiltinToolService searchFiles: \(fileCount) files in \(String(format: "%.4f", elapsed))s")
             }
         }
-
-        // MARK: - Tool Name Constants
 
         @Suite("Tool Name Constants")
         struct ToolNameConstantsTests {
@@ -284,7 +262,6 @@
                 _ = try await task.value
                 Issue.record("Expected cancellation to win before result delivery")
             } catch is CancellationError {
-                // Expected.
             } catch {
                 Issue.record("Unexpected error: \(error)")
             }
@@ -329,7 +306,6 @@
                 _ = try await task.value
                 Issue.record("Expected command startup to be cancelled")
             } catch is CancellationError {
-                // Expected.
             } catch {
                 Issue.record("Unexpected error: \(error)")
             }
@@ -357,8 +333,6 @@
 
         @Test(.timeLimit(.minutes(1)))
         func `Approved write to an unchanged protected target succeeds`() async throws {
-            // The temporary directory lives under the protected /var path, so the write
-            // needs approval both before and after symlink resolution.
             let directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent("BuiltinToolApprovedWrite-\(UUID().uuidString)")
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -419,7 +393,6 @@
             let permissionService = PermissionService()
             let service = BuiltinToolService(permissionService: permissionService, projectRoot: directory)
 
-            // First write: approve and remember for the session.
             let first = Task {
                 try await service.writeFile(path: link.path, content: "first", conversationId: UUID())
             }
@@ -429,7 +402,6 @@
             try await first.value
             #expect(try String(contentsOf: original, encoding: .utf8) == "first")
 
-            // Retarget the link; the remembered approval must not cover the new file.
             try FileManager.default.removeItem(at: link)
             try FileManager.default.createSymbolicLink(at: link, withDestinationURL: other)
             let second = Task {
@@ -467,13 +439,10 @@
             let task = Task {
                 try await service.editFile(path: link.path, oldText: "hello", newText: "bye", conversationId: UUID())
             }
-            // Point the link at `other` while the read is pending, and back at `original`
-            // before the edit approval, so only the read step sees the other file.
             var approvals = 0
             while approvals < 3 {
                 await waitForPendingApproval(permissionService)
                 guard let pending = permissionService.pendingApprovals.first else { break }
-                // Both steps run as edit_file: first the read of the current content, then the edit.
                 let isReadStep = pending.description.hasPrefix("Read file before editing")
                 try retarget(to: isReadStep ? other : original)
                 permissionService.approve(pending.id, rememberForSession: false)
@@ -481,8 +450,6 @@
                 if !isReadStep { break }
             }
 
-            // The path no longer points at the captured target after the read, so the edit
-            // must be rejected and neither file may change.
             await #expect(throws: ToolExecutionError.self) { try await task.value }
             #expect(try String(contentsOf: original, encoding: .utf8) == "hello original")
             #expect(try String(contentsOf: other, encoding: .utf8) == "hello other")
@@ -555,7 +522,6 @@
 
         @Test(.timeLimit(.minutes(1)))
         func `Search skips sensitive files under an allowed root`() async throws {
-            // /tmp is not a protected path, so the root itself needs no approval.
             let root = URL(fileURLWithPath: "/tmp").appendingPathComponent("AynaSearchSensitive-\(UUID().uuidString)")
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: root) }
@@ -573,7 +539,6 @@
 
         @Test(.timeLimit(.minutes(1)))
         func `Search includes sensitive files once the user approves a protected root`() async throws {
-            // The temporary directory is under protected /var, so searching it asks first.
             let root = FileManager.default.temporaryDirectory
                 .appendingPathComponent("AynaSearchApprovedRoot-\(UUID().uuidString)")
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -610,7 +575,6 @@
             let task = Task {
                 try await service.editFile(path: link.path, oldText: "hello", newText: "bye", conversationId: UUID())
             }
-            // Approve every request (read, then edit) but retarget the link before the last one.
             var approvals = 0
             while approvals < 3 {
                 await waitForPendingApproval(permissionService)
@@ -673,7 +637,6 @@
                 _ = try await task.value
                 Issue.record("Expected cancellation before process startup")
             } catch is CancellationError {
-                // Expected.
             } catch {
                 Issue.record("Unexpected error: \(error)")
             }
@@ -740,7 +703,6 @@
             commandTask.cancel()
             let completedPromptly = await finished.wait(timeout: .seconds(2))
             if !completedPromptly {
-                // Keep the pre-fix regression deterministic instead of leaking the child process.
                 _ = Darwin.kill(processIdentifier, SIGKILL)
             }
             _ = await waiter.result
@@ -819,7 +781,6 @@
                 _ = try await commandTask.value
                 Issue.record("Expected cancellation after child reap")
             } catch is CancellationError {
-                // Expected.
             } catch {
                 Issue.record("Unexpected error: \(error)")
             }
@@ -870,7 +831,6 @@
 
             let completedPromptly = await finished.wait(timeout: .seconds(2))
             if !completedPromptly {
-                // Deterministic cleanup for the pre-fix behavior, where the pipe drain blocks.
                 _ = Darwin.kill(childPID, SIGKILL)
             }
             _ = await task.result

@@ -1,11 +1,5 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  HotkeyRecorderView.swift
-//  Ayna
-//
-//  Records a new global hotkey, warns about conflicts, and resets to the default.
-//
 
 import AppKit
 import SwiftUI
@@ -15,7 +9,6 @@ struct HotkeyRecorderView: View {
     @State private var isRecording = false
     @State private var warning: String?
     @State private var monitor: Any?
-    /// Whether the live hotkey was paused for recording and must be restored.
     @State private var suspendedHotkey = false
 
     var body: some View {
@@ -52,15 +45,13 @@ struct HotkeyRecorderView: View {
     private func startRecording() {
         warning = nil
         isRecording = true
-        // While the live hotkey is registered, pressing it would open the floating panel
-        // instead of reaching this monitor, so pause it until recording ends.
         if AppPreferences.attachFromAppEnabled {
             GlobalHotkeyService.shared.unregister()
             suspendedHotkey = true
         }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let combination = HotkeyCombination(event: event)
-            if combination.keyCode == 53, combination.modifiers == 0 { // Escape cancels
+            if combination.keyCode == 53, combination.modifiers == 0 {
                 stopRecording()
                 return nil
             }
@@ -82,7 +73,6 @@ struct HotkeyRecorderView: View {
         monitor = nil
         if suspendedHotkey {
             suspendedHotkey = false
-            // Turning Attach from App off also closes this view; keep the hotkey off then.
             if AppPreferences.attachFromAppEnabled {
                 try? GlobalHotkeyService.shared.register(current)
             }
@@ -91,8 +81,6 @@ struct HotkeyRecorderView: View {
 
     private func apply(_ combination: HotkeyCombination) {
         let previous = current
-        // Register whenever the feature is on, even if the saved hotkey failed to register, and
-        // save the new one only once it is live.
         if AppPreferences.attachFromAppEnabled {
             do {
                 try GlobalHotkeyService.shared.replaceHotkey(with: combination, previous: previous)

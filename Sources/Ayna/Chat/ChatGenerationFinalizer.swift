@@ -1,10 +1,3 @@
-//
-//  ChatGenerationFinalizer.swift
-//  ayna
-//
-//  Finalizes persisted chat state when an in-flight generation is cancelled.
-//
-
 import Foundation
 
 struct ChatGenerationFinalizationResult: Equatable, Sendable {
@@ -18,10 +11,6 @@ struct ChatGenerationFinalizationResult: Equatable, Sendable {
 }
 
 enum ChatGenerationFinalizer {
-    /// Applies cancellation bookkeeping without discarding partial assistant output.
-    ///
-    /// Empty single-response text placeholders are removed. Multi-model placeholders remain so
-    /// their failed terminal state can still be rendered as part of the response group.
     @discardableResult
     static func finalize(
         conversation: inout Conversation,

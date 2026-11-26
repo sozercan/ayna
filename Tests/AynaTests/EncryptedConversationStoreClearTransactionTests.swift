@@ -478,9 +478,7 @@ struct EncryptedStoreClearTransactionTests {
         do {
             try store.clear()
             Issue.record("Expected clear move failure")
-        } catch {
-            // Expected: the source store never moved, so it must remain untouched.
-        }
+        } catch {}
 
         #expect(try await store.loadConversation(id: conversation.id)?.title == conversation.title)
     }

@@ -1,33 +1,10 @@
-//
-//  ColorTokens.swift
-//  ayna
-//
-//  Design System: Semantic Color Tokens
-//  Cross-platform color definitions that adapt to light/dark mode
-//  and respect platform idioms (macOS vs iOS vs watchOS).
-//
-//  Dark Mode Guidelines:
-//  - Never use pure black (#000) on OLED - minimum Color(white: 0.05)
-//  - Elevated surfaces get LIGHTER in dark mode (Apple's elevation model)
-//  - All text must pass WCAG AA contrast (4.5:1 minimum)
-//
-
 import SwiftUI
 
-// MARK: - Theme
-
-/// Centralized semantic color tokens for the Ayna design system.
-/// Use these instead of hardcoded colors throughout the app.
 public enum Theme {
-    // MARK: - Message Bubbles
-
-    /// User message bubble background - modern solid blue (not gradient)
     public static var userBubble: Color {
-        // Modern iMessage-style vibrant blue
         Color(red: 0.0, green: 0.48, blue: 1.0)
     }
 
-    /// User message bubble gradient (subtle, modern - less aggressive than before)
     public static var userBubbleGradient: LinearGradient {
         LinearGradient(
             colors: [
@@ -39,19 +16,16 @@ public enum Theme {
         )
     }
 
-    /// Assistant message bubble background
     public static var assistantBubble: Color {
         #if os(macOS)
             Color(nsColor: .controlBackgroundColor).opacity(0.8)
         #elseif os(watchOS)
-            // Avoid pure black - use elevated dark gray for OLED friendliness
             Color(white: 0.18)
         #else
             Color(uiColor: .systemGray5)
         #endif
     }
 
-    /// Assistant message bubble gradient (macOS) - softer, more neutral
     public static var assistantBubbleGradient: LinearGradient {
         LinearGradient(
             colors: [
@@ -63,17 +37,14 @@ public enum Theme {
         )
     }
 
-    /// Tool/MCP result bubble background - softer amber instead of harsh orange
     public static var toolBubble: Color {
         Color(red: 0.95, green: 0.6, blue: 0.2)
     }
 
-    /// Text color for user bubbles (always white for contrast)
     public static var userBubbleText: Color {
         .white
     }
 
-    /// Text color for assistant bubbles
     public static var assistantBubbleText: Color {
         #if os(watchOS)
             .white
@@ -82,29 +53,22 @@ public enum Theme {
         #endif
     }
 
-    // MARK: - Status Colors
-
-    /// Connected / Success state
     public static var statusConnected: Color {
         .green
     }
 
-    /// Connecting / Warning state
     public static var statusConnecting: Color {
         .orange
     }
 
-    /// Disconnected / Idle state
     public static var statusDisconnected: Color {
         .gray
     }
 
-    /// Error state
     public static var statusError: Color {
         .red
     }
 
-    /// Returns the appropriate status color for a connection state
     public static func statusColor(isConnected: Bool, isConnecting: Bool = false, hasError: Bool = false) -> Color {
         if hasError {
             statusError
@@ -117,21 +81,16 @@ public enum Theme {
         }
     }
 
-    // MARK: - Backgrounds
-
-    /// Primary window/view background
     public static var background: Color {
         #if os(macOS)
             Color(nsColor: .windowBackgroundColor)
         #elseif os(watchOS)
-            // Never pure black on OLED - use very dark gray
             Color(white: 0.05)
         #else
             Color(uiColor: .systemBackground)
         #endif
     }
 
-    /// Secondary/grouped background - elevated surfaces are LIGHTER in dark mode
     public static var backgroundSecondary: Color {
         #if os(macOS)
             Color(nsColor: .controlBackgroundColor)
@@ -142,7 +101,6 @@ public enum Theme {
         #endif
     }
 
-    /// Tertiary/elevated background - highest elevation = lightest in dark mode
     public static var backgroundTertiary: Color {
         #if os(macOS)
             Color(nsColor: .underPageBackgroundColor)
@@ -153,24 +111,18 @@ public enum Theme {
         #endif
     }
 
-    // MARK: - Interactive Elements
-
-    /// Primary action color (buttons, links)
     public static var accent: Color {
         .accentColor
     }
 
-    /// Destructive action color
     public static var destructive: Color {
         .red
     }
 
-    /// Selection highlight
     public static var selection: Color {
         Color.accentColor.opacity(0.15)
     }
 
-    /// Hover state (macOS)
     public static var hover: Color {
         #if os(macOS)
             Color(nsColor: .controlAccentColor).opacity(0.1)
@@ -179,31 +131,22 @@ public enum Theme {
         #endif
     }
 
-    // MARK: - Borders & Separators
-
-    /// Subtle border color
     public static var border: Color {
         Color.secondary.opacity(0.15)
     }
 
-    /// Separator/divider color
     public static var separator: Color {
         Color.secondary.opacity(0.2)
     }
 
-    // MARK: - Text Colors
-
-    /// Primary text
     public static var textPrimary: Color {
         .primary
     }
 
-    /// Secondary/muted text
     public static var textSecondary: Color {
         .secondary
     }
 
-    /// Tertiary/hint text
     public static var textTertiary: Color {
         #if os(macOS)
             Color(nsColor: .tertiaryLabelColor)
@@ -214,7 +157,6 @@ public enum Theme {
         #endif
     }
 
-    /// Placeholder text
     public static var textPlaceholder: Color {
         #if os(macOS)
             Color(nsColor: .placeholderTextColor)
@@ -225,16 +167,10 @@ public enum Theme {
         #endif
     }
 
-    // MARK: - Shadows
-
-    /// Standard shadow color
     public static var shadow: Color {
         .black.opacity(0.15)
     }
 
-    // MARK: - Code Blocks
-
-    /// Code block background
     public static var codeBackground: Color {
         #if os(macOS)
             Color(nsColor: .controlBackgroundColor).opacity(0.5)
@@ -245,23 +181,15 @@ public enum Theme {
         #endif
     }
 
-    /// Code block border
     public static var codeBorder: Color {
         Color.secondary.opacity(0.15)
     }
-
-    // MARK: - Provider-Specific Colors
 }
-
-// MARK: - Convenience Extensions
 
 public extension Color {}
 
-// MARK: - Status Color Helper for MCPServerStatus
-
 #if os(macOS)
     extension Theme {
-        /// Returns the status color for an MCP server status state
         static func statusColor(for state: MCPServerStatus.State) -> Color {
             switch state {
             case .connected:

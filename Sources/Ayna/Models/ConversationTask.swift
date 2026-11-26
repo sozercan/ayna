@@ -1,14 +1,5 @@
-//
-//  ConversationTask.swift
-//  Ayna
-//
-//  Model for tracking tasks within a conversation.
-//  Used by the update_tasks tool for agentic task management.
-//
-
 import Foundation
 
-/// Status of a conversation task
 enum TaskStatus: String, Codable, CaseIterable, Sendable {
     case pending
     case inProgress = "in_progress"
@@ -41,15 +32,14 @@ enum TaskStatus: String, Codable, CaseIterable, Sendable {
     }
 }
 
-/// A task within a conversation
 struct ConversationTask: Identifiable, Codable, Sendable, Equatable {
     let id: UUID
     var content: String
     var status: TaskStatus
     var createdAt: Date
     var updatedAt: Date
-    var parentId: UUID? // For nested tasks
-    var notes: String? // Optional notes/blockers
+    var parentId: UUID?
+    var notes: String?
 
     init(
         id: UUID = UUID(),
@@ -69,51 +59,39 @@ struct ConversationTask: Identifiable, Codable, Sendable, Equatable {
         self.notes = notes
     }
 
-    /// Updates the status and records the time
     mutating func updateStatus(_ newStatus: TaskStatus) {
         status = newStatus
         updatedAt = Date()
     }
 
-    /// Adds or updates notes
     mutating func setNotes(_ newNotes: String?) {
         notes = newNotes
         updatedAt = Date()
     }
 }
 
-// Manages tasks for a conversation
 #if os(macOS)
     @Observable @MainActor
     final class ConversationTaskManager {
-        /// Shared list the update_tasks tool writes and the chat view shows.
         static let shared = ConversationTaskManager()
 
-        /// Tasks indexed by conversation ID
         private(set) var tasksByConversation: [UUID: [ConversationTask]] = [:]
 
-        /// Current conversation ID
         var currentConversationId: UUID?
 
-        /// Tasks for the current conversation
         var currentTasks: [ConversationTask] {
             guard let id = currentConversationId else { return [] }
             return tasksByConversation[id] ?? []
         }
 
-        /// Root tasks (no parent) for the current conversation
         var rootTasks: [ConversationTask] {
             currentTasks.filter { $0.parentId == nil }
         }
 
-        /// Subtasks for a given parent task
         func subtasks(of parentId: UUID) -> [ConversationTask] {
             currentTasks.filter { $0.parentId == parentId }
         }
 
-        // MARK: - Task Operations
-
-        /// Adds a new task
         func addTask(
             _ content: String,
             status: TaskStatus = .pending,
@@ -135,7 +113,6 @@ struct ConversationTask: Identifiable, Codable, Sendable, Equatable {
             return task
         }
 
-        /// Updates an existing task
         func updateTask(
             id taskId: UUID,
             content: String? = nil,
@@ -165,7 +142,6 @@ struct ConversationTask: Identifiable, Codable, Sendable, Equatable {
             logTaskChange("updated", task: tasks[index])
         }
 
-        /// Removes a task
         func removeTask(id taskId: UUID, inConversation conversationId: UUID? = nil) {
             guard let id = conversationId ?? currentConversationId else { return }
             guard var tasks = tasksByConversation[id] else { return }
@@ -174,13 +150,11 @@ struct ConversationTask: Identifiable, Codable, Sendable, Equatable {
                 logTaskChange("removed", task: task)
             }
 
-            // Also remove subtasks
             let subtaskIds = tasks.filter { $0.parentId == taskId }.map(\.id)
             tasks.removeAll { $0.id == taskId || subtaskIds.contains($0.id) }
             tasksByConversation[id] = tasks
         }
 
-        /// Clears all tasks for a conversation
         func clearTasks(forConversation conversationId: UUID? = nil) {
             guard let id = conversationId ?? currentConversationId else { return }
             tasksByConversation[id] = []
@@ -193,7 +167,6 @@ struct ConversationTask: Identifiable, Codable, Sendable, Equatable {
             )
         }
 
-        /// Replaces all tasks for a conversation (used by update_tasks tool)
         func replaceTasks(_ tasks: [ConversationTask], forConversation conversationId: UUID? = nil) {
             guard let id = conversationId ?? currentConversationId else { return }
             tasksByConversation[id] = tasks
@@ -209,9 +182,6 @@ struct ConversationTask: Identifiable, Codable, Sendable, Equatable {
             )
         }
 
-        // MARK: - Statistics
-
-        /// Returns task statistics for a conversation
         func statistics(forConversation conversationId: UUID? = nil) -> TaskStatistics {
             guard let id = conversationId ?? currentConversationId else {
                 return TaskStatistics(total: 0, pending: 0, inProgress: 0, completed: 0, failed: 0, blocked: 0)
@@ -228,8 +198,6 @@ struct ConversationTask: Identifiable, Codable, Sendable, Equatable {
             )
         }
 
-        // MARK: - Private
-
         private func logTaskChange(_ action: String, task: ConversationTask) {
             DiagnosticsLogger.log(
                 .builtinTools,
@@ -244,7 +212,6 @@ struct ConversationTask: Identifiable, Codable, Sendable, Equatable {
         }
     }
 
-    /// Statistics about tasks
     struct TaskStatistics: Sendable {
         let total: Int
         let pending: Int

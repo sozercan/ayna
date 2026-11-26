@@ -1,15 +1,7 @@
-//
-//  ImageGenerationCoordinator.swift
-//  ayna
-//
-//  Owns every stage of the current image-generation user action.
-//
-
 #if !os(watchOS)
 
     import Foundation
 
-    /// Fences and cancels the tasks and transport children belonging to one image action.
     @MainActor
     final class ImageGenerationCoordinator {
         struct OperationID: Hashable, Sendable {
@@ -31,7 +23,6 @@
             activeOperation != nil
         }
 
-        /// Starts a new logical image operation and atomically fences/cancels its predecessor.
         func beginOperation() -> OperationID {
             cancelCurrentOperation()
             let id = OperationID()
@@ -51,7 +42,6 @@
             return candidates.filter { streamingIDs.contains($0) }
         }
 
-        /// Adds one AI transport child to a single- or multi-model logical operation.
         func track(_ request: AIImageRequest?, for id: OperationID) {
             guard let request else { return }
             trackCancellation(for: id) {
@@ -59,7 +49,6 @@
             }
         }
 
-        /// Adds an auxiliary stage such as image loading or post-processing.
         func track(_ task: Task<Void, Never>, for id: OperationID) {
             trackCancellation(for: id) {
                 task.cancel()
@@ -73,7 +62,6 @@
             trackCancellation(for: id, cancellation: action)
         }
 
-        /// Schedules actor-isolated work from a sendable transport callback and owns the task.
         nonisolated func schedule(
             for id: OperationID,
             operation: @escaping @MainActor @Sendable () async -> Void
@@ -88,7 +76,6 @@
             }
         }
 
-        /// Completes only the matching operation; stale completions cannot clear a replacement.
         @discardableResult
         func finishOperation(_ id: OperationID) -> Bool {
             guard owns(id) else { return false }

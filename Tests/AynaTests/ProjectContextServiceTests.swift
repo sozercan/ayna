@@ -1,10 +1,3 @@
-//
-//  ProjectContextServiceTests.swift
-//  aynaTests
-//
-//  Unit tests for ProjectContextService.
-//
-
 #if os(macOS)
     @testable import Ayna
     import Foundation
@@ -13,8 +6,6 @@
     @Suite("ProjectContextService Tests")
     @MainActor
     struct ProjectContextServiceTests {
-        // MARK: - ProjectType Tests
-
         @Suite("ProjectType")
         struct ProjectTypeTests {
             @Test("All project types have display names")
@@ -63,8 +54,6 @@
             }
         }
 
-        // MARK: - Service Tests
-
         @Suite("Service")
         @MainActor
         struct ServiceTests {
@@ -91,8 +80,6 @@
             }
         }
 
-        // MARK: - Detection Tests
-
         @Suite("Detection")
         @MainActor
         struct DetectionTests {
@@ -103,8 +90,6 @@
 
                 await sut.detectProject(from: currentDir)
 
-                // Should detect something since we're in the ayna project
-                // Note: This test depends on being run from the project directory
                 if sut.projectRoot != nil {
                     #expect(sut.projectType != .unknown)
                 }
@@ -117,10 +102,8 @@
 
                 await sut.detectProject(from: currentDir)
 
-                // ayna has CLAUDE.md and AGENTS.md
                 if sut.projectRoot != nil {
                     let filenames = sut.contextFiles.map(\.lastPathComponent)
-                    // At least one context file should be found
                     let hasContextFile = filenames.contains("CLAUDE.md") ||
                         filenames.contains("AGENTS.md") ||
                         filenames.contains("COPILOT.md")

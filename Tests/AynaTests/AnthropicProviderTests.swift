@@ -1,10 +1,3 @@
-//
-//  AnthropicProviderTests.swift
-//  aynaTests
-//
-//  Created on 1/30/26.
-//
-
 @testable import Ayna
 import Foundation
 import Testing
@@ -40,14 +33,6 @@ struct AnthropicProviderTests {
             thinkingBudget: thinkingBudget
         )
     }
-
-    // MARK: - Factory Tests
-
-    // MARK: - Provider Properties Tests
-
-    // MARK: - Configuration Validation Tests
-
-    // MARK: - Non-Streaming Response Tests
 
     @Test(.timeLimit(.minutes(1)))
     func `non-streaming response parses text content`() async {
@@ -216,8 +201,6 @@ struct AnthropicProviderTests {
         #expect(receivedToolId == "toolu_abc123")
         #expect(receivedToolName == "web_search")
     }
-
-    // MARK: - HTTP Error Tests
 
     @Test(.timeLimit(.minutes(1)))
     func `hTTP 400 returns appropriate error`() async {
@@ -395,7 +378,6 @@ struct AnthropicProviderTests {
                 )
             )
 
-            // Short wait for async callbacks since circuit breaker may retry
             await callbackWaiter.wait()
         }
 
@@ -532,8 +514,6 @@ struct AnthropicProviderTests {
         #expect(attempts.value == 1)
     }
 
-    // MARK: - Anthropic Error Format Tests
-
     @Test(.timeLimit(.minutes(1)))
     func `anthropic error format is parsed correctly`() async {
         let provider = makeProvider()
@@ -581,8 +561,6 @@ struct AnthropicProviderTests {
         let errorMessage = (receivedError as? AynaError)?.errorDescription ?? receivedError?.localizedDescription ?? ""
         #expect(errorMessage.contains("Custom error message from Anthropic"))
     }
-
-    // MARK: - Endpoint Resolution Tests
 
     @Test(.timeLimit(.minutes(1)))
     func `invalid endpoint triggers error callback`() async {
@@ -644,17 +622,13 @@ struct AnthropicProviderTests {
         #expect(receivedError != nil)
     }
 
-    // MARK: - Cancellation Tests
-
     @Test
     func `cancel request stops current task`() async {
         let provider = makeProvider()
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Hello")]
 
-        // Set up handler that simulates a slow request
         AnthropicMockURLProtocol.requestHandler = { _ in
-            // Brief delay to simulate in-flight request without blocking URL loading threads
             Thread.sleep(forTimeInterval: 0.05)
             let response = HTTPURLResponse(
                 url: URL(string: "https://api.anthropic.com/v1/messages")!,
@@ -679,17 +653,10 @@ struct AnthropicProviderTests {
             )
         )
 
-        // Cancel immediately
         provider.cancelRequest()
 
-        // Wait a bit to ensure no error callback for cancellation
         try? await Task.sleep(for: .milliseconds(200))
-
-        // Note: We don't expect onError for cancellation
-        // The test passes if it completes without hanging
     }
-
-    // MARK: - Request Building Tests
 
     @Test(.timeLimit(.minutes(1)))
     func `request includes correct headers`() async {
@@ -739,15 +706,12 @@ struct AnthropicProviderTests {
         #expect(request?.value(forHTTPHeaderField: "Content-Type") == "application/json")
     }
 
-    // MARK: - Streaming Response Tests
-
     @Test(.timeLimit(.minutes(1)))
     func `streaming response delivers text chunks`() async {
         let provider = makeProvider()
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Hello")]
 
-        // Build SSE response with multiple chunks
         let sseResponse = """
         event: message_start
         data: {"type": "message_start", "message": {"id": "msg_123", "type": "message", "role": "assistant"}}
@@ -816,7 +780,6 @@ struct AnthropicProviderTests {
         let config = makeConfig(thinkingBudget: 2048)
         let messages = [Message(role: .user, content: "Think about this")]
 
-        // SSE response with interleaved thinking and text
         let sseResponse = """
         event: message_start
         data: {"type": "message_start", "message": {"id": "msg_456", "type": "message", "role": "assistant"}}
@@ -892,7 +855,6 @@ struct AnthropicProviderTests {
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Search for Swift")]
 
-        // SSE response with tool use
         let sseResponse = """
         event: message_start
         data: {"type": "message_start", "message": {"id": "msg_789", "type": "message", "role": "assistant"}}
@@ -1069,8 +1031,6 @@ struct AnthropicProviderTests {
         #expect(betaHeader?.contains("interleaved-thinking") == true)
     }
 }
-
-// MARK: - Test Helpers
 
 private final class AnthropicMockURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?

@@ -1,123 +1,62 @@
-//
-//  AynaError.swift
-//  ayna
-//
-//  Unified error types for consistent error handling across the app.
-//  This provides a centralized error taxonomy with user-friendly messages.
-//
-
 import Foundation
 
-// MARK: - Unified Error Type
-
-/// Unified error enum covering all failure modes in the Ayna app
-///
-/// Use this type for new error handling. Existing service-specific errors
-/// (AIError, TavilyError, etc.) are preserved for backward compatibility
-/// and can be wrapped in AynaError cases.
 enum AynaError: LocalizedError, Sendable {
-    // MARK: - Network & Connectivity
-
-    /// Network request failed (timeout, no connection, etc.)
     case networkError(underlying: Error)
 
-    /// Server returned an unexpected HTTP status
     case httpError(statusCode: Int, message: String?)
 
-    /// Request timed out
     case timeout
 
-    /// Rate limit exceeded
     case rateLimited(retryAfter: TimeInterval?)
 
-    // MARK: - Authentication & Configuration
-
-    /// API key is missing or not configured
     case missingAPIKey(provider: String)
 
-    /// API key is invalid or expired
     case invalidAPIKey(provider: String)
 
-    /// Required configuration is missing
     case missingConfiguration(detail: String)
 
-    /// OAuth authentication failed
     case authenticationFailed(reason: String)
 
-    /// Invalid endpoint URL
     case invalidEndpoint(String)
 
-    // MARK: - Model & Provider
-
-    /// No model is selected or available
     case noModelSelected
 
-    /// Model not found or unavailable
     case modelNotFound(modelName: String)
 
-    /// Provider is not supported for this operation
     case unsupportedProvider(provider: String, operation: String)
 
-    /// Model capability mismatch (e.g., using image model for chat)
     case capabilityMismatch(expected: String, actual: String)
 
-    // MARK: - API Response
-
-    /// API returned an invalid or malformed response
     case invalidResponse(detail: String?)
 
-    /// Content was filtered by the API's safety systems
     case contentFiltered(reason: String)
 
-    /// API returned an error message
     case apiError(message: String)
 
-    // MARK: - Tool Execution
-
-    /// Tool not found
     case toolNotFound(toolName: String)
 
-    /// Tool execution failed
     case toolExecutionFailed(toolName: String, reason: String)
 
-    /// Tool chain exceeded maximum depth
     case toolChainDepthExceeded(maxDepth: Int)
 
-    // MARK: - Data & Storage
-
-    /// Failed to encode data
     case encodingFailed(detail: String)
 
-    /// Failed to decode data
     case decodingFailed(detail: String)
 
-    /// File operation failed
     case fileOperationFailed(operation: String, path: String?)
 
-    /// Keychain operation failed
     case keychainError(operation: String, status: OSStatus?)
 
-    // MARK: - Conversation
-
-    /// Conversation not found
     case conversationNotFound(id: UUID)
 
-    /// Message not found
     case messageNotFound(id: UUID)
 
-    // MARK: - Generic
-
-    /// Operation was cancelled
     case cancelled
 
-    /// Unknown error with optional underlying cause
     case unknown(message: String, underlying: Error?)
-
-    // MARK: - LocalizedError Conformance
 
     var errorDescription: String? {
         switch self {
-        // Network
         case let .networkError(underlying):
             return "Network error: \(underlying.localizedDescription)"
         case let .httpError(statusCode, message):
@@ -129,7 +68,6 @@ enum AynaError: LocalizedError, Sendable {
             return "Request timed out"
         case .rateLimited:
             return "Rate limit exceeded. Please wait before trying again."
-        // Authentication
         case let .missingAPIKey(provider):
             return "\(provider) API key not configured"
         case let .invalidAPIKey(provider):
@@ -140,7 +78,6 @@ enum AynaError: LocalizedError, Sendable {
             return "Authentication failed: \(reason)"
         case let .invalidEndpoint(detail):
             return "Invalid endpoint: \(detail)"
-        // Model
         case .noModelSelected:
             return "No model selected"
         case let .modelNotFound(modelName):
@@ -149,7 +86,6 @@ enum AynaError: LocalizedError, Sendable {
             return "\(operation) is not supported for \(provider)"
         case let .capabilityMismatch(expected, actual):
             return "Expected \(expected) model, but got \(actual)"
-        // API Response
         case let .invalidResponse(detail):
             if let detail {
                 return "Invalid API response: \(detail)"
@@ -159,14 +95,12 @@ enum AynaError: LocalizedError, Sendable {
             return "Content filtered: \(reason)"
         case let .apiError(message):
             return message
-        // Tool
         case let .toolNotFound(toolName):
             return "Tool '\(toolName)' not found"
         case let .toolExecutionFailed(toolName, reason):
             return "Tool '\(toolName)' failed: \(reason)"
         case let .toolChainDepthExceeded(maxDepth):
             return "Tool chain exceeded maximum depth of \(maxDepth)"
-        // Data
         case let .encodingFailed(detail):
             return "Failed to encode data: \(detail)"
         case let .decodingFailed(detail):
@@ -181,12 +115,10 @@ enum AynaError: LocalizedError, Sendable {
                 return "Keychain \(operation) failed (status: \(status))"
             }
             return "Keychain \(operation) failed"
-        // Conversation
         case .conversationNotFound:
             return "Conversation not found"
         case .messageNotFound:
             return "Message not found"
-        // Generic
         case .cancelled:
             return "Operation was cancelled"
         case let .unknown(message, _):
@@ -196,7 +128,6 @@ enum AynaError: LocalizedError, Sendable {
 
     var recoverySuggestion: String? {
         switch self {
-        // Network
         case .networkError:
             return "Check your internet connection and try again"
         case let .httpError(statusCode, _):
@@ -211,7 +142,6 @@ enum AynaError: LocalizedError, Sendable {
                 return "Wait \(Int(seconds)) seconds before trying again"
             }
             return "Wait a moment before trying again"
-        // Authentication
         case let .missingAPIKey(provider):
             return "Add your \(provider) API key in Settings → Models"
         case let .invalidAPIKey(provider):
@@ -222,7 +152,6 @@ enum AynaError: LocalizedError, Sendable {
             return "Try signing in again"
         case .invalidEndpoint:
             return "Check the endpoint URL in Settings → Models"
-        // Model
         case .noModelSelected:
             return "Select a model in Settings → Models"
         case .modelNotFound:
@@ -231,33 +160,28 @@ enum AynaError: LocalizedError, Sendable {
             return "Switch to a compatible model"
         case .capabilityMismatch:
             return "Select a model with the right capabilities"
-        // API Response
         case .invalidResponse:
             return "Try again. If the issue persists, the API may be having problems."
         case .contentFiltered:
             return "Try rephrasing your message"
         case .apiError:
             return "Check your configuration or try again later"
-        // Tool
         case .toolNotFound:
             return "Check that the required tool is configured in Settings → Tools"
         case .toolExecutionFailed:
             return "The tool encountered an error. Try again or use a different approach."
         case .toolChainDepthExceeded:
             return "Simplify your request to reduce tool usage"
-        // Data
         case .encodingFailed, .decodingFailed:
             return "The data may be corrupted. Try again with fresh data."
         case .fileOperationFailed:
             return "Check file permissions and disk space"
         case .keychainError:
             return "Check that the app has keychain access"
-        // Conversation
         case .conversationNotFound:
             return "The conversation may have been deleted"
         case .messageNotFound:
             return "The message may have been deleted"
-        // Generic
         case .cancelled:
             return nil
         case .unknown:
@@ -270,17 +194,12 @@ enum AynaError: LocalizedError, Sendable {
     }
 }
 
-// MARK: - Error Wrapping
-
 extension AynaError {
-    /// Wrap an existing error into an AynaError if not already one
     static func wrap(_ error: Error) -> AynaError {
-        // Already an AynaError
         if let aynaError = error as? AynaError {
             return aynaError
         }
 
-        // URL errors
         if let urlError = error as? URLError {
             switch urlError.code {
             case .timedOut:
@@ -294,21 +213,17 @@ extension AynaError {
             }
         }
 
-        // Cancellation
         if error is CancellationError {
             return .cancelled
         }
 
-        // Generic wrap
         return .unknown(message: error.localizedDescription, underlying: error)
     }
 
-    /// Create from HTTP response
     static func fromHTTPResponse(statusCode: Int, data: Data?) -> AynaError {
         var message: String?
 
         if let data {
-            // Try to extract error message from JSON
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 if let error = json["error"] as? [String: Any],
                    let errorMessage = error["message"] as? String
@@ -337,8 +252,6 @@ extension AynaError {
     }
 }
 
-// MARK: - Equatable for Testing
-
 extension AynaError: Equatable {
     static func == (lhs: AynaError, rhs: AynaError) -> Bool {
         switch (lhs, rhs) {
@@ -365,29 +278,11 @@ extension AynaError: Equatable {
         case let (.rateLimited(lhs), .rateLimited(rhs)):
             lhs == rhs
         default:
-            // For complex cases with underlying errors, compare descriptions
             lhs.errorDescription == rhs.errorDescription
         }
     }
 }
 
-// MARK: - AnyCodable
-
-/// A type-erased Codable value that can hold any JSON-compatible type.
-///
-/// Used for:
-/// - Tool call inputs from AI providers
-/// - Dynamic JSON structures in MCP messages
-/// - Any context where the JSON schema is not known at compile time
-///
-/// The wrapped value is limited to JSON-compatible types:
-/// - Bool, Int, Double, String
-/// - Arrays of the above types
-/// - Dictionaries with String keys and above value types
-///
-/// Note: Marked as `@unchecked Sendable` because it only wraps immutable
-/// JSON-compatible values (primitives, arrays, dictionaries) which are
-/// inherently thread-safe when stored as `let`.
 struct AnyCodable: Codable, Equatable, @unchecked Sendable {
     let value: Any
 

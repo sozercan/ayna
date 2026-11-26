@@ -4,6 +4,7 @@
 included:
   - Sources/Ayna
   - Tests
+  - WatchComplication
 
 # Disable some rules that may be too strict
 disabled_rules:
@@ -63,5 +64,15 @@ type_name:
     error: 50
   excluded:
     - aynaApp # Allow app name convention
+
+custom_rules:
+  no_comments:
+    name: "No Code Comments"
+    regex: '(?:\/\/(?!\s*(?:swiftlint:|swiftformat:|swift-tools-version:|sourceLocation\())|\/\*)'
+    match_kinds:
+      - comment
+      - doccomment
+    message: "Code comments are banned. Delete tautologies/stale notes, file an issue for hacks, or move architectural decisions to docs/adr/. Run /delete-comment to process violations."
+    severity: error
 
 reporter: "xcode" # Use xcode reporter for better integration

@@ -1,22 +1,12 @@
 // swiftformat:options --ifdef no-indent
 #if os(watchOS)
 
-//
-//  WatchDataModelTests.swift
-//  Ayna-watchOSTests
-//
-//  Unit tests for Watch data models (WatchConversation, WatchMessage)
-//  These tests run on watchOS to verify the models work correctly on the target platform
-//
-
 @testable import Ayna
 import Foundation
 import Testing
 
 @Suite("WatchDataModel Tests")
 struct WatchDataModelTests {
-    // MARK: - WatchMessage Tests
-
     @Test("WatchMessage init from Message")
     func watchMessageInitFromMessage() {
         let originalId = UUID()
@@ -100,8 +90,6 @@ struct WatchDataModelTests {
         #expect(decoded.model == watchMessage.model)
     }
 
-    // MARK: - WatchConversation Tests
-
     @Test("WatchConversation init from Conversation")
     func watchConversationInitFromConversation() {
         let originalId = UUID()
@@ -140,7 +128,6 @@ struct WatchDataModelTests {
     func watchConversationLimitsMessages() {
         var conversation = Conversation(title: "Many Messages", model: "gpt-4o")
 
-        // Add more than 20 messages
         for index in 1 ... 30 {
             let role: Message.Role = index.isMultiple(of: 2) ? .assistant : .user
             conversation.addMessage(Message(role: role, content: "Message \(index)"))
@@ -148,11 +135,8 @@ struct WatchDataModelTests {
 
         let watchConversation = WatchConversation(from: conversation)
 
-        // Should only include the last 20
         #expect(watchConversation.messages.count == 20)
-        // First message should be "Message 11" (30-20+1)
         #expect(watchConversation.messages.first?.content == "Message 11")
-        // Last message should be "Message 30"
         #expect(watchConversation.messages.last?.content == "Message 30")
     }
 
@@ -197,8 +181,6 @@ struct WatchDataModelTests {
         #expect(decoded[0].title == "Chat 1")
         #expect(decoded[1].title == "Chat 2")
     }
-
-    // MARK: - Edge Cases
 
     @Test("Empty conversation")
     func emptyConversation() {

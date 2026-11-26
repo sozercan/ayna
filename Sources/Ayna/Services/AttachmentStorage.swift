@@ -1,17 +1,6 @@
-//
-//  AttachmentStorage.swift
-//  ayna
-//
-//  Created on 11/22/25.
-//
-
 import Foundation
 import os
 
-// MARK: - Image Data Cache
-
-/// Thread-safe cache for attachment data to prevent repeated disk I/O.
-/// Uses NSCache internally with a wrapper for Sendable conformance.
 final class AttachmentDataCache: @unchecked Sendable {
     static let shared = AttachmentDataCache()
 
@@ -19,9 +8,7 @@ final class AttachmentDataCache: @unchecked Sendable {
     private let lock = NSLock()
 
     init() {
-        // Limit cache to ~50MB of image data
         cache.totalCostLimit = 50 * 1024 * 1024
-        // Limit to ~20 items
         cache.countLimit = 20
     }
 
@@ -49,8 +36,6 @@ final class AttachmentDataCache: @unchecked Sendable {
         cache.removeAllObjects()
     }
 }
-
-// MARK: - Attachment Storage
 
 struct AttachmentCleanupSnapshot: Sendable {
     static let empty = AttachmentCleanupSnapshot(fileNames: [])
@@ -90,8 +75,6 @@ private enum AsyncLoadSource: Sendable {
     case disk(fileURL: URL, generation: AttachmentStorageGeneration)
 }
 
-/// Manages storage of message attachments (images, files) on disk
-/// to reduce the size of the encrypted conversation store.
 final class AttachmentStorage: @unchecked Sendable {
     static let shared = AttachmentStorage()
 
@@ -101,8 +84,6 @@ final class AttachmentStorage: @unchecked Sendable {
     private var storageGeneration: UInt64 = 0
     private var cleanupFenceCount = 0
 
-    /// Per-environment attachments directory, so dev and UI-test builds can never
-    /// see (or clean up) production attachments.
     static var defaultDirectoryURL: URL {
         RuntimeEnvironment.defaultApplicationSupportDirectoryURL
             .appendingPathComponent("Attachments", isDirectory: true)
@@ -141,7 +122,6 @@ final class AttachmentStorage: @unchecked Sendable {
         }
     }
 
-    /// Saves data to disk and returns the relative path
     func save(
         data: Data,
         extension: String = "dat",
@@ -179,7 +159,6 @@ final class AttachmentStorage: @unchecked Sendable {
         }
     }
 
-    /// Saves data off the caller's actor while preserving cleanup-generation fencing.
     func saveData(
         data: Data,
         extension: String = "dat",
@@ -222,7 +201,6 @@ final class AttachmentStorage: @unchecked Sendable {
         }
     }
 
-    /// Returns cached data without touching disk.
     func cachedData(path: String) -> Data? {
         operationLock.withLock {
             guard cleanupFenceCount == 0 else { return nil }
@@ -230,7 +208,6 @@ final class AttachmentStorage: @unchecked Sendable {
         }
     }
 
-    /// Loads data from a relative path, using cache to avoid repeated disk I/O
     func load(path: String) -> Data? {
         operationLock.withLock {
             guard cleanupFenceCount == 0 else { return nil }
@@ -243,7 +220,6 @@ final class AttachmentStorage: @unchecked Sendable {
         }
     }
 
-    /// Loads data from disk off the caller's actor, caching the result for future access.
     func loadData(path: String) async -> Data? {
         guard !Task.isCancelled else { return nil }
 
@@ -320,7 +296,6 @@ final class AttachmentStorage: @unchecked Sendable {
         }
     }
 
-    /// Deletes a file at the given relative path
     func delete(path: String) {
         operationLock.withLock {
             dataCache.remove(path)
@@ -345,7 +320,6 @@ final class AttachmentStorage: @unchecked Sendable {
         }
     }
 
-    /// Captures the attachment files currently owned by a clear request.
     func cleanupSnapshot() throws -> AttachmentCleanupSnapshot {
         try operationLock.withLock {
             try makeCleanupSnapshot()
@@ -375,7 +349,6 @@ final class AttachmentStorage: @unchecked Sendable {
         }
     }
 
-    /// Deletes the files captured by a clear request and clears the in-process cache.
     func clear(_ snapshot: AttachmentCleanupSnapshot) throws {
         try operationLock.withLock {
             let fileManager = FileManager.default
@@ -430,14 +403,12 @@ final class AttachmentStorage: @unchecked Sendable {
         }
     }
 
-    /// Deletes every attachment present when the operation begins.
     func clearAll() throws {
         let snapshot = try beginCleanupSnapshot()
         defer { finishCleanup() }
         try clear(snapshot)
     }
 
-    /// Returns the full URL for a relative path (useful for QuickLook or sharing)
     func fileURL(for path: String) -> URL {
         attachmentsDirectory.appendingPathComponent(path)
     }

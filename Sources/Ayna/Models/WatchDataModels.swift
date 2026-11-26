@@ -1,14 +1,5 @@
-//
-//  WatchDataModels.swift
-//  ayna
-//
-//  Shared data models for Watch synchronization.
-//  These types are used across macOS, iOS, and watchOS for WatchConnectivity sync.
-//
-
 import Foundation
 
-/// Compact phone-authoritative request settings for a conversation whose body is omitted.
 struct WatchConversationRequestConfiguration: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     var model: String
@@ -44,11 +35,6 @@ struct WatchConversationRequestConfiguration: Codable, Equatable, Identifiable, 
     }
 }
 
-/// Lightweight conversation model for Watch sync.
-///
-/// The model intentionally carries the resolved prompt and temperature needed to make
-/// requests on Watch, while omitting phone-only state such as prompt inheritance mode,
-/// pending auto-send prompts, attachments, and multi-model response bookkeeping.
 struct WatchConversation: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     var title: String
@@ -114,9 +100,6 @@ struct WatchConversation: Codable, Equatable, Identifiable, Sendable {
         messages = history.suffix(max(0, maximumMessages)).map { WatchMessage(from: $0) }
     }
 
-    /// Converts the shared Watch state back into a new phone conversation.
-    /// Existing phone conversations should instead be updated through
-    /// ``PhoneWatchMutationReducer`` so phone-only state is preserved.
     func toConversation() -> Conversation {
         var conversation = Conversation(
             id: id,
@@ -131,9 +114,6 @@ struct WatchConversation: Codable, Equatable, Identifiable, Sendable {
         return conversation
     }
 
-    /// Request-ready effective history. The conversation's resolved prompt is prepended
-    /// as a stable synthetic system message and the remaining messages are already the
-    /// phone conversation's effective (selected-response) history.
     var effectiveHistory: [Message] {
         var history = messages.map { $0.toMessage() }
         if let resolvedSystemPrompt = resolvedSystemPrompt?.nilIfEmpty {
@@ -161,8 +141,6 @@ struct WatchConversation: Codable, Equatable, Identifiable, Sendable {
         }
     }
 
-    // MARK: - Backward-compatible Codable
-
     private enum CodingKeys: String, CodingKey {
         case id
         case title
@@ -189,11 +167,6 @@ struct WatchConversation: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
-/// A revisioned phone-authoritative snapshot.
-///
-/// Conversation bodies, authoritative IDs, and compact request configurations are bounded
-/// independently. Body or page omission is not deletion; absence is authoritative only when
-/// the ID manifest is explicitly complete. Tombstones always remain authoritative.
 struct WatchSyncSnapshot: Codable, Equatable, Sendable {
     static let currentSchemaVersion = 3
 
@@ -416,7 +389,6 @@ struct WatchMutationPayload: Equatable, Sendable {
     let data: Data
 }
 
-/// Lightweight message model for Watch sync (no images or attachments).
 struct WatchMessage: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     var role: String
@@ -494,7 +466,6 @@ struct WatchMessage: Codable, Equatable, Identifiable, Sendable {
         )
     }
 
-    /// Text shown when a reasoning-only response has no final answer content.
     var visibleContent: String {
         if !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return content

@@ -1,11 +1,5 @@
-//
-//  OrderedAsyncOperationQueue.swift
-//  ayna
-//
-
 import Foundation
 
-/// Serializes asynchronous side effects in submission order.
 final class OrderedAsyncOperationQueue: @unchecked Sendable {
     private let lock = NSLock()
     private var tailTask: Task<Void, Never>?

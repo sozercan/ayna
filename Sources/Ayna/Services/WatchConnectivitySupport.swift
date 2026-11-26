@@ -1,10 +1,4 @@
 // swiftlint:disable file_length
-//
-//  WatchConnectivitySupport.swift
-//  ayna
-//
-//  Thread-safe identity fencing shared by iOS and watchOS WCSession delegates.
-//
 
 import Combine
 import CoreFoundation
@@ -573,8 +567,6 @@ enum WatchLegacyEchoComponent: Equatable, Hashable, Sendable {
     case message(id: UUID, revision: WatchSyncRevision)
 
     var shouldRecordInStoreCoverage: Bool {
-        // Store create coverage also suppresses title and configuration replay. Keep those
-        // components independent until the complete representable mutation is acknowledged.
         if case .create = self {
             return false
         }
@@ -2525,9 +2517,6 @@ struct WatchMutationFileCapture: Equatable, Sendable {
 }
 
 enum WatchMutationFileTransport {
-    /// File transfer is reserved for mutations beyond the 48 KB message budget. Four MiB leaves
-    /// more than 80x headroom for legitimate coalesced text/tool mutations while bounding the
-    /// synchronous delegate work needed before WatchConnectivity invalidates its temporary URL.
     static let maximumBytes = 4 * 1024 * 1024
 
     private static let readChunkBytes = 64 * 1024

@@ -1,12 +1,6 @@
 // swiftformat:options --ifdef no-indent
 // swiftlint:disable file_length
 #if os(macOS)
-//
-//  MacChatView.swift
-//  ayna
-//
-//  Created on 11/2/25.
-//
 
 import AppKit
 import OSLog
@@ -54,10 +48,6 @@ struct MacPendingAutoSendClaim {
         conversationManager.saveImmediately(conversationManager.conversations[index])
     }
 }
-
-// ChatView currently wraps the full chat experience (history, composer, attachments, streaming, MCP
-// tooling). Splitting it without a broader refactor would scatter tightly coupled state, so we allow
-// the larger body here until the view hierarchy is modularized.
 
 enum MacChatMessagePresentation {
     static func isVisible(
@@ -162,7 +152,6 @@ struct MacChatView: View {
     init(conversation: Conversation) {
         self.conversation = conversation
         _selectedModel = State(initialValue: conversation.model)
-        // Initialize selectedModels with the conversation's active models if available, otherwise fallback to single model
         if conversation.multiModelEnabled, !conversation.activeModels.isEmpty {
             _selectedModels = State(initialValue: Set(conversation.activeModels))
         } else if !conversation.model.isEmpty {
@@ -201,27 +190,22 @@ struct MacChatView: View {
     @State var multiModelReasoningBuffer = MultiModelStreamingBuffer()
     @State private var showingSystemPromptSheet = false
 
-    // Multi-model support (unified selection - 1 model = single, 2+ = multi)
     @State private var selectedModels: Set<String> = []
     @State private var showModelSelector = false
     @State private var isToolSectionExpanded = false
 
-    /// Determines the capability type of currently selected models (if any)
     private var selectedCapabilityType: AIService.ModelCapability? {
         guard let firstSelected = selectedModels.first else { return nil }
         return aiService.getModelCapability(firstSelected)
     }
 
-    // App content attachment (Work with Apps)
     @State private var showAppContentPicker = false
     @State private var attachedAppContent: AppContent?
 
-    // Performance optimizations
     @State private var pendingChunks: [String] = []
     @State private var batchUpdateTask: Task<Void, Never>?
     @State private var cachedConversationIndex: Int?
     @State private var cachedDisplayableItems: [ChatTranscriptItem] = []
-    /// Cache the current conversation to avoid repeated lookups
     var currentConversation: Conversation {
         if let index = getConversationIndex() {
             return conversationManager.conversations[index]
@@ -229,7 +213,6 @@ struct MacChatView: View {
         return conversation
     }
 
-    /// Helper to get conversation index with caching
     private func getConversationIndex() -> Int? {
         if let cached = cachedConversationIndex,
            cached < conversationManager.conversations.count,
@@ -254,7 +237,6 @@ struct MacChatView: View {
         DiagnosticsLogger.log(.chatView, level: level, message: message, metadata: combinedMetadata)
     }
 
-    /// Updates cached transcript items when messages, response groups, or generation state change.
     private func updateTranscriptPlan() {
         cachedDisplayableItems = ChatTranscriptPlan(
             conversation: currentConversation,
@@ -280,7 +262,6 @@ struct MacChatView: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            // Chat background with subtle gradient
             LinearGradient(
                 colors: [
                     Color(nsColor: .windowBackgroundColor),
@@ -292,7 +273,6 @@ struct MacChatView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Messages
                 ChatMessageList(
                     displayableItems: cachedDisplayableItems,
                     conversation: currentConversation,
@@ -334,7 +314,6 @@ struct MacChatView: View {
                     }
                 )
 
-                // Error Message
                 if let error = errorMessage {
                     ErrorBannerView(
                         message: error,
@@ -346,22 +325,18 @@ struct MacChatView: View {
                     .padding(.horizontal, Spacing.contentPadding)
                 }
 
-                // Tool execution status indicator
                 if let toolName = currentToolName {
                     ToolExecutionIndicator(toolName: toolName)
                 }
 
-                // Task list the model keeps with update_tasks; hidden until it has tasks
                 TaskListView(taskManager: ConversationTaskManager.shared, conversationId: conversation.id)
                     .padding(.horizontal, Spacing.contentPadding)
 
-                // Pending tool approval requests - reads directly from @Observable PermissionService
                 PendingApprovalsSectionView(
                     conversationId: conversation.id,
                     permissionService: aiService.permissionService
                 )
 
-                // Input Area
                 ChatInputArea(
                     messageText: $messageText,
                     isComposerFocused: $isComposerFocused,
@@ -451,13 +426,11 @@ struct MacChatView: View {
             cancelOwnedGenerationForLifecycle()
         }
         .onReceive(NotificationCenter.default.publisher(for: .sendPendingMessage)) { notification in
-            // Handle Work with Apps: auto-send message when conversation is created with context
             guard let conversationId = notification.userInfo?["conversationId"] as? UUID,
                   conversationId == conversation.id,
                   !isGenerating
             else { return }
 
-            // Check if there's a pending user message without assistant response
             let messages = currentConversation.messages
             if let lastMessage = messages.last,
                lastMessage.role == .user,
@@ -469,7 +442,6 @@ struct MacChatView: View {
         }
     }
 
-    /// Check for and process a pending auto-send prompt from deep link.
     private func checkAndProcessPendingPrompt() {
         guard pendingAutoSendClaim == nil,
               let index = getConversationIndex(),
@@ -486,8 +458,6 @@ struct MacChatView: View {
             metadata: ["promptLength": "\(prompt.count)"]
         )
 
-        // Clear and persist the prompt while this view owns the claim. Lifecycle cancellation
-        // restores it until the user message is actually committed.
         conversationManager.conversations[index].pendingAutoSendPrompt = nil
         conversationManager.saveImmediately(conversationManager.conversations[index])
         pendingAutoSendClaim = MacPendingAutoSendClaim(
@@ -495,12 +465,10 @@ struct MacChatView: View {
             prompt: prompt
         )
 
-        // Set the message text and send after the view has had one layout turn.
         messageText = prompt
         beginSendMessage(delay: .milliseconds(100))
     }
 
-    /// Sends the last user message in the conversation (used for Work with Apps)
     private func sendPendingUserMessage() {
         guard currentConversation.messages.contains(where: { $0.role == .user }) else {
             return
@@ -508,21 +476,17 @@ struct MacChatView: View {
 
         isGenerating = true
 
-        // Build messages for API using the same pattern as sendMessage
         var messagesToSend = currentConversation.getEffectiveHistory()
         if let systemPrompt = buildFullSystemPrompt(for: currentConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
 
-        // Create assistant placeholder
         let assistantMessage = Message(role: .assistant, content: "", model: currentConversation.model)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
-        // Use unified tool collection (includes Tavily + MCP tools)
         let tools = aiService.getAllAvailableTools()
 
-        // Send to AI
         sendMessageWithToolSupport(
             messages: messagesToSend,
             model: currentConversation.model,
@@ -532,8 +496,6 @@ struct MacChatView: View {
             assistantMessageID: assistantMessage.id
         )
     }
-
-    // MARK: - Export Helpers
 
     private enum ExportFormat {
         case markdown
@@ -572,15 +534,12 @@ struct MacChatView: View {
 
     private func showShareSheet(for url: URL) {
         let picker = NSSharingServicePicker(items: [url])
-        // Defer to next run loop to ensure window state is ready
         Task { @MainActor in
             if let window = NSApp.keyWindow, let contentView = window.contentView {
                 picker.show(relativeTo: contentView.bounds, of: contentView, preferredEdge: .minY)
             }
         }
     }
-
-    // MARK: - Model Selection Helpers
 
     private func resolveModelForSending(selection: String) -> String? {
         let trimmedSelection = selection.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -624,18 +583,15 @@ struct MacChatView: View {
             selectedModel = latest
         }
 
-        // Sync multi-model state from conversation if enabled
         if currentConv.multiModelEnabled, !currentConv.activeModels.isEmpty {
             let activeSet = Set(currentConv.activeModels)
             if selectedModels != activeSet {
                 selectedModels = activeSet
             }
         } else if selectedModels.isEmpty {
-            // Initialize selectedModels if empty (for new conversations or first load)
             if !latest.isEmpty {
                 selectedModels = [latest]
             } else if let firstAvailable = aiService.usableModels.first {
-                // Fallback to first available model if conversation model is empty
                 selectedModels = [firstAvailable]
                 selectedModel = firstAvailable
                 conversationManager.updateModel(for: conversation, model: firstAvailable)
@@ -656,7 +612,6 @@ struct MacChatView: View {
         let multiModelEnabled = AppPreferences.multiModelSelectionEnabled
 
         if !multiModelEnabled {
-            // Single-select mode: always replace selection
             selectedModels = [model]
             selectedModel = model
             conversationManager.updateModel(for: conversation, model: model)
@@ -664,26 +619,19 @@ struct MacChatView: View {
             return
         }
 
-        // Multi-select mode
         if selectedModels.contains(model) {
-            // Always allow removing a model (user can select a different one)
             selectedModels.remove(model)
-            // Update primary model if we still have selections
             if selectedModels.count == 1, let remaining = selectedModels.first {
                 selectedModel = remaining
                 conversationManager.updateModel(for: conversation, model: remaining)
             }
         } else {
-            // Check if we're trying to mix capability types
             let modelCapability = aiService.getModelCapability(model)
             if let selectedType = selectedCapabilityType, modelCapability != selectedType {
-                // Clear existing selections and start fresh with the new type
                 selectedModels.removeAll()
             }
-            // Allow up to 4 models
             if selectedModels.count < 4 {
                 selectedModels.insert(model)
-                // If this is the only selection, make it the primary model
                 if selectedModels.count == 1 {
                     selectedModel = model
                     conversationManager.updateModel(for: conversation, model: model)
@@ -711,7 +659,6 @@ struct MacChatView: View {
         attachedFiles.removeAll { $0 == fileURL }
     }
 
-    /// Auto-select response if we are continuing from a multi-model state without selection
     private func autoSelectResponseIfNeeded() {
         guard let selection = ChatTranscriptPlan.autoSelectionCandidate(in: currentConversation) else { return }
 
@@ -726,9 +673,6 @@ struct MacChatView: View {
         )
     }
 
-    // MARK: - Error Handling
-
-    /// Retry the last failed message
     private func retryFailedMessage() {
         guard !isGenerating, sendPreparationTask == nil,
               let payload = failedSendPayload
@@ -760,7 +704,6 @@ struct MacChatView: View {
         )
     }
 
-    /// Dismiss the current error without retrying
     private func dismissError() {
         failedMessage = nil
         failedSendPayload = nil
@@ -874,8 +817,6 @@ struct MacChatView: View {
         toolChainTimeoutTask = timeoutTask
         coordinator.track(timeoutTask, for: operationID)
     }
-
-    // MARK: - Message Sending
 
     private func beginSendMessage(delay: Duration? = nil) {
         if isGenerating || sendPreparationTask != nil {
@@ -1011,9 +952,6 @@ struct MacChatView: View {
         return aiService.attachmentSupportError(for: models)
     }
 
-    // This method coordinates attachment handling, MCP tool availability, streaming setup, and state
-    // resets. Breaking it apart right now would require plumbing a large amount of shared state, so
-    // we defer that refactor and explicitly allow the longer, branching body.
     // swiftlint:disable:next function_body_length cyclomatic_complexity
     private func sendMessage(
         preparationID: UUID,
@@ -1048,7 +986,6 @@ struct MacChatView: View {
         }
         guard sendPreparationID == preparationID, !Task.isCancelled else { return }
 
-        // Auto-select response if we are continuing from a multi-model state without selection
         autoSelectResponseIfNeeded()
 
         guard let activeModel = preparation.activeModel else {
@@ -1217,7 +1154,6 @@ struct MacChatView: View {
                 to: conversation.id
             )
 
-            // Process memory commands (e.g., "remember that I prefer dark mode")
             if let memoryResponse = MemoryContextProvider.shared.processMemoryCommand(in: userMessage.content) {
                 logChat("💾 Memory command processed: \(memoryResponse)", level: .info)
             }
@@ -1227,7 +1163,7 @@ struct MacChatView: View {
         isComposerFocused = true
         errorMessage = nil
         errorRecoverySuggestion = nil
-        failedMessage = promptText // Store for retry in case of failure
+        failedMessage = promptText
         failedSendPayload = FailedSendPayload(
             promptText: promptText,
             userMessage: userMessage,
@@ -1237,7 +1173,6 @@ struct MacChatView: View {
         )
         logChat("🔄 isGenerating set to TRUE", level: .info)
 
-        // Get updated messages after adding user message
         guard
             let updatedConversation = conversationManager.conversations.first(where: {
                 $0.id == conversation.id
@@ -1246,12 +1181,10 @@ struct MacChatView: View {
             return
         }
 
-        // Check if we're in image generation mode (any selected model is image gen means all are)
         let modelCapability = aiService.getModelCapability(activeModel)
 
         if modelCapability == .imageGeneration {
             handedOff = true
-            // Image generation flow - handle multi-model image gen
             if selectedModelsToSend.count >= 2 {
                 generateMultiModelImages(prompt: promptText, models: Array(selectedModelsToSend))
             } else {
@@ -1260,7 +1193,6 @@ struct MacChatView: View {
             return
         }
 
-        // Check if multi-model mode is enabled (2+ models selected)
         if selectedModelsToSend.count >= 2 {
             handedOff = true
             sendMultiModelMessage(
@@ -1273,18 +1205,15 @@ struct MacChatView: View {
 
         let currentMessages = updatedConversation.getEffectiveHistory()
 
-        // Prepend system prompt if configured
         var messagesToSend = currentMessages
         if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
             let systemMessage = Message(role: .system, content: systemPrompt)
             messagesToSend.insert(systemMessage, at: 0)
         }
 
-        // Add empty assistant message with current model
         let assistantMessage = Message(role: .assistant, content: "", model: activeModel)
         conversationManager.addMessage(to: conversation, message: assistantMessage)
 
-        // Get available MCP tools
         let mcpManager = MCPServerManager.shared
 
         logChat(
@@ -1303,16 +1232,12 @@ struct MacChatView: View {
 
         let enabledMCPTools = mcpManager.getEnabledTools()
 
-        // If we have enabled servers but no tools yet, wait a moment and try again
-        // This handles the race condition where servers are connecting at app startup
         if enabledMCPTools.isEmpty {
             let hasEnabledServers = !mcpManager.serverConfigs.filter(\.enabled).isEmpty
             if hasEnabledServers {
                 logChat("⏳ Enabled servers found but no tools yet, waiting for discovery...", level: .info)
-                // Give discovery a moment to complete (non-blocking)
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(500))
-                    // Re-query after a brief delay
                     let updatedTools = mcpManager.getEnabledTools()
                     logChat(
                         "⏳ After delay: \(updatedTools.count) tools available",
@@ -1323,7 +1248,6 @@ struct MacChatView: View {
             }
         }
 
-        // Use unified tool collection (includes Tavily + MCP tools)
         let tools = aiService.getAllAvailableTools()
 
         if let tools, !tools.isEmpty {
@@ -1341,10 +1265,8 @@ struct MacChatView: View {
             logChat("⚠️ No tools available. Configure web search or MCP servers in Settings", level: .info)
         }
 
-        // Reset tool call depth for new user messages
         toolCallDepth = 0
 
-        // Auto-select response if we are continuing from a multi-model state without selection
         autoSelectResponseIfNeeded()
 
         handedOff = true
@@ -1358,7 +1280,6 @@ struct MacChatView: View {
         )
     }
 
-    /// Appends the streamed chunks collected since the last flush to the assistant message.
     private func flushPendingChunks(
         operationID: ToolChainCoordinator.OperationID,
         conversationId: UUID,
@@ -1392,7 +1313,6 @@ struct MacChatView: View {
         currentToolName = nil
     }
 
-    // Helper function to send messages with automatic tool call handling
     // swiftlint:disable:next function_body_length
     func sendMessageWithToolSupport(
         messages: [Message],
@@ -1449,9 +1369,6 @@ struct MacChatView: View {
                 coordinator.enqueueCallback(for: operationID, conversationID: conversationId) {
                     guard activeAssistantMessageID == assistantMessageID else { return }
                     pendingChunks.append(chunk)
-                    // Throttle, don't debounce: a flush already scheduled will pick up this
-                    // chunk. Restarting the timer per chunk would starve the UI while tokens
-                    // keep arriving faster than the flush interval.
                     if let pending = batchUpdateTask, !pending.isCancelled { return }
 
                     let batchTask = Task { @MainActor in
@@ -1745,15 +1662,10 @@ struct MacChatView: View {
     }
 }
 
-// MARK: - Pending Approvals Section View
-
-/// Helper view for pending approvals.
-/// Reads directly from PermissionService (@Observable) so SwiftUI tracks changes automatically.
 private struct PendingApprovalsSectionView: View {
     let conversationId: UUID
     let permissionService: PermissionService?
 
-    /// Read approvals directly in body to establish Observation tracking
     private var approvals: [PendingApproval] {
         permissionService?.pendingApprovals.filter { $0.conversationId == conversationId } ?? []
     }

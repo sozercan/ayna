@@ -1,10 +1,3 @@
-//
-//  KeychainStorage.swift
-//  ayna
-//
-//  Created on 11/14/25.
-//
-
 import Foundation
 import os.log
 import Security
@@ -34,8 +27,6 @@ enum KeychainStorageError: LocalizedError {
 final class KeychainStorage: Sendable {
     nonisolated static let shared = KeychainStorage()
 
-    /// Default storage used by app services. Tests/UI tests use an in-memory store
-    /// so SwiftPM/XCTest helpers never prompt for access to the app's Keychain items.
     nonisolated static let standard: KeychainStoring = {
         if RuntimeEnvironment.isRunningUnitTests || RuntimeEnvironment.isUITesting {
             return EphemeralKeychainStorage()
@@ -44,10 +35,6 @@ final class KeychainStorage: Sendable {
     }()
 
     private let serviceIdentifier: String
-    // Note: Keychain access groups require a paid Apple Developer account.
-    // For free accounts, keychain items are tied to the app's code signature.
-    // SwiftPM/dev helper tools use a stable, separate service identifier so they
-    // do not collide with credentials created by the signed app bundle.
 
     private init(serviceIdentifier: String = RuntimeEnvironment.defaultKeychainServiceIdentifier) {
         self.serviceIdentifier = serviceIdentifier
@@ -80,7 +67,6 @@ final class KeychainStorage: Sendable {
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
         ]
 
-        // Try to update existing item first to avoid creating duplicates
         let updateStatus = SecItemUpdate(query as CFDictionary, updateAttributes as CFDictionary)
 
         if updateStatus == errSecSuccess {
@@ -93,7 +79,6 @@ final class KeychainStorage: Sendable {
         }
 
         if updateStatus == errSecItemNotFound {
-            // Item doesn't exist yet, add it
             var addQuery = query
             addQuery[kSecValueData as String] = data
             addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
@@ -101,7 +86,6 @@ final class KeychainStorage: Sendable {
             let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
 
             if addStatus == errSecDuplicateItem {
-                // Another thread added it first — update instead
                 let retryStatus = SecItemUpdate(query as CFDictionary, updateAttributes as CFDictionary)
                 guard retryStatus == errSecSuccess else {
                     log(
@@ -136,7 +120,6 @@ final class KeychainStorage: Sendable {
             return
         }
 
-        // Update failed (e.g., code signature changed) — delete and re-add
         log(
             "Update failed, attempting delete and re-add",
             level: .info,
@@ -158,7 +141,6 @@ final class KeychainStorage: Sendable {
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
 
         if addStatus == errSecDuplicateItem {
-            // Race condition — update instead
             let retryStatus = SecItemUpdate(query as CFDictionary, updateAttributes as CFDictionary)
             guard retryStatus == errSecSuccess else {
                 throw KeychainStorageError.unexpectedStatus(retryStatus)

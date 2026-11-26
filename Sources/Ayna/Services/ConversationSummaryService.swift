@@ -1,10 +1,3 @@
-//
-//  ConversationSummaryService.swift
-//  ayna
-//
-//  Created on 12/25/25.
-//
-
 import Foundation
 import os.log
 
@@ -61,8 +54,6 @@ struct ConversationSummaryClearSnapshot: Sendable {
     }
 }
 
-/// Service for managing conversation summaries.
-/// Summaries are lightweight digests of recent conversations for context injection.
 @MainActor
 @Observable
 final class ConversationSummaryService {
@@ -81,7 +72,6 @@ final class ConversationSummaryService {
         Set<UUID>?
     ) async throws -> RecentConversationsDigest
     private let survivingConversationIdsLoader: @Sendable () async throws -> Set<UUID>
-    /// IDs of stored conversations, used at load to drop summaries of deleted ones.
     private let existingConversationIdsLoader: (@Sendable () async throws -> Set<UUID>)?
     private let persistenceQueue = OrderedAsyncOperationQueue()
     private var storageGeneration: UInt64 = 0
@@ -91,18 +81,14 @@ final class ConversationSummaryService {
     @ObservationIgnored private nonisolated(unsafe) var saveTask: Task<Void, Never>?
     private let saveDebounceDuration: Duration = .seconds(2)
 
-    /// Changes made before the stored digest loaded. They are replayed onto it once it does,
-    /// instead of replacing it, which used to drop every stored summary.
     private enum PendingChange {
         case upsert(ConversationSummary)
         case remove(UUID)
     }
 
     private var changesBeforeLoad: [PendingChange] = []
-    /// The load in progress, so concurrent callers share one load instead of racing.
     @ObservationIgnored private var inFlightLoad: Task<Void, Never>?
 
-    /// Token budget for summaries context (approximate)
     static let defaultTokenBudget = 500
 
     init(
@@ -163,9 +149,6 @@ final class ConversationSummaryService {
         saveTask?.cancel()
     }
 
-    // MARK: - Loading
-
-    /// Loads summaries from encrypted storage. Concurrent calls share one load.
     func loadSummaries() async {
         if let inFlightLoad {
             await inFlightLoad.value
@@ -201,7 +184,6 @@ final class ConversationSummaryService {
         let generation = storageGeneration
         do {
             var loadedDigest = try await summaryLoader()
-            // Summaries of conversations deleted while memory was off (or elsewhere) are dropped.
             let survivingIds = try? await existingConversationIdsLoader?()
             guard storageGeneration == generation, !isConversationClearInProgress else { return }
             let storedCount = loadedDigest.summaries.count
@@ -230,8 +212,6 @@ final class ConversationSummaryService {
             )
         } catch {
             guard storageGeneration == generation, !isConversationClearInProgress else { return }
-            // Stay unloaded and keep the queued changes: declaring an empty digest loaded would
-            // let the next save erase the stored summaries. A later load replays the queue.
             DiagnosticsLogger.log(
                 .conversationManager,
                 level: .error,
@@ -241,7 +221,6 @@ final class ConversationSummaryService {
         }
     }
 
-    /// Hides existing summaries immediately while the authoritative conversation clear runs.
     func invalidateForConversationClear() -> ConversationSummaryClearSnapshot {
         storageGeneration &+= 1
         conversationClearGeneration &+= 1
@@ -259,7 +238,6 @@ final class ConversationSummaryService {
         return snapshot
     }
 
-    /// Restores the in-memory digest when the authoritative conversation clear rolls back.
     func restoreAfterFailedConversationClear(_ snapshot: ConversationSummaryClearSnapshot) async throws {
         let clearGeneration = snapshot.generation
         storageGeneration &+= 1
@@ -288,22 +266,15 @@ final class ConversationSummaryService {
         }
     }
 
-    // MARK: - Summary Generation
-
-    /// Generates a summary for a conversation.
-    /// Uses simple extraction (not AI) for efficiency.
     func generateSummary(for conversation: Conversation) -> ConversationSummary {
-        // Extract key user messages
         let userMessages = conversation.messages
             .filter { $0.role == .user }
             .map(\.content)
 
-        // Take first few messages as snippets
         let snippets = userMessages
             .prefix(ConversationSummary.maxSnippets)
             .map { String($0.prefix(ConversationSummary.maxSnippetLength)) }
 
-        // Extract simple topics from content (keywords)
         let topics = extractTopics(from: userMessages)
 
         return ConversationSummary(
@@ -315,9 +286,7 @@ final class ConversationSummaryService {
         )
     }
 
-    /// Extracts simple topics/keywords from messages.
     private func extractTopics(from messages: [String]) -> [String] {
-        // Common words to ignore
         let stopWords: Set = [
             "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
             "have", "has", "had", "do", "does", "did", "will", "would", "could",
@@ -334,39 +303,32 @@ final class ConversationSummaryService {
             "want", "like", "know", "think", "make", "get", "go", "see", "come"
         ]
 
-        // Combine all messages and extract words
         let allText = messages.joined(separator: " ")
         let words = allText
             .lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { $0.count > 3 && !stopWords.contains($0) }
 
-        // Count word frequency
         var wordCounts: [String: Int] = [:]
         for word in words {
             wordCounts[word, default: 0] += 1
         }
 
-        // Return top 5 most frequent words
         return wordCounts
             .sorted { $0.value > $1.value }
             .prefix(5)
             .map(\.key)
     }
 
-    /// Updates the digest with a new summary.
     func updateSummary(for conversation: Conversation) {
-        // A conversation with no user message yet has nothing worth recalling.
         guard conversation.messages.contains(where: { $0.role == .user }) else { return }
         record(.upsert(generateSummary(for: conversation)))
     }
 
-    /// Removes a summary when a conversation is deleted.
     func removeSummary(for conversationId: UUID) {
         record(.remove(conversationId))
     }
 
-    /// Applies a change now; saves it, or replays it onto the stored digest once that loads.
     private func record(_ change: PendingChange) {
         Self.apply(change, to: &digest)
         guard isLoaded else {
@@ -384,9 +346,6 @@ final class ConversationSummaryService {
         }
     }
 
-    // MARK: - Backfill
-
-    /// Backfills summaries for existing conversations when memory is first enabled.
     func backfillSummaries(from conversations: [Conversation], limit: Int = 10) {
         let recent = conversations
             .sorted { $0.updatedAt > $1.updatedAt }
@@ -404,12 +363,6 @@ final class ConversationSummaryService {
         )
     }
 
-    // MARK: - Context Formatting
-
-    /// Formats summaries for injection into AI context.
-    /// - Parameter tokenBudget: Approximate token budget
-    /// - Parameter excludeConversationId: Exclude the current conversation
-    /// - Returns: Formatted string for context injection, or nil if no summaries.
     func formattedForContext(
         tokenBudget: Int = defaultTokenBudget,
         excludeConversationId: UUID? = nil
@@ -436,12 +389,9 @@ final class ConversationSummaryService {
         return result.count > "Recent Conversations:\n".count ? result : nil
     }
 
-    /// Returns the number of stored summaries.
     var summaryCount: Int {
         digest.summaries.count
     }
-
-    // MARK: - Persistence
 
     private func scheduleSave() {
         saveTask?.cancel()
@@ -494,8 +444,6 @@ final class ConversationSummaryService {
         await activeSaveTask?.value
     }
 
-    /// Forces an immediate save, once the stored digest has loaded; saving before that would
-    /// overwrite the stored summaries with only the changes queued so far.
     func saveImmediately() async {
         if let inFlightLoad {
             await inFlightLoad.value
@@ -510,7 +458,6 @@ final class ConversationSummaryService {
         try await saveNowThrowing()
     }
 
-    /// Clears all summaries.
     func clearAllSummaries(
         preservingCurrentDigest: Bool = false,
         completingConversationClear: Bool = false,

@@ -1,47 +1,26 @@
-//
-//  AgentSettings.swift
-//  Ayna
-//
-//  Settings model for agentic tool configuration.
-//  Persisted via AppPreferences.
-//
-
 import Combine
 import Foundation
 
-/// Settings for native agentic tools (macOS only)
 struct AgentSettings: Codable, Sendable {
-    /// Whether agentic tools are enabled
     var isEnabled: Bool
 
-    /// Maximum tool chain depth (number of consecutive tool calls)
     var maxToolChainDepth: Int
 
-    /// Default permission level for different tool categories
     var defaultPermissions: [String: PermissionLevel]
 
-    /// Timeout for shell commands in seconds
     var commandTimeoutSeconds: Int
 
-    /// Whether to require approval for file operations outside project
     var requireApprovalOutsideProject: Bool
 
-    /// Whether to persist approvals across sessions
     var persistApprovals: Bool
 
-    /// Approval timeout in seconds (0 = no timeout)
     var approvalTimeoutSeconds: Int
 
-    /// Additional blocked command patterns (added to defaults)
     var additionalBlockedPatterns: [String]
 
-    /// Additional allowed commands (added to defaults)
     var additionalAllowedCommands: [String]
 
-    /// Project root path (if set)
     var projectRootPath: String?
-
-    // MARK: - Defaults
 
     static let `default` = AgentSettings(
         isEnabled: true,
@@ -67,26 +46,19 @@ struct AgentSettings: Codable, Sendable {
         projectRootPath: nil
     )
 
-    // MARK: - Storage Key
-
     private static let storageKey = "agentSettings"
 
-    // MARK: - Persistence
-
-    /// Load settings from persistent storage
     static func load() -> AgentSettings {
         guard let data = AppPreferences.storage.data(forKey: storageKey),
               var settings = try? JSONDecoder().decode(AgentSettings.self, from: data)
         else {
             return .default
         }
-        // Tools added since the settings were saved get their default level.
         settings.defaultPermissions = AgentSettings.default.defaultPermissions
             .merging(settings.defaultPermissions) { _, saved in saved }
         return settings
     }
 
-    /// Save settings to persistent storage
     func save() {
         guard let data = try? JSONEncoder().encode(self) else {
             return
@@ -94,23 +66,16 @@ struct AgentSettings: Codable, Sendable {
         AppPreferences.storage.set(data, forKey: AgentSettings.storageKey)
     }
 
-    // MARK: - Convenience
-
-    /// Returns the permission level for a tool
     func permissionLevel(for tool: String) -> PermissionLevel {
         defaultPermissions[tool] ?? .askAlways
     }
 
-    /// Updates the permission level for a tool
     mutating func setPermissionLevel(_ level: PermissionLevel, for tool: String) {
         defaultPermissions[tool] = level
     }
 }
 
-// MARK: - Observable Wrapper
-
 #if os(macOS)
-    /// Observable wrapper for AgentSettings for SwiftUI binding
     @Observable @MainActor
     final class AgentSettingsStore {
         static let shared = AgentSettingsStore()
@@ -124,14 +89,11 @@ struct AgentSettings: Codable, Sendable {
 
         private init() {
             settings = AgentSettings.load()
-            // Apply loaded settings to services on startup
-            // Using Task to defer until AIService.shared is fully initialized
             Task { @MainActor in
                 self.applyToServices()
             }
         }
 
-        /// Applies current settings to the relevant services
         func applyToServices() {
             guard let builtinService = AIService.shared.builtinToolService,
                   let permissionService = AIService.shared.permissionService
@@ -143,14 +105,11 @@ struct AgentSettings: Codable, Sendable {
             permissionService.approvalTimeoutSeconds = settings.approvalTimeoutSeconds
             permissionService.persistApprovalsAcrossSessions = settings.persistApprovals
 
-            // web_fetch is served by WebFetchService, which has no approval flow: it is either
-            // available (any level but Denied) or not.
             WebFetchService.shared.isEnabled = settings.isEnabled
                 && settings.permissionLevel(for: WebFetchService.toolName) != .denied
             WebFetchService.shared.timeoutSeconds = settings.commandTimeoutSeconds
         }
 
-        /// Resets to default settings
         func resetToDefaults() {
             settings = .default
         }

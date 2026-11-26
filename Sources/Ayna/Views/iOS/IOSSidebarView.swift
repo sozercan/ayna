@@ -1,10 +1,4 @@
 #if os(iOS)
-//
-    //  IOSSidebarView.swift
-    //  ayna
-//
-    //  Created on 11/22/25.
-//
 
     import os.log
     import SwiftUI
@@ -82,8 +76,6 @@
                 }
         }
 
-        // MARK: - Empty State View
-
         private var emptyStateView: some View {
             VStack(spacing: Spacing.xxl) {
                 Spacer()
@@ -130,8 +122,6 @@
             .accessibilityIdentifier("sidebar.emptyState")
         }
 
-        // MARK: - Conversation List View
-
         private var conversationListView: some View {
             List(selection: $conversationManager.selectedConversationId) {
                 ForEach(conversationSections) { section in
@@ -166,10 +156,6 @@
                     }
                 }
 
-                // Hidden row for new conversation navigation
-                // This ensures NavigationSplitView can navigate to the new chat view
-                // even when it's not in the list of conversations
-                // Moved to bottom to prevent gap at top of list
                 Color.clear
                     .frame(height: 0)
                     .listRowInsets(EdgeInsets())
@@ -179,7 +165,6 @@
             }
             .listStyle(.plain)
             .refreshable {
-                // Reload from disk, e.g. after the Watch changed conversations.
                 HapticEngine.pullToRefresh()
                 await conversationManager.reloadConversations()
             }
@@ -217,8 +202,6 @@
             }
         }
 
-        // MARK: - Bottom Bar
-
         private enum IMessageBottomBar {
             static let barHeight: CGFloat = 40
             static let composeSize: CGFloat = 40
@@ -251,7 +234,6 @@
                 .background(Theme.background)
             } else {
                 HStack(spacing: IMessageBottomBar.elementSpacing) {
-                    // iMessage-style search bar
                     HStack(spacing: IMessageBottomBar.innerSpacing) {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 15, weight: .regular))
@@ -305,8 +287,6 @@
             }
         }
 
-        // MARK: - Private Methods
-
         private func toggleSelection(for conversation: Conversation) {
             if selectedConversations.contains(conversation.id) {
                 selectedConversations.remove(conversation.id)
@@ -348,9 +328,7 @@
             }
         }
 
-        /// Start a new conversation and navigate to it
         private func startNewConversation() {
-            // If no models are available, direct user to settings
             if aiService.usableModels.isEmpty {
                 showSettings = true
                 return
@@ -358,10 +336,8 @@
 
             HapticEngine.newConversation()
 
-            // Set selection to new conversation ID
             conversationManager.selectedConversationId = ConversationManager.newConversationId
 
-            // On iPhone, collapse sidebar to show detail view
             withAnimation {
                 columnVisibility = .detailOnly
             }
@@ -409,8 +385,6 @@
     struct ConversationRow: View {
         let conversation: Conversation
 
-        // MARK: - Cached Formatters (expensive to create)
-
         private static let timeFormatter: DateFormatter = {
             let formatter = DateFormatter()
             formatter.dateFormat = "HH:mm"
@@ -436,7 +410,6 @@
             }
         }
 
-        /// Generate a consistent color based on conversation ID for unique avatars
         private var avatarColor: Color {
             let hash = conversation.id.hashValue
             let hue = Double((hash % 360 + 360) % 360) / 360.0
@@ -445,7 +418,6 @@
 
         var body: some View {
             HStack(spacing: Spacing.md) {
-                // Avatar - unique color per conversation based on ID hash
                 Circle()
                     .fill(
                         LinearGradient(
@@ -490,10 +462,6 @@
         }
     }
 
-    // MARK: - iMessage Style Modifiers
-
-    /// A view modifier that applies iMessage-style capsule background
-    /// Uses glassEffect on iOS 26+, falls back to solid fill on earlier versions
     private struct IMessageCapsuleStyle: ViewModifier {
         func body(content: Content) -> some View {
             #if compiler(>=6.2)
@@ -517,8 +485,6 @@
         }
     }
 
-    /// A view modifier that applies iMessage-style circle background for buttons
-    /// Uses interactive glassEffect on iOS 26+, falls back to solid fill on earlier versions
     private struct IMessageCircleStyle: ViewModifier {
         func body(content: Content) -> some View {
             #if compiler(>=6.2)

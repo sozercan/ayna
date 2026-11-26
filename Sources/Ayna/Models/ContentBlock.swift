@@ -1,10 +1,3 @@
-//
-//  ContentBlock.swift
-//  ayna
-//
-//  Created on 11/22/25.
-//
-
 import Foundation
 import SwiftUI
 

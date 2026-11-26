@@ -1,26 +1,15 @@
-//
-//  AIProviderProtocol.swift
-//  ayna
-//
-//  Created on 12/11/25.
-//
-
 import Foundation
 
-/// Configuration for an AI provider request
 struct AIProviderRequestConfig: Sendable {
     let model: String
     let apiKey: String
     let customEndpoint: String?
     let azureAPIVersion: String
 
-    /// Maximum tokens to generate (optional, provider-specific defaults apply)
     let maxTokens: Int?
 
-    /// Temperature for response generation (optional, provider defaults apply)
     let temperature: Double?
 
-    /// Budget tokens for extended thinking (Anthropic only)
     let thinkingBudget: Int?
 
     init(
@@ -42,7 +31,6 @@ struct AIProviderRequestConfig: Sendable {
     }
 }
 
-/// Callbacks for streaming AI responses
 struct AIProviderStreamCallbacks: Sendable {
     let onChunk: @Sendable (String) -> Void
     let onComplete: @Sendable () -> Void
@@ -68,27 +56,13 @@ struct AIProviderStreamCallbacks: Sendable {
     }
 }
 
-/// Protocol defining the request-scoped provider interface used by Anthropic.
-///
-/// OpenAI-compatible providers are routed directly through `AIService`; this
-/// abstraction remains for Anthropic request ownership and test injection.
 protocol AIProviderProtocol: AnyObject, Sendable {
-    /// The provider type this implementation handles
     @MainActor
     var providerType: AIProvider { get }
 
-    /// Whether this provider requires an API key
     @MainActor
     var requiresAPIKey: Bool { get }
 
-    /// Send a chat message to the provider
-    ///
-    /// - Parameters:
-    ///   - messages: The conversation history
-    ///   - config: Provider-specific configuration
-    ///   - stream: Whether to stream the response
-    ///   - tools: Optional tool definitions for function calling
-    ///   - callbacks: Callbacks for handling the response
     @MainActor
     func sendMessage(
         messages: [Message],
@@ -98,20 +72,13 @@ protocol AIProviderProtocol: AnyObject, Sendable {
         callbacks: AIProviderStreamCallbacks
     )
 
-    /// Cancel any in-progress request
     @MainActor
     func cancelRequest()
 
-    /// Check if the provider is ready to handle requests
-    ///
-    /// - Parameters:
-    ///   - config: The request configuration to validate
-    /// - Returns: nil if ready, or an error describing why not ready
     @MainActor
     func validateConfiguration(_ config: AIProviderRequestConfig) -> Error?
 }
 
-/// Default implementations for AIProviderProtocol
 extension AIProviderProtocol {
     @MainActor
     func validateConfiguration(_ config: AIProviderRequestConfig) -> Error? {

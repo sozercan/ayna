@@ -1,18 +1,10 @@
 // swiftformat:options --ifdef no-indent
 #if os(watchOS)
-//
-//  WatchMessageComposer.swift
-//  Ayna Watch App
-//
-//  Created on 11/29/25.
-//
 
 #if os(watchOS)
 
 import SwiftUI
 
-/// Message composer for Watch with dictation and text input
-/// Supports voice dictation (primary) and scribble/keyboard (secondary)
 struct WatchMessageComposer: View {
     let onSend: (String) -> Void
     let onCancel: () -> Void
@@ -23,7 +15,6 @@ struct WatchMessageComposer: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: Spacing.md) {
-                // Text field with dictation
                 TextField("Message", text: $messageText)
                     .focused($isTextFieldFocused)
                     .textContentType(.none)
@@ -32,9 +23,7 @@ struct WatchMessageComposer: View {
                         sendMessage()
                     }
 
-                // Quick action buttons
                 HStack(spacing: Spacing.lg) {
-                    // Cancel button
                     Button {
                         onCancel()
                     } label: {
@@ -46,7 +35,6 @@ struct WatchMessageComposer: View {
 
                     Spacer()
 
-                    // Send button
                     Button {
                         sendMessage()
                     } label: {
@@ -70,7 +58,6 @@ struct WatchMessageComposer: View {
             }
         }
         .onAppear {
-            // Auto-focus the text field to trigger dictation option
             isTextFieldFocused = true
         }
     }
@@ -84,7 +71,6 @@ struct WatchMessageComposer: View {
     }
 }
 
-/// Quick replies sheet with common responses
 struct WatchQuickRepliesView: View {
     let onSelect: (String) -> Void
 

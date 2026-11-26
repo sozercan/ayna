@@ -1,11 +1,5 @@
 // swiftformat:options --ifdef no-indent
 #if os(iOS)
-//
-//  IOSMessageView.swift
-//  ayna
-//
-//  Created on 11/22/25.
-//
 
 import Combine
 import ImageIO
@@ -13,10 +7,6 @@ import os.log
 import Photos
 import SwiftUI
 import UniformTypeIdentifiers
-
-// MARK: - Design System Integration
-
-// Uses Theme, Typography, Spacing, and Motion from Design/
 
 struct IOSMessageView: View {
     let message: Message
@@ -52,9 +42,6 @@ struct IOSMessageView: View {
         self.onSwitchModel = onSwitchModel
         self.onEdit = onEdit
         self.availableModels = availableModels
-        // Parse content synchronously on init to avoid flash of empty/raw text bubbles
-        // Tool messages start collapsed (preview uses plain text), so defer parsing
-        // to the async background path to avoid blocking the main thread on large results.
         if message.role == .tool {
             _contentBlocks = State(initialValue: [])
             _lastContentHash = State(initialValue: 0)
@@ -62,8 +49,6 @@ struct IOSMessageView: View {
             _contentBlocks = State(initialValue: MarkdownRenderer.parse(message.content))
             _lastContentHash = State(initialValue: message.content.hashValue)
         }
-        // Pre-set hasAppeared to true for messages that are likely already in view
-        // This prevents janky animations when scrolling through existing messages
         _hasAppeared = State(
             initialValue: !message.content.isEmpty
                 || !(message.citations?.isEmpty ?? true)
@@ -81,26 +66,20 @@ struct IOSMessageView: View {
         }
     }
 
-    // MARK: - Tool Message View
-
     private var toolMessageView: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: Spacing.xxs) {
-                // Tool name label
                 Text(toolDisplayName)
                     .font(Typography.captionBold)
                     .foregroundStyle(Theme.textSecondary)
 
-                // Tool result content with collapse/expand
                 VStack(alignment: .leading, spacing: Spacing.sm) {
-                    // Header with expand/collapse button
                     Button {
                         withAnimation(Motion.easeStandard) {
                             isToolExpanded.toggle()
                         }
                     } label: {
                         HStack {
-                            // Preview text when collapsed
                             if !isToolExpanded {
                                 Text(toolPreviewText)
                                     .font(Typography.bodySecondary)
@@ -117,7 +96,6 @@ struct IOSMessageView: View {
                     .accessibilityLabel(isToolExpanded ? "Collapse tool result" : "Expand tool result")
                     .accessibilityIdentifier("message.tool.expandButton")
 
-                    // Expanded content
                     if isToolExpanded {
                         Divider()
                             .background(Theme.separator)
@@ -153,7 +131,6 @@ struct IOSMessageView: View {
 
     private var toolPreviewText: String {
         let content = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Extract summary if present, otherwise show first part
         if let summaryRange = content.range(of: "**Summary:**") {
             let afterSummary = content[summaryRange.upperBound...]
             if let endRange = afterSummary.range(of: "\n\n") {
@@ -163,8 +140,6 @@ struct IOSMessageView: View {
         }
         return String(content.prefix(100)) + (content.count > 100 ? "..." : "")
     }
-
-    // MARK: - Regular Message View
 
     private var shouldShowTypingIndicator: Bool {
         guard !hasReasoning else { return false }
@@ -185,10 +160,7 @@ struct IOSMessageView: View {
         return !reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// Whether this message should be hidden (empty assistant message waiting for tool execution)
     private var shouldHideMessage: Bool {
-        // Hide empty assistant messages that have pending tool calls
-        // This prevents showing an empty bubble artifact while waiting for tool execution
         message.role == .assistant &&
             message.content.isEmpty &&
             message.mediaType != .image &&
@@ -200,13 +172,11 @@ struct IOSMessageView: View {
     @ViewBuilder
     private var regularMessageView: some View {
         if shouldHideMessage {
-            // Don't render anything for empty assistant messages with pending tool calls
             EmptyView()
         } else {
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: Spacing.xxs) {
                 regularMessageContent
 
-                // Edited indicator
                 if message.isEdited {
                     Text("edited")
                         .font(Typography.micro)
@@ -268,13 +238,10 @@ struct IOSMessageView: View {
                     )
                 }
 
-                // Show typing indicator for empty assistant messages (waiting for response)
-                // Don't show if the message has tool calls (it's waiting for tool execution)
                 if shouldShowTypingIndicator {
                     IOSTypingIndicatorView()
                 } else if contentBlocks.isEmpty {
                     if !message.content.isEmpty {
-                        // Show raw text while parsing or if parsing fails/returns empty
                         Text(message.content)
                     }
                 } else {
@@ -283,7 +250,6 @@ struct IOSMessageView: View {
                     }
                 }
 
-                // Citation sources footer for web search results
                 if let citations = message.citations, !citations.isEmpty {
                     IOSCitationSourcesFooter(citations: citations)
                         .padding(.top, Spacing.xxs)
@@ -298,7 +264,6 @@ struct IOSMessageView: View {
             )
             .foregroundStyle(message.role == .user ? Theme.userBubbleText : Theme.assistantBubbleText)
             .frame(maxWidth: Spacing.Component.bubbleMaxWidth, alignment: message.role == .user ? .trailing : .leading)
-            // Message bubble physics: subtle spring animation on appear
             .scaleEffect(hasAppeared ? 1.0 : 0.92)
             .opacity(hasAppeared ? 1.0 : 0.0)
             .onAppear {
@@ -307,11 +272,9 @@ struct IOSMessageView: View {
                 }
             }
             .contextMenu {
-                // Copy button - available for all messages with content
                 if !message.content.isEmpty {
                     Button {
                         UIPasteboard.general.string = message.content
-                        // Use centralized haptic engine
                         HapticEngine.notification(.success)
                         DiagnosticsLogger.log(
                             .chatView,
@@ -323,7 +286,6 @@ struct IOSMessageView: View {
                     }
                 }
 
-                // Edit button - only for user messages
                 if message.role == .user, let onEdit {
                     Button {
                         HapticEngine.impact(.medium)
@@ -340,10 +302,8 @@ struct IOSMessageView: View {
                     }
                 }
 
-                // Retry button - only for assistant messages
                 if message.role == .assistant, let onRetry {
                     Button {
-                        // Use centralized haptic engine
                         HapticEngine.impact(.medium)
                         DiagnosticsLogger.log(
                             .chatView,
@@ -357,7 +317,6 @@ struct IOSMessageView: View {
                     }
                 }
 
-                // Switch Model submenu - only for assistant messages
                 if message.role == .assistant, let onSwitchModel, !availableModels.isEmpty {
                     Menu {
                         ForEach(availableModels, id: \.self) { model in
@@ -384,11 +343,9 @@ struct IOSMessageView: View {
                     }
                 }
 
-                // Copy image if present - use cached decodedImage to prevent memory leaks
                 if message.mediaType == .image, let image = decodedImage {
                     Button {
                         UIPasteboard.general.image = image
-                        // Use centralized haptic engine
                         HapticEngine.notification(.success)
                         DiagnosticsLogger.log(
                             .chatView,
@@ -412,24 +369,19 @@ struct IOSMessageView: View {
             }
         }
         .onChange(of: message.content) { _, newContent in
-            // Only re-parse if content actually changed
             let newHash = newContent.hashValue
             guard newHash != lastContentHash else { return }
             lastContentHash = newHash
 
-            // Cancel any pending debounce task
             parseDebounceTask?.cancel()
 
-            // Check if enough time has passed since last parse (400ms minimum during streaming)
             let now = Date()
             let timeSinceLastParse = now.timeIntervalSince(lastParseTime)
-            let minInterval: TimeInterval = 0.4 // 400ms minimum between parses
+            let minInterval: TimeInterval = 0.4
 
             if timeSinceLastParse >= minInterval {
-                // Enough time has passed, parse immediately
                 performParse(content: newContent)
             } else {
-                // Debounce: wait for remaining time before parsing
                 let waitTime = minInterval - timeSinceLastParse
                 parseDebounceTask = Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(Int(waitTime * 1000)))
@@ -439,14 +391,12 @@ struct IOSMessageView: View {
             }
         }
         .onChange(of: message.imagePath) { _, newPath in
-            // Reload image when path changes (e.g., after generation completes)
             if newPath != nil {
                 decodedImage = nil
                 loadDecodedImage()
             }
         }
         .onChange(of: message.imageData) { _, newData in
-            // Reload image when data changes
             if newData != nil {
                 decodedImage = nil
                 loadDecodedImage()
@@ -523,7 +473,6 @@ struct IOSMessageView: View {
     }
 }
 
-/// Collapsible reasoning content shared by single- and multi-model iOS responses.
 struct IOSReasoningView: View {
     let reasoning: String
     let isStreaming: Bool
@@ -632,13 +581,10 @@ private struct MessageBubbleShape: Shape {
             let radius: CGFloat = Spacing.CornerRadius.bubble
 
             if isFromCurrentUser {
-                // Right bubble
                 let bodyMaxX = rect.maxX - tailWidth
 
-                // Start top-left
                 path.move(to: CGPoint(x: rect.minX, y: rect.minY + radius))
 
-                // Top-left corner
                 path.addArc(
                     center: CGPoint(x: rect.minX + radius, y: rect.minY + radius),
                     radius: radius,
@@ -647,10 +593,8 @@ private struct MessageBubbleShape: Shape {
                     clockwise: false
                 )
 
-                // Top edge
                 path.addLine(to: CGPoint(x: bodyMaxX - radius, y: rect.minY))
 
-                // Top-right corner
                 path.addArc(
                     center: CGPoint(x: bodyMaxX - radius, y: rect.minY + radius),
                     radius: radius,
@@ -659,28 +603,22 @@ private struct MessageBubbleShape: Shape {
                     clockwise: false
                 )
 
-                // Right edge
                 path.addLine(to: CGPoint(x: bodyMaxX, y: rect.maxY - radius))
 
-                // Tail (Bottom-Right)
-                // Curve out to tip
                 path.addCurve(
                     to: CGPoint(x: rect.maxX, y: rect.maxY),
                     control1: CGPoint(x: bodyMaxX, y: rect.maxY),
                     control2: CGPoint(x: rect.maxX, y: rect.maxY)
                 )
 
-                // Curve back to bottom
                 path.addCurve(
                     to: CGPoint(x: bodyMaxX - 4, y: rect.maxY),
                     control1: CGPoint(x: rect.maxX - 2, y: rect.maxY),
                     control2: CGPoint(x: bodyMaxX + 2, y: rect.maxY)
                 )
 
-                // Bottom edge
                 path.addLine(to: CGPoint(x: rect.minX + radius, y: rect.maxY))
 
-                // Bottom-left corner
                 path.addArc(
                     center: CGPoint(x: rect.minX + radius, y: rect.maxY - radius),
                     radius: radius,
@@ -692,13 +630,10 @@ private struct MessageBubbleShape: Shape {
                 path.closeSubpath()
 
             } else {
-                // Left bubble
                 let bodyMinX = rect.minX + tailWidth
 
-                // Start top-left (after tail)
                 path.move(to: CGPoint(x: bodyMinX, y: rect.minY + radius))
 
-                // Top-left corner
                 path.addArc(
                     center: CGPoint(x: bodyMinX + radius, y: rect.minY + radius),
                     radius: radius,
@@ -707,10 +642,8 @@ private struct MessageBubbleShape: Shape {
                     clockwise: false
                 )
 
-                // Top edge
                 path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
 
-                // Top-right corner
                 path.addArc(
                     center: CGPoint(x: rect.maxX - radius, y: rect.minY + radius),
                     radius: radius,
@@ -719,10 +652,8 @@ private struct MessageBubbleShape: Shape {
                     clockwise: false
                 )
 
-                // Right edge
                 path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
 
-                // Bottom-right corner
                 path.addArc(
                     center: CGPoint(x: rect.maxX - radius, y: rect.maxY - radius),
                     radius: radius,
@@ -731,25 +662,20 @@ private struct MessageBubbleShape: Shape {
                     clockwise: false
                 )
 
-                // Bottom edge
                 path.addLine(to: CGPoint(x: bodyMinX + 4, y: rect.maxY))
 
-                // Tail (Bottom-Left)
-                // Curve out to tip
                 path.addCurve(
                     to: CGPoint(x: rect.minX, y: rect.maxY),
                     control1: CGPoint(x: bodyMinX - 2, y: rect.maxY),
                     control2: CGPoint(x: rect.minX + 2, y: rect.maxY)
                 )
 
-                // Curve back to side
                 path.addCurve(
                     to: CGPoint(x: bodyMinX, y: rect.maxY - radius),
                     control1: CGPoint(x: rect.minX, y: rect.maxY),
                     control2: CGPoint(x: bodyMinX, y: rect.maxY)
                 )
 
-                // Left edge
                 path.addLine(to: CGPoint(x: bodyMinX, y: rect.minY + radius))
 
                 path.closeSubpath()
@@ -890,7 +816,7 @@ struct IOSContentBlockView: View {
         case .divider:
             Divider()
         case .table:
-            Text("[Table]") // Simplified for now
+            Text("[Table]")
         case let .tool(name, result):
             VStack(alignment: .leading) {
                 Text("Tool: \(name)").font(Typography.captionBold)
@@ -903,8 +829,6 @@ struct IOSContentBlockView: View {
     }
 }
 
-/// Typing indicator for text responses (iOS version) - iMessage style wave
-/// Uses phaseAnimator for efficient animation without Timer overhead
 struct IOSTypingIndicatorView: View {
     var body: some View {
         HStack(spacing: Spacing.xs) {
@@ -916,7 +840,6 @@ struct IOSTypingIndicatorView: View {
     }
 }
 
-/// Individual dot with staggered phase animation for wave effect
 private struct TypingDot: View {
     let index: Int
 
@@ -939,7 +862,6 @@ private struct TypingDot: View {
     }
 }
 
-/// Sheet view for editing a message on iOS
 struct IOSMessageEditSheet: View {
     let originalContent: String
     @Binding var editText: String

@@ -1,17 +1,8 @@
-//
-//  AnthropicEndpointResolverTests.swift
-//  aynaTests
-//
-//  Created on 1/30/26.
-//
-
 @testable import Ayna
 import Foundation
 import Testing
 
 struct AnthropicEndpointResolverTests {
-    // MARK: - Default Endpoint Tests
-
     @Test("Default endpoint returns correct URL")
     func defaultEndpointReturnsCorrectURL() throws {
         let url = try AnthropicEndpointResolver.messagesURL(customEndpoint: nil)
@@ -29,8 +20,6 @@ struct AnthropicEndpointResolverTests {
         let url = try AnthropicEndpointResolver.messagesURL(customEndpoint: "   ")
         #expect(url.absoluteString == "https://api.anthropic.com/v1/messages")
     }
-
-    // MARK: - Custom Endpoint Tests
 
     @Test("Custom endpoint appends /v1/messages path")
     func customEndpointAppendsV1MessagesPath() throws {
@@ -62,8 +51,6 @@ struct AnthropicEndpointResolverTests {
         #expect(url.absoluteString == "https://my-proxy.com:8080/v1/messages")
     }
 
-    // MARK: - Localhost Development Tests
-
     @Test("HTTP localhost is allowed for development")
     func httpLocalhostIsAllowedForDevelopment() throws {
         let url = try AnthropicEndpointResolver.messagesURL(customEndpoint: "http://localhost:8080")
@@ -87,8 +74,6 @@ struct AnthropicEndpointResolverTests {
         let url = try AnthropicEndpointResolver.messagesURL(customEndpoint: "https://localhost:8080")
         #expect(url.absoluteString == "https://localhost:8080/v1/messages")
     }
-
-    // MARK: - Error Cases
 
     @Test("HTTP non-localhost is rejected")
     func httpNonLocalhostIsRejected() {

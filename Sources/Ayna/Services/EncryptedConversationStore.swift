@@ -1,21 +1,10 @@
-//
-//  EncryptedConversationStore.swift
-//  ayna
-//
-//  Created on 11/14/25.
-//
-
-// This legacy store remains in one file while migration and transaction helpers are extracted incrementally.
 // swiftlint:disable file_length
 
 import CryptoKit
 import Foundation
 import os.log
 
-/// Errors specific to the encrypted conversation store
 enum EncryptedStoreError: LocalizedError {
-    /// The encryption key was previously created but is now missing (e.g., after device restore/migration)
-    /// This indicates the key was deleted or corrupted, and existing encrypted data cannot be recovered
     case keyLost
     case clearBackupCleanupFailed(paths: [String])
     case clearCleanupPending(paths: [String])
@@ -123,7 +112,6 @@ private struct PrivacyCleanupMarkerState: Codable {
     }
 }
 
-// The store remains monolithic while migration and transaction helpers are extracted incrementally.
 // swiftlint:disable:next type_body_length
 final class EncryptedConversationStore: Sendable {
     nonisolated static let shared = EncryptedConversationStore()
@@ -227,7 +215,6 @@ final class EncryptedConversationStore: Sendable {
         static let maximumEntryCost = 4 * 1024 * 1024
         static let maximumTotalCost = 32 * 1024 * 1024
 
-        // Keeping the cache entry private to its owning cache avoids widening the file's API.
         // swiftlint:disable:next nesting
         struct Entry: Sendable {
             let fileVersion: FileVersion
@@ -306,7 +293,6 @@ final class EncryptedConversationStore: Sendable {
     }
 
     private final class OperationGenerationRegistry: @unchecked Sendable {
-        // The generation token is meaningful only within its owning registry.
         // swiftlint:disable:next nesting
         struct Generation: Equatable, Sendable {
             let global: UInt64
@@ -942,9 +928,7 @@ final class EncryptedConversationStore: Sendable {
                 let markerURL = parentDirectory.appendingPathComponent(markerFileName)
                 do {
                     try FileManager.default.removeItem(at: markerURL)
-                } catch let error as CocoaError where error.code == .fileNoSuchFile {
-                    // The privacy marker was already acknowledged by another cleanup pass.
-                }
+                } catch let error as CocoaError where error.code == .fileNoSuchFile {}
                 guard !transactionId.isEmpty else { continue }
                 let commitMarkerURL = parentDirectory.appendingPathComponent(
                     "\(scopedCommitMarkerPrefix)\(transactionId)"
@@ -1147,7 +1131,6 @@ final class EncryptedConversationStore: Sendable {
         let loadGeneration = operationGenerations.currentGlobalGeneration()
 
         return try await Task.detached(priority: .userInitiated) {
-            // 1. Check for legacy file and migrate if needed
             if FileManager.default.fileExists(atPath: legacyFileURL.path) {
                 let keyData = try keyCache.keyData()
                 DiagnosticsLogger.log(
@@ -1196,7 +1179,6 @@ final class EncryptedConversationStore: Sendable {
                 }
             }
 
-            // 2. Load from directory
             let encryptedFileURLs = try Self.conversationFileURLs(in: directoryURL)
 
             guard !encryptedFileURLs.isEmpty else {
@@ -1247,7 +1229,6 @@ final class EncryptedConversationStore: Sendable {
         }.value
     }
 
-    // Metadata loading also owns one-time legacy migration and sidecar repair.
     // swiftlint:disable:next function_body_length
     func loadConversationMetadata() async throws -> [ConversationMetadata] {
         try ensureClearRecoveryResolved()
@@ -1262,9 +1243,6 @@ final class EncryptedConversationStore: Sendable {
         let loadGeneration = operationGenerations.currentGlobalGeneration()
 
         return try await Task.detached(priority: .userInitiated) {
-            // Keep metadata loading complete for legacy users. The first metadata load
-            // migrates just like loadConversations(); subsequent loads can read small
-            // sidecar records instead of full message histories.
             if FileManager.default.fileExists(atPath: legacyFileURL.path) {
                 let keyData = try keyCache.keyData()
                 let conversations = try Self.deduplicatedLegacyConversations(
@@ -1630,7 +1608,6 @@ final class EncryptedConversationStore: Sendable {
         }
     }
 
-    // Search validation, index repair, and one retry are intentionally kept atomic.
     // swiftlint:disable:next cyclomatic_complexity function_body_length function_parameter_count
     private nonisolated static func fullTextSearchMatches(
         query: String,
@@ -2024,7 +2001,6 @@ final class EncryptedConversationStore: Sendable {
                     )
                     return
                 }
-                // The index contains full message text, so remove it before the authoritative record.
                 let searchIndexURL = Self.searchIndexFileURL(
                     for: conversationId,
                     in: searchIndexDirectoryURL
@@ -2057,7 +2033,6 @@ final class EncryptedConversationStore: Sendable {
         }.value
     }
 
-    // Deprecated: Use save(_ conversation:) instead
     func save(_ conversations: [Conversation]) async throws {
         for conversation in conversations {
             try await save(conversation)
@@ -2071,7 +2046,6 @@ final class EncryptedConversationStore: Sendable {
         return nil
     }
 
-    // Clear is a transactional sequence whose rollback steps must remain adjacent.
     // swiftlint:disable:next function_body_length
     func clear(attachmentCleanupSnapshot: AttachmentCleanupSnapshot? = nil) throws {
         let parentDirectory = directoryURL.deletingLastPathComponent()
@@ -2239,8 +2213,6 @@ final class EncryptedConversationStore: Sendable {
         log("Cleared encrypted conversation store")
     }
 
-    // MARK: - Helpers
-
     private nonisolated static func loadCanonicalConversations(
         in directory: URL,
         keyData: Data,
@@ -2248,7 +2220,6 @@ final class EncryptedConversationStore: Sendable {
         operationGenerations: OperationGenerationRegistry
     ) async throws -> [Conversation] {
         let fileURLsById = try conversationFileURLsById(in: directory)
-        // The tuple is local task-group state and is destructured immediately after loading.
         // swiftlint:disable:next large_tuple
         let snapshots = fileURLsById.compactMap { id, url -> (
             UUID,
@@ -2426,7 +2397,6 @@ final class EncryptedConversationStore: Sendable {
         return try operation(stagedWrite)
     }
 
-    // Migration keeps explicit path and generation dependencies to enforce atomic replacement.
     // swiftlint:disable:next function_parameter_count
     private nonisolated static func migrateLegacyConversation(
         _ conversation: Conversation,
@@ -2458,9 +2428,7 @@ final class EncryptedConversationStore: Sendable {
                 }
             } catch is CancellationError {
                 throw CancellationError()
-            } catch {
-                // Replace an unreadable canonical file with the valid legacy record.
-            }
+            } catch {}
         }
 
         let preparedWrite = try prepareWrite(conversation, keyData: keyData)
@@ -2662,7 +2630,6 @@ final class EncryptedConversationStore: Sendable {
         return nil
     }
 
-    // Metadata commit keeps explicit paths and generation guards to prevent stale sidecars.
     // swiftlint:disable:next function_parameter_count
     private nonisolated static func commitMetadataCandidate(
         _ metadata: ConversationMetadata,

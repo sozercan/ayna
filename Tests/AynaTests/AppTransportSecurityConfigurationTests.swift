@@ -1,10 +1,3 @@
-//
-//  AppTransportSecurityConfigurationTests.swift
-//  aynaTests
-//
-//  Created on 3/17/26.
-//
-
 import Foundation
 import Testing
 

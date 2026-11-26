@@ -1,15 +1,6 @@
-//
-//  DuckDuckGoSearchService.swift
-//  Ayna
-//
-//  API-key-free web search using DuckDuckGo's HTML endpoint.
-//  Ported from Orka's internal/tools/web_search.go.
-//
-
 import Foundation
 import os.log
 
-/// Errors from DuckDuckGo search operations
 enum DuckDuckGoSearchError: LocalizedError, Sendable {
     case networkError(Error)
     case parsingError
@@ -32,26 +23,18 @@ enum DuckDuckGoSearchError: LocalizedError, Sendable {
     }
 }
 
-/// API-key-free web search using DuckDuckGo's lightweight HTML endpoint.
-///
-/// Scrapes `https://html.duckduckgo.com/html/?q=<query>` and extracts
-/// result links, titles, and snippets using Swift Regex.
 @MainActor
 final class DuckDuckGoSearchService {
     static let shared = DuckDuckGoSearchService()
 
-    // MARK: - Constants
-
     private enum Constants {
         static let searchEndpoint = "https://html.duckduckgo.com/html/"
-        static let maxResponseBytes = 1 << 20 // 1 MB
+        static let maxResponseBytes = 1 << 20
         static let timeoutSeconds: TimeInterval = 30
         static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
         static let referer = "https://duckduckgo.com/"
         static let circuitLabel = "duckduckgo.search"
     }
-
-    // MARK: - Private Properties
 
     private static let defaultSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
@@ -66,16 +49,10 @@ final class DuckDuckGoSearchService {
 
     private let urlSession: URLSession
 
-    // MARK: - Initialization
-
     init(urlSession: URLSession? = nil) {
         self.urlSession = urlSession ?? Self.defaultSession
     }
 
-    // MARK: - Public Methods
-
-    /// Performs a web search using DuckDuckGo's HTML endpoint.
-    /// No API key required.
     func search(query: String, maxResults: Int = 5) async throws -> WebSearchResponse {
         let startTime = CFAbsoluteTimeGetCurrent()
 
@@ -92,7 +69,6 @@ final class DuckDuckGoSearchService {
 
         log(.info, "🔍 Performing DuckDuckGo search", metadata: ["query": query])
 
-        // POST with form-encoded body avoids DDG's CAPTCHA on GET requests
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue(Constants.userAgent, forHTTPHeaderField: "User-Agent")
@@ -171,16 +147,7 @@ final class DuckDuckGoSearchService {
         }
     }
 
-    // MARK: - HTML Parsing
-
-    /// Parses DuckDuckGo HTML search results into structured results.
-    ///
-    /// Extracts data using regex patterns matching DDG's HTML structure:
-    /// - `result__a` class → link href + title
-    /// - `result__snippet` class → snippet text
-    /// - `uddg=` param → decode DDG's redirect URLs
     func parseDDGResults(html: String, maxResults: Int) -> [WebSearchResult] {
-        // [\s\S]*? matches across newlines (.*? does not in Swift Regex)
         let linkRegex = /<a[^>]+class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/
         let snippetRegex = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/
 
@@ -197,7 +164,6 @@ final class DuckDuckGoSearchService {
             let title = stripHTMLTags(rawTitle)
             guard !title.isEmpty else { continue }
 
-            // Find snippet between this link and the next link (or end of HTML)
             let searchStart = linkMatch.range.upperBound
             let searchEnd = (index + 1 < linkMatches.count) ? linkMatches[index + 1].range.lowerBound : html.endIndex
             let searchRange = searchStart ..< searchEnd
@@ -226,13 +192,6 @@ final class DuckDuckGoSearchService {
         return results
     }
 
-    // MARK: - URL Decoding
-
-    /// Extracts the real URL from DuckDuckGo's `uddg=` redirect parameter.
-    ///
-    /// DDG wraps result URLs in redirects like:
-    /// `//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com&rut=...`
-    /// This function extracts and URL-decodes the actual target URL.
     func decodeDDGURL(_ rawURL: String) -> String {
         let uddgRegex = /uddg=([^&]+)/
         if let match = rawURL.firstMatch(of: uddgRegex) {
@@ -243,34 +202,22 @@ final class DuckDuckGoSearchService {
             return rawURL
         }
 
-        // Not a redirect URL, return as-is if it looks like a URL
         if rawURL.hasPrefix("http") {
             return rawURL
         }
         return ""
     }
 
-    // MARK: - HTML Stripping
-
-    /// Strips HTML tags and decodes common HTML entities.
     func stripHTMLTags(_ string: String) -> String {
         WebTextExtractor.plainText(fromHTMLFragment: string)
     }
-
-    // MARK: - Logging
 
     private func log(_ level: OSLogType, _ message: String, metadata: [String: String] = [:]) {
         DiagnosticsLogger.log(.aiService, level: level, message: message, metadata: metadata)
     }
 }
 
-// MARK: - Bounded Response Reading
-
 enum DuckDuckGoResponseReader {
-    /// Reads response bytes incrementally and stops once `maxBytes` has been reached.
-    ///
-    /// This preserves the previous 1 MB prefix behavior without first materializing an
-    /// arbitrarily large response body in memory.
     static func read<Bytes: AsyncSequence>(
         _ bytes: Bytes,
         maxBytes: Int

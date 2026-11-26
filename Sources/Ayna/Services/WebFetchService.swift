@@ -1,18 +1,7 @@
-//
-//  WebFetchService.swift
-//  Ayna
-//
-//  Cross-platform web fetch tool for fetching URL content.
-//  Available on macOS, iOS, and watchOS.
-//
-
 import Darwin
 import Foundation
 import os.log
 
-// MARK: - Host Resolution
-
-/// Injectable hostname-resolution boundary used by request and redirect validation.
 struct HostResolver: Sendable {
     static let system = HostResolver { host in
         try await AppleHostResolver.addresses(for: host)
@@ -138,8 +127,6 @@ private enum AppleHostResolver {
     }
 }
 
-// MARK: - Request Deadline
-
 private enum WebFetchRequestDeadlineError: LocalizedError, Sendable {
     case timedOut
 
@@ -152,8 +139,6 @@ private enum WebFetchRequestDeadlineError: LocalizedError, Sendable {
     }
 }
 
-/// One-shot unstructured race that does not await the losing task during teardown.
-/// This is required because the system resolver can remain blocked in `getaddrinfo` after cancellation.
 private final class WebFetchDeadlineRace<Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Value, Error>?
@@ -296,11 +281,7 @@ private struct WebFetchRequestDeadline: Sendable {
     }
 }
 
-// MARK: - Shared SSRF Protection
-
-/// Shared private, local, and non-unicast host detection used by redirect and fetch validation.
 enum SSRFProtection {
-    /// Checks whether a host is loopback, link-local, private, multicast, or reserved non-unicast.
     static func isPrivateHost(_ host: String) -> Bool {
         let normalizedHost = normalizedIPAddressCandidate(host)
         if normalizedHost == "localhost" {
@@ -424,7 +405,6 @@ enum SSRFProtection {
         return false
     }
 
-    /// Validates a URL's literal host and all resolved IP addresses.
     fileprivate static func validate(
         _ url: URL,
         reportedAs urlString: String,
@@ -513,9 +493,6 @@ enum SSRFProtection {
     }
 }
 
-// MARK: - Web Fetch Error
-
-/// Errors that can occur during web fetch
 enum WebFetchError: Error, LocalizedError, Sendable {
     case invalidURL(url: String)
     case ssrfBlocked(url: String)
@@ -544,7 +521,6 @@ enum WebFetchError: Error, LocalizedError, Sendable {
         }
     }
 
-    /// Structured error message for model consumption
     var modelFacingDescription: String {
         switch self {
         case let .invalidURL(url):
@@ -564,8 +540,6 @@ enum WebFetchError: Error, LocalizedError, Sendable {
         }
     }
 }
-
-// MARK: - SSRF Redirect Protection
 
 private final class RequestValidationState: @unchecked Sendable {
     private let lock = NSLock()
@@ -621,8 +595,6 @@ private final class RequestValidationState: @unchecked Sendable {
     }
 }
 
-/// URLSession delegate that validates redirect targets against private IP ranges.
-/// Prevents SSRF bypass via HTTP redirects (e.g., 302 to http://169.254.169.254/).
 final class SSRFRedirectValidator: NSObject, URLSessionTaskDelegate, Sendable {
     private let resolver: HostResolver
     private let deadline: WebFetchRequestDeadline
@@ -719,15 +691,12 @@ final class SSRFRedirectValidator: NSObject, URLSessionTaskDelegate, Sendable {
     }
 }
 
-// MARK: - Shared Web Fetch Helpers
-
 enum WebTextExtractor {
     private static let scriptRegex = makeRegex("(?is)<script[^>]*>.*?</script>")
     private static let styleRegex = makeRegex("(?is)<style[^>]*>.*?</style>")
     private static let blockElementRegex = makeRegex("(?i)<(br|p|div|h[1-6]|li|tr)[^>]*>")
     private static let tagRegex = makeRegex("<[^>]+>")
     private static let collapsedNewlineRegex = makeRegex("\n{3,}")
-    /// `&amp;` must be decoded last so `&amp;lt;` becomes the literal text `&lt;`, not `<`.
     private static let htmlEntities: [(entity: String, replacement: String)] = [
         ("&nbsp;", " "),
         ("&lt;", "<"),
@@ -833,9 +802,6 @@ enum WebFetchRequestExecutor {
 
         let data: Data
         let response: URLResponse
-        // URLSession does not expose a pre-connect endpoint hook. Preflight resolution,
-        // proxy rejection, and post-transaction endpoint verification are all required before
-        // this GET response can be exposed; full IP pinning would require a custom TLS transport.
         let redirectValidator = SSRFRedirectValidator(
             resolver: resolver,
             deadline: deadline,
@@ -883,18 +849,10 @@ enum WebFetchRequestExecutor {
     }
 }
 
-// MARK: - Web Fetch Service
-
-/// Cross-platform service for fetching web content.
-/// Available on all platforms (macOS, iOS, watchOS).
 @Observable @MainActor
 final class WebFetchService {
-    // MARK: - Properties
-
-    /// Shared instance
     static let shared = WebFetchService()
 
-    /// Whether the service is enabled
     var isEnabled: Bool = true {
         didSet {
             guard oldValue != isEnabled else { return }
@@ -902,25 +860,14 @@ final class WebFetchService {
         }
     }
 
-    /// Timeout for requests in seconds
     var timeoutSeconds: Int = 30
 
-    /// Maximum response size (10 MB)
     private let maxResponseSize: Int = 10 * 1024 * 1024
 
-    /// Tool name constant
     static let toolName = "web_fetch"
-
-    // MARK: - Initialization
 
     private init() {}
 
-    // MARK: - Web Fetch
-
-    /// Fetches content from a URL and returns it as text.
-    ///
-    /// - Parameter url: The URL to fetch
-    /// - Returns: The page content as plain text
     func fetch(url: String) async throws -> String {
         guard isEnabled else {
             throw WebFetchError.serviceDisabled
@@ -938,9 +885,6 @@ final class WebFetchService {
         return result
     }
 
-    // MARK: - Tool Definition
-
-    /// Returns the tool definition in OpenAI function format
     func toolDefinition() -> [String: Any] {
         [
             "type": "function",
@@ -961,12 +905,10 @@ final class WebFetchService {
         ]
     }
 
-    /// Checks if a tool name is the web_fetch tool
     static func isWebFetchTool(_ name: String) -> Bool {
         name == toolName
     }
 
-    /// Executes a web_fetch tool call and returns the result
     func executeToolCall(arguments: [String: Any]) async -> String {
         guard let url = arguments["url"] as? String else {
             return "ERROR: Missing required parameter 'url'"
@@ -981,7 +923,6 @@ final class WebFetchService {
         }
     }
 
-    /// Returns context to inject into the system prompt
     func systemPromptContext() -> String? {
         guard isEnabled else { return nil }
 

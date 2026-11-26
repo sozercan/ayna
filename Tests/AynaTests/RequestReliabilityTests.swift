@@ -78,7 +78,6 @@ extension AIServiceGlobalStateTests {
     @MainActor
     struct AIServiceStatusRetryTests {
         init() {
-            // Isolate persisted settings and keys from the real defaults and Keychain.
             let suiteName = "AIServiceStatusRetryTests"
             guard let defaults = UserDefaults(suiteName: suiteName) else {
                 fatalError("Failed to create UserDefaults suite for \(suiteName)")
@@ -126,7 +125,6 @@ extension AIServiceGlobalStateTests {
             first.send(Data("{\"error\":{\"message\":\"overloaded\"}}".utf8))
             first.finish()
 
-            // Bounded wait, so a retry regression fails here instead of hanging on the exchange.
             let retried = await server.waitForRequestCount(2, timeout: .seconds(5))
             #expect(retried)
             guard retried else { return }
@@ -138,7 +136,6 @@ extension AIServiceGlobalStateTests {
             #expect(await completed.wait(timeout: .seconds(5)))
             #expect(failure.value == nil)
             #expect(chunks.value == "stale")
-            // The deadline is three seconds after the 503 arrived.
             let deadline = requestedRetryAfter.value.map { $0.timeIntervalSince(firstResponseSentAt.value) } ?? -1
             #expect(deadline >= 3 && deadline <= 8)
         }

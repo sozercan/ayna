@@ -1,14 +1,7 @@
 // swiftlint:disable file_length
-//
-//  WatchChatViewModel.swift
-//  Ayna Watch App
-//
-//  Created on 11/29/25.
-//
 
 import Foundation
 
-/// Deduplicates callbacks for one provider request round and supplies IDs when the provider omits them.
 @MainActor
 final class WatchToolCallRoundRegistry {
     private struct IDLessCallSignature: Hashable {
@@ -25,9 +18,6 @@ final class WatchToolCallRoundRegistry {
         syntheticIDPrefix = "watch-tool-\(roundID.uuidString.lowercased())"
     }
 
-    /// Returns the provider ID or a stable round-local synthetic ID for a newly observed call.
-    /// Identical ID-less callbacks are indistinguishable, so their canonical tool payload is
-    /// used as the duplicate key.
     func register(
         providerID: String,
         toolName: String,
@@ -115,8 +105,6 @@ enum WatchLiveModelPolicy {
     import WatchKit
 
     // swiftlint:disable type_body_length
-    /// ViewModel for Watch chat view
-    /// Handles message sending, streaming responses, and local state management
     @MainActor
     final class WatchChatViewModel: ObservableObject {
         enum SendResult: Equatable {
@@ -164,7 +152,7 @@ enum WatchLiveModelPolicy {
         private static let responsePromotionErrorMessage = "Failed to save response. Please try again."
 
         @Published var isLoading = false
-        @Published var isStreaming = false // True once first chunk received
+        @Published var isStreaming = false
         @Published var errorMessage: String?
         @Published var streamingContent = ""
         @Published var currentToolName: String?
@@ -185,14 +173,10 @@ enum WatchLiveModelPolicy {
         private var titleRequestContext: TitleRequestContext?
         private var pendingResponsePromotions: [UUID: PendingResponsePromotion] = [:]
 
-        /// Maximum tool chain depth for watchOS.
-        /// Intentionally low (5) due to watchOS resource constraints (memory, battery, network).
-        /// Sufficient for simple tool operations while preventing resource exhaustion.
         private let maxToolCallDepth = 5
 
-        // Streaming throttle for performance
         private var lastUIUpdateTime: Date = .distantPast
-        private let uiUpdateInterval: TimeInterval = 0.1 // 100ms throttle
+        private let uiUpdateInterval: TimeInterval = 0.1
         private var pendingContent = ""
         private var pendingReasoning = ""
 
@@ -208,7 +192,6 @@ enum WatchLiveModelPolicy {
             self.requestObserver = requestObserver
         }
 
-        /// Set the current conversation being viewed
         func setConversation(_ id: UUID) {
             guard currentConversationId != id else { return }
             if currentConversationId != nil {
@@ -227,14 +210,10 @@ enum WatchLiveModelPolicy {
             restorePendingResponsePromotionState(for: id)
         }
 
-        /// Play haptic feedback
         private func playHaptic(_ type: WKHapticType) {
             WKInterfaceDevice.current().play(type)
         }
 
-        /// Send a message in the current conversation.
-        ///
-        /// - Returns: Whether the composer input was consumed and whether a request started.
         @discardableResult
         func sendMessage(_ content: String) -> SendResult {
             sendMessage(content, reusingUserMessageID: nil)
@@ -375,7 +354,6 @@ enum WatchLiveModelPolicy {
         }
 
         // swiftlint:disable function_body_length
-        /// Send message with tool support for recursive tool calling.
         private func sendMessageWithToolSupport( // swiftlint:disable:this function_parameter_count
             messages: [Message],
             model: String,
@@ -1134,8 +1112,6 @@ enum WatchLiveModelPolicy {
             if !pendingContent.isEmpty {
                 streamingContent = pendingContent
             }
-            // Streaming ticks (every 100 ms) stay in memory; re-encoding the whole store into
-            // UserDefaults each time was the Watch's main streaming cost.
             updateAssistantMessage(
                 assistantMessageId,
                 in: conversationId,
@@ -1146,7 +1122,6 @@ enum WatchLiveModelPolicy {
             lastUIUpdateTime = updateTime
         }
 
-        /// Cancel active request work without discarding a completed response promotion retry.
         func cancelRequest() {
             toolChainCoordinator.cancelCurrentOperation {
                 finalizeCancelledAssistant()
@@ -1164,7 +1139,6 @@ enum WatchLiveModelPolicy {
             }
         }
 
-        /// Cancels active owned work without producing feedback or discarding promotion retries.
         @discardableResult
         func cancelOwnedRequest() -> Bool {
             let cancelledToolRequest = toolChainCoordinator.cancelCurrentOperation {
@@ -1329,7 +1303,6 @@ enum WatchLiveModelPolicy {
             return true
         }
 
-        /// Retry the last failed message
         func retryFailedMessage() {
             if let currentConversationId,
                pendingResponsePromotions[currentConversationId] != nil
@@ -1348,14 +1321,12 @@ enum WatchLiveModelPolicy {
             }
         }
 
-        /// Hide the current error without discarding a durable response promotion retry.
         func dismissError() {
             pendingUserMessageId = nil
             failedMessage = nil
             errorMessage = nil
         }
 
-        /// Create a new conversation
         func createNewConversation() -> UUID? {
             let selectedModel = connectivityService.selectedModel
             let selectedModelIsUsable = WatchLiveModelPolicy.isUsable(
@@ -1395,7 +1366,6 @@ enum WatchLiveModelPolicy {
             return conversation.id
         }
 
-        /// Generate a title for the conversation using AI
         private func generateTitle(for conversationId: UUID, firstMessage: String) {
             guard let conversation = conversationStore.conversation(for: conversationId) else { return }
             cancelTitleRequest()
@@ -1429,7 +1399,6 @@ enum WatchLiveModelPolicy {
                         if !cleanTitle.isEmpty {
                             self.conversationStore.renameConversation(conversationId, newTitle: cleanTitle)
                         } else {
-                            // Fallback to simple title
                             self.conversationStore.renameConversation(conversationId, newTitle: fallbackTitle)
                         }
                     }

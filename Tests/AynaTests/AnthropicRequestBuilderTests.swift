@@ -1,10 +1,3 @@
-//
-//  AnthropicRequestBuilderTests.swift
-//  aynaTests
-//
-//  Created on 1/30/26.
-//
-
 @testable import Ayna
 import Foundation
 import Testing
@@ -12,8 +5,6 @@ import Testing
 @Suite("AnthropicRequestBuilder Tests")
 @MainActor
 struct AnthropicRequestBuilderTests {
-    // MARK: - Header Configuration Tests
-
     @Test("Required headers are set correctly")
     func requiredHeadersAreSet() throws {
         var request = try URLRequest(url: #require(URL(string: "https://api.anthropic.com/v1/messages")))
@@ -61,8 +52,6 @@ struct AnthropicRequestBuilderTests {
         #expect(request.value(forHTTPHeaderField: "anthropic-beta") == nil)
     }
 
-    // MARK: - System Prompt Extraction Tests
-
     @Test("System prompt is extracted to top level")
     func systemPromptExtracted() throws {
         let messages = [
@@ -105,8 +94,6 @@ struct AnthropicRequestBuilderTests {
         #expect(systemPrompt == nil)
         #expect(anthropicMessages.count == 1)
     }
-
-    // MARK: - Role Mapping Tests
 
     @Test("User role maps correctly")
     func userRoleMapsCorrectly() throws {
@@ -152,8 +139,6 @@ struct AnthropicRequestBuilderTests {
         #expect(messages[0]["role"] as? String == "user")
     }
 
-    // MARK: - max_tokens Tests
-
     @Test("Default max_tokens is 4096")
     func defaultMaxTokensIs4096() throws {
         let config = AnthropicRequestConfig(
@@ -190,8 +175,6 @@ struct AnthropicRequestBuilderTests {
 
         #expect(body["max_tokens"] as? Int == 8192)
     }
-
-    // MARK: - Extended Thinking Tests
 
     @Test("Extended thinking enabled when budget_tokens >= 1024")
     func extendedThinkingEnabled() throws {
@@ -253,8 +236,6 @@ struct AnthropicRequestBuilderTests {
         #expect(body["thinking"] == nil)
     }
 
-    // MARK: - Tool Conversion Tests
-
     @Test("OpenAI tool format converts to Anthropic format")
     func toolConversionWorks() {
         let openAITools: [[String: Any]] = [
@@ -306,11 +287,8 @@ struct AnthropicRequestBuilderTests {
         #expect(anthropicTools[0]["description"] == nil)
     }
 
-    // MARK: - Image Validation Tests
-
     @Test("JPEG magic bytes detected correctly")
     func jpegDetection() {
-        // JPEG magic bytes: FF D8 FF
         let jpegData = Data([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01])
 
         let mediaType = AnthropicRequestBuilder.detectImageMediaType(data: jpegData)
@@ -319,7 +297,6 @@ struct AnthropicRequestBuilderTests {
 
     @Test("PNG magic bytes detected correctly")
     func pngDetection() {
-        // PNG magic bytes: 89 50 4E 47
         let pngData = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D])
 
         let mediaType = AnthropicRequestBuilder.detectImageMediaType(data: pngData)
@@ -328,7 +305,6 @@ struct AnthropicRequestBuilderTests {
 
     @Test("GIF magic bytes detected correctly")
     func gifDetection() {
-        // GIF magic bytes: 47 49 46 38
         let gifData = Data([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00])
 
         let mediaType = AnthropicRequestBuilder.detectImageMediaType(data: gifData)
@@ -337,7 +313,6 @@ struct AnthropicRequestBuilderTests {
 
     @Test("WebP magic bytes detected correctly")
     func webpDetection() {
-        // WebP magic bytes: RIFF....WEBP
         let webpData = Data([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50])
 
         let mediaType = AnthropicRequestBuilder.detectImageMediaType(data: webpData)
@@ -354,9 +329,7 @@ struct AnthropicRequestBuilderTests {
 
     @Test("Image size limit enforced")
     func imageSizeLimitEnforced() throws {
-        // Create data larger than 3.75 MB
         let largeData = Data(repeating: 0xFF, count: 4_000_000)
-        // Add JPEG header
         var jpegData = Data([0xFF, 0xD8, 0xFF])
         jpegData.append(largeData)
 
@@ -367,7 +340,6 @@ struct AnthropicRequestBuilderTests {
 
     @Test("Valid image builds content block")
     func validImageBuildsContentBlock() throws {
-        // Valid small JPEG
         let jpegData = Data([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01])
 
         let block = try AnthropicRequestBuilder.validateAndBuildImageBlock(data: jpegData, fileName: "test.jpg")
@@ -380,8 +352,6 @@ struct AnthropicRequestBuilderTests {
         #expect(source?["media_type"] as? String == "image/jpeg")
         #expect(source?["data"] is String)
     }
-
-    // MARK: - Tool Result Building Tests
 
     @Test("Tool result builds correctly")
     func toolResultBuildsCorrectly() {
@@ -408,8 +378,6 @@ struct AnthropicRequestBuilderTests {
         #expect(result["is_error"] as? Bool == true)
     }
 
-    // MARK: - Full Request Building Tests
-
     @Test("Complete request builds successfully")
     func completeRequestBuilds() throws {
         let url = try #require(URL(string: "https://api.anthropic.com/v1/messages"))
@@ -434,7 +402,6 @@ struct AnthropicRequestBuilderTests {
         #expect(request.value(forHTTPHeaderField: "x-api-key") == "test-key")
         #expect(request.httpBody != nil)
 
-        // Verify body structure
         let body = try JSONSerialization.jsonObject(with: #require(request.httpBody)) as? [String: Any]
         #expect(body?["model"] as? String == "claude-sonnet-4-20250514")
         #expect(body?["stream"] as? Bool == true)

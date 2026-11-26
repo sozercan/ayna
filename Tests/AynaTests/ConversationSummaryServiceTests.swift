@@ -1,10 +1,3 @@
-//
-//  ConversationSummaryServiceTests.swift
-//  ayna
-//
-//  Created on 1/29/26.
-//
-
 @testable import Ayna
 import Foundation
 import Testing
@@ -12,8 +5,6 @@ import Testing
 @Suite("ConversationSummaryService Tests")
 @MainActor
 struct ConversationSummaryServiceTests {
-    // MARK: - Summary Generation
-
     @Test
     func `clear invalidates a summary load already in flight`() async throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
@@ -188,7 +179,6 @@ struct ConversationSummaryServiceTests {
                 persistenceProbe.clear()
             }
         )
-        // Immediate saves wait for the stored digest, so load it first.
         await service.loadSummaries()
         service.updateSummary(for: TestHelpers.sampleConversation(title: "Must Stay Cleared"))
 
@@ -363,9 +353,7 @@ struct ConversationSummaryServiceTests {
         do {
             try await service.restoreAfterFailedConversationClear(snapshot)
             Issue.record("Expected summary rollback persistence to fail")
-        } catch {
-            // Expected: the transactional restore must report the persistence failure.
-        }
+        } catch {}
         await service.loadSummaries()
 
         #expect(service.digest.summaries.first?.title == "Unsaved Rollback Summary")
@@ -425,11 +413,8 @@ struct ConversationSummaryServiceTests {
 
         let summary = service.generateSummary(for: conversation)
 
-        // Should extract frequent meaningful words
         #expect(!summary.topics.isEmpty)
     }
-
-    // MARK: - Digest Management
 
     @Test
     func `update summary adds to digest`() {
@@ -449,7 +434,6 @@ struct ConversationSummaryServiceTests {
         var conversation = TestHelpers.sampleConversation(title: "Original Title")
         service.updateSummary(for: conversation)
 
-        // Update the same conversation with new title
         conversation.title = "Updated Title"
         service.updateSummary(for: conversation)
 
@@ -473,7 +457,6 @@ struct ConversationSummaryServiceTests {
     func `digest enforces max summaries limit`() {
         let service = ConversationSummaryService()
 
-        // Add more than max summaries
         for index in 1 ... (RecentConversationsDigest.defaultMaxSummaries + 5) {
             let conversation = TestHelpers.sampleConversation(title: "Chat \(index)")
             service.updateSummary(for: conversation)
@@ -481,8 +464,6 @@ struct ConversationSummaryServiceTests {
 
         #expect(service.summaryCount <= RecentConversationsDigest.defaultMaxSummaries)
     }
-
-    // MARK: - Context Formatting
 
     @Test
     func `formatted for context returns nil when empty`() {
@@ -527,23 +508,17 @@ struct ConversationSummaryServiceTests {
     func `formatted for context respects token budget`() {
         let service = ConversationSummaryService()
 
-        // Add several summaries
         for index in 1 ... 10 {
             let conversation = TestHelpers.sampleConversation(title: "Conversation with a longer title number \(index)")
             service.updateSummary(for: conversation)
         }
 
-        // Very small token budget
         let formatted = service.formattedForContext(tokenBudget: 50)
 
-        // Should have some content but be limited
         #expect(formatted != nil)
-        // With tiny budget, shouldn't include all 10 conversations
         let lineCount = formatted?.components(separatedBy: "\n").count ?? 0
-        #expect(lineCount < 12) // Header + max ~10 entries
+        #expect(lineCount < 12)
     }
-
-    // MARK: - Backfill
 
     @Test
     func `backfill summaries creates summaries for existing conversations`() {
@@ -574,8 +549,6 @@ struct ConversationSummaryServiceTests {
     }
 }
 
-// MARK: - ConversationSummary Tests
-
 @Suite("ConversationSummary Tests")
 struct ConversationSummaryTests {
     @Test
@@ -594,8 +567,6 @@ struct ConversationSummaryTests {
         #expect(formatted.contains("Hello world"))
     }
 }
-
-// MARK: - RecentConversationsDigest Tests
 
 @Suite("RecentConversationsDigest Tests")
 struct RecentConversationsDigestTests {

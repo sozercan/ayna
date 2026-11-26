@@ -1,12 +1,4 @@
-//
-//  AIService.swift
-//  ayna
-//
-//  Created on 11/2/25.
-//
-
 // swiftlint:disable file_length
-// AIService aggregates multiple provider workflows until modularization.
 
 import Combine
 import Foundation
@@ -15,7 +7,6 @@ import os
 import UniformTypeIdentifiers
 
 // swiftlint:disable type_body_length
-// This service intentionally aggregates every provider workflow until we extract dedicated modules.
 
 enum AIProvider: String, CaseIterable, Codable {
     case openai = "OpenAI"
@@ -102,10 +93,6 @@ struct RequestFlightObserver: Sendable {
     static let none = RequestFlightObserver { _, _ in }
 }
 
-/// Owner-specific cancellation token for one text request.
-///
-/// The token retains the logical request identity across transport retries so a
-/// stale owner can never cancel a newer request that reused the same service.
 @MainActor
 final class AITextRequest {
     fileprivate weak var service: AIService?
@@ -121,10 +108,6 @@ final class AITextRequest {
     }
 }
 
-/// Owner-specific cancellation token for one multi-model text batch.
-///
-/// The batch and every child transport share one logical request identity so a
-/// stale token cannot cancel a replacement batch or an unrelated foreground request.
 @MainActor
 final class AITextBatchRequest {
     fileprivate weak var service: AIService?
@@ -178,10 +161,6 @@ private final class SimulatedTextRequestHandle: @unchecked Sendable {
 }
 
 #if !os(watchOS)
-    /// Owner-specific cancellation token for one image transport request.
-    ///
-    /// Higher-level image operations retain these tokens so replacing a view or
-    /// cancelling one conversation cannot accidentally cancel another owner's work.
     @MainActor
     final class AIImageRequest {
         fileprivate weak var service: AIService?
@@ -313,20 +292,16 @@ class AIService: ObservableObject {
         static let modelAPIKeys = "model_api_keys"
     }
 
-    /// Tracks whether API keys were successfully loaded from Keychain during init.
-    /// Prevents overwriting valid Keychain data when a read failure caused an empty load.
     private var keychainLoadSucceeded = false
 
     @Published var selectedModel: String {
         didSet {
-            // Only persist on iOS/macOS
             #if !os(watchOS)
                 AppPreferences.storage.set(selectedModel, forKey: "selectedModel")
             #endif
         }
     }
 
-    // Track current task for cancellation
     private var currentTask = RequestFlight<URLSessionDataTask>()
     private var multiModelDataTasks: [String: RequestFlight<URLSessionDataTask>] = [:]
     private var backgroundDataTasks: [RequestFlightID: URLSessionDataTask] = [:]
@@ -342,7 +317,6 @@ class AIService: ObservableObject {
     private var multiModelSimulatedTextRequests: [String: RequestFlight<SimulatedTextRequestHandle>] = [:]
     private var backgroundSimulatedTextRequests: [RequestFlightID: SimulatedTextRequestHandle] = [:]
     private var multiModelTask = RequestFlight<Task<Void, Never>>()
-    /// Tracks individual stream tasks for each model in multi-model mode
     private var multiModelStreamTasks: [String: RequestFlight<Task<Void, Never>>] = [:]
     #if !os(watchOS)
         private var currentAppleIntelligenceTask = RequestFlight<AppleIntelligenceRequestHandle>()
@@ -351,7 +325,6 @@ class AIService: ObservableObject {
         private var imageRequests: [RequestFlightID: OpenAIImageService.RequestHandle] = [:]
     #endif
 
-    /// Holds Anthropic providers during active requests to prevent deallocation.
     private var currentAnthropicProvider = RequestFlight<any AIProviderProtocol>()
     private var multiModelAnthropicProviders: [String: RequestFlight<any AIProviderProtocol>] = [:]
     private var backgroundAnthropicProviders: [RequestFlightID: any AIProviderProtocol] = [:]
@@ -369,7 +342,6 @@ class AIService: ObservableObject {
     private let openAIURL = "https://api.openai.com/v1/chat/completions"
     private let azureAPIVersion = "2025-04-01-preview"
 
-    /// Custom URLSession with longer timeout for slow models
     private let urlSession: URLSession
     private let anthropicProviderFactory: @MainActor (URLSession) -> any AIProviderProtocol
     private let retryDelay: @Sendable (Int, Date?) async -> Void
@@ -382,12 +354,10 @@ class AIService: ObservableObject {
         private let injectedAppleIntelligenceService: (any AppleIntelligenceServing)?
     #endif
 
-    // Image generation service
     #if !os(watchOS)
         private let imageService: OpenAIImageService
     #endif
 
-    // Native agentic tools (macOS only)
     #if os(macOS)
         private(set) var builtinToolService: BuiltinToolService?
         private(set) var permissionService: PermissionService?
@@ -444,14 +414,12 @@ class AIService: ObservableObject {
         }
     }
 
-    // Web search settings (synced from iPhone on watchOS)
     #if os(watchOS)
         @Published var tavilyAPIKey: String = ""
         @Published var tavilyEnabled: Bool = false
         @Published var webSearchEnabled: Bool = false
     #endif
 
-    /// Image generation settings
     @Published var imageSize: String {
         didSet {
             AppPreferences.storage.set(imageSize, forKey: "imageSize")
@@ -521,9 +489,7 @@ class AIService: ObservableObject {
             #endif
         } else {
             let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest = 120 // 2 minutes
-            // A whole reply, which can take many minutes for a long Claude answer. Stalls are
-            // still caught by the per-request timeout.
+            config.timeoutIntervalForRequest = 120
             config.timeoutIntervalForResource = 1800
             self.urlSession = URLSession(configuration: config)
             #if !os(watchOS)
@@ -531,8 +497,6 @@ class AIService: ObservableObject {
             #endif
         }
 
-        // Check if running in UI test mode - configure test model early
-        // Multiple checks because different platforms/test runners set flags differently
         let isUITesting = ProcessInfo.processInfo.environment["AYNA_UI_TESTING"] == "1" ||
             ProcessInfo.processInfo.arguments.contains("--ui-testing") ||
             ProcessInfo.processInfo.arguments.contains("-AYNA_UI_TESTING") ||
@@ -558,14 +522,12 @@ class AIService: ObservableObject {
 
         var loadedCustomModels = savedCustomModels
 
-        // Ensure test model exists during UI testing
         let testModelName = "ui-test-model"
         if isUITesting, !loadedCustomModels.contains(testModelName) {
             loadedCustomModels.insert(testModelName, at: 0)
         }
         customModels = loadedCustomModels
 
-        // Load model providers mapping
         let loadedProviders: [String: AIProvider]
         if let savedProviders = savedProviderValues {
             let mapped = savedProviders.compactMapValues { AIProvider(rawValue: $0) }
@@ -581,21 +543,18 @@ class AIService: ObservableObject {
             }
             loadedProviders = mapped
         } else {
-            // Default all initial models to OpenAI
             loadedProviders = Dictionary(
                 loadedCustomModels.map { ($0, AIProvider.openai) },
                 uniquingKeysWith: { first, _ in first }
             )
         }
 
-        // Ensure test model has a provider during UI testing
         var updatedProviders = loadedProviders
         if isUITesting, updatedProviders[testModelName] == nil {
             updatedProviders[testModelName] = .openai
         }
         modelProviders = updatedProviders
 
-        // Load model endpoint types mapping
         let loadedEndpointTypes: [String: APIEndpointType]
         if let savedEndpointTypes = savedEndpointTypeValues {
             let mapped = savedEndpointTypes.compactMapValues { APIEndpointType(rawValue: $0) }
@@ -611,36 +570,30 @@ class AIService: ObservableObject {
             }
             loadedEndpointTypes = mapped
         } else {
-            // Default all models to Chat Completions
             loadedEndpointTypes = Dictionary(
                 loadedCustomModels.map { ($0, APIEndpointType.chatCompletions) },
                 uniquingKeysWith: { first, _ in first }
             )
         }
 
-        // Ensure test model has an endpoint type during UI testing
         var updatedEndpointTypes = loadedEndpointTypes
         if isUITesting, updatedEndpointTypes[testModelName] == nil {
             updatedEndpointTypes[testModelName] = .chatCompletions
         }
         modelEndpointTypes = updatedEndpointTypes
 
-        // Load custom endpoints mapping
         let loadedEndpoints = savedEndpointValues ?? [:]
         modelEndpoints = loadedEndpoints
 
-        // Load per-model API keys
         let (loadedAPIKeys, loadSuccess) = AIService.loadModelAPIKeys()
         var mutableAPIKeys = loadedAPIKeys
 
-        // Ensure test model has an API key during UI testing
         if isUITesting, mutableAPIKeys[testModelName]?.isEmpty ?? true {
             mutableAPIKeys[testModelName] = "ui-test-api-key"
         }
         modelAPIKeys = mutableAPIKeys
         keychainLoadSucceeded = loadSuccess
 
-        // Load selected model, ensure it exists in custom models
         let savedSelectedModel = AppPreferences.storage.string(forKey: "selectedModel") ?? ""
         let defaultProviderIsRecognized = savedDefaultProviderValue.map { AIProvider(rawValue: $0) != nil } ?? true
         let supportedCustomModels = savedCustomModels.filter { model in
@@ -655,13 +608,11 @@ class AIService: ObservableObject {
             supportedCustomModels.first ?? ""
         }
         if isUITesting {
-            // Always use test model for UI tests
             selectedModel = testModelName
         } else {
             selectedModel = cleanedSelectedModel
         }
 
-        // Initialize provider
         if let providerString = savedDefaultProviderValue,
            let savedProvider = AIProvider(rawValue: providerString)
         {
@@ -670,7 +621,6 @@ class AIService: ObservableObject {
             provider = .openai
         }
 
-        // Initialize image generation settings
         imageSize = AppPreferences.storage.string(forKey: "imageSize") ?? "1024x1024"
         imageQuality = AppPreferences.storage.string(forKey: "imageQuality") ?? "medium"
         outputFormat = AppPreferences.storage.string(forKey: "outputFormat") ?? "png"
@@ -678,13 +628,10 @@ class AIService: ObservableObject {
             AppPreferences.storage.integer(forKey: "outputCompression") == 0
                 ? 100 : AppPreferences.storage.integer(forKey: "outputCompression")
 
-        // Initialize native agentic tools (macOS only)
         #if os(macOS)
             let permService = PermissionService()
             self.permissionService = permService
-            // Project root and the rest of the Agent settings are applied by AgentSettingsStore.
             self.builtinToolService = BuiltinToolService(permissionService: permService)
-            // Trigger AgentSettingsStore initialization to apply saved settings
             _ = AgentSettingsStore.shared
         #endif
     }
@@ -746,7 +693,6 @@ class AIService: ObservableObject {
                     level: .info,
                     message: "No model API keys found in Keychain (first launch or code signature changed)"
                 )
-                // No data in Keychain is a valid state (first launch), not a failure
                 return ([:], true)
             }
         } catch {
@@ -805,7 +751,6 @@ class AIService: ObservableObject {
         OpenAIEndpointResolver.isAzureEndpoint(endpoint)
     }
 
-    /// Get the API key configured for a specific model.
     func getAPIKey(for model: String?) -> String {
         guard let model else { return "" }
         return modelAPIKeys[model] ?? ""
@@ -862,7 +807,6 @@ class AIService: ObservableObject {
     }
 
     #if !os(watchOS)
-        /// Whether any configured image model accepts output format and compression options.
         var hasImageModelWithOutputOptions: Bool {
             customModels.contains { model in
                 getModelCapability(model) == .imageGeneration
@@ -872,7 +816,6 @@ class AIService: ObservableObject {
     #endif
 
     func getModelCapability(_ model: String) -> ModelCapability {
-        // Check the endpoint type setting for this model
         if let endpointType = modelEndpointTypes[model] {
             switch endpointType {
             case .imageGeneration:
@@ -881,14 +824,9 @@ class AIService: ObservableObject {
                 return .chat
             }
         }
-        // Default to chat if no setting found
         return .chat
     }
 
-    /// Returns a user-facing reason when a selected model cannot consume attachments.
-    ///
-    /// Image generation models accept image attachments as edit sources; their attachment
-    /// types are checked against the outgoing message by `attachmentHistorySupportError`.
     func attachmentSupportError(for models: [String]) -> String? {
         for model in models {
             let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -904,7 +842,6 @@ class AIService: ObservableObject {
         return nil
     }
 
-    /// Returns a user-facing reason when a selected model cannot consume attachment history.
     func attachmentHistorySupportError(for models: [String], messages: [Message]) -> String? {
         let normalizedModels = models
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -920,7 +857,6 @@ class AIService: ObservableObject {
         return attachmentSupportError(for: normalizedModels)
     }
 
-    /// Image requests only send the latest user turn, so only its attachments become edit sources.
     private func imageEditInputError(for userMessage: Message?) -> String? {
         let attachments = userMessage?.attachments ?? []
         guard !attachments.isEmpty else { return nil }
@@ -939,7 +875,6 @@ class AIService: ObservableObject {
         return nil
     }
 
-    /// Returns a user-facing reason when an Anthropic request would exceed its image limit.
     func attachmentImageLimitError(for models: [String], messages: [Message]) -> String? {
         guard usesAnthropicModel(models) else { return nil }
 
@@ -1014,7 +949,6 @@ class AIService: ObservableObject {
         in messages: [Message],
         loadAttachmentData: @Sendable (String) async -> Data?
     ) async -> String? {
-        // Image generation sends only the latest user turn, so older images cannot affect it.
         let validatedMessages = usesOnlyImageGenerationModels(models)
             ? Array(messages.last(where: { $0.role == .user }).map { [$0] } ?? [])
             : messages
@@ -1203,7 +1137,6 @@ class AIService: ObservableObject {
     fileprivate func cancelTextBatchRequest(_ flightID: RequestFlightID) {
         guard let batchTask = multiModelTask.take(ifOwnedBy: flightID) else { return }
 
-        // Fence pending runners before cancelling active child requests.
         batchTask.cancel()
         cancelTextRequest(flightID)
     }
@@ -1278,7 +1211,6 @@ class AIService: ObservableObject {
             }
         #endif
 
-        // Fence pending multi-model starts before cancelling active handles.
         multiModelBatchTask?.cancel()
         dataTask?.cancel()
         for (model, task) in multiDataTasks {
@@ -1329,8 +1261,6 @@ class AIService: ObservableObject {
     }
 
     #if !os(watchOS)
-        /// Generates an image from a text prompt.
-        /// Delegates to OpenAIImageService for the actual network request.
         @discardableResult
         func generateImage(
             prompt: String,
@@ -1403,7 +1333,6 @@ class AIService: ObservableObject {
             return AIImageRequest(service: self, flightID: flightID)
         }
 
-        /// Edits `sourceImages` when present; otherwise generates a new image from the prompt.
         @discardableResult
         func requestImage(
             prompt: String,
@@ -1424,8 +1353,6 @@ class AIService: ObservableObject {
             )
         }
 
-        /// Edits images based on a prompt and one or more source images.
-        /// Delegates to OpenAIImageService for the actual network request.
         @discardableResult
         func editImage(
             prompt: String,
@@ -1514,8 +1441,6 @@ class AIService: ObservableObject {
         }
     #endif
 
-    // MARK: - Helper Methods for sendMessage
-
     private func validateProviderSettings(for provider: AIProvider, model: String?) throws {
         guard requiresAPIKey(for: provider, model: model) else { return }
 
@@ -1585,7 +1510,6 @@ class AIService: ObservableObject {
             return requestHandle
         }
 
-        // Mock response for UI tests on macOS and iOS (UITestEnvironment not available on watchOS)
         #if !os(watchOS)
             if UITestEnvironment.isEnabled {
                 simulateUITestResponse(
@@ -1649,7 +1573,6 @@ class AIService: ObservableObject {
             return requestHandle
         }
 
-        // Handle Apple Intelligence separately
         #if !os(watchOS)
             if effectiveProvider == .appleIntelligence {
                 if let service = injectedAppleIntelligenceService {
@@ -1686,14 +1609,12 @@ class AIService: ObservableObject {
                 return requestHandle
             }
         #else
-            // Apple Intelligence is not available on watchOS
             if effectiveProvider == .appleIntelligence {
                 onError(AIError.apiError("Apple Intelligence is not available on Apple Watch"))
                 return requestHandle
             }
         #endif
 
-        // Handle Anthropic provider separately
         if effectiveProvider == .anthropic {
             let anthropicCallbacks = AIProviderStreamCallbacks(
                 onChunk: onChunk,
@@ -1716,7 +1637,6 @@ class AIService: ObservableObject {
             return requestHandle
         }
 
-        // Validate provider settings
         do {
             try validateProviderSettings(for: effectiveProvider, model: requestModel)
         } catch {
@@ -1726,7 +1646,6 @@ class AIService: ObservableObject {
 
         let modelAPIKey = getAPIKey(for: requestModel)
 
-        // Check if this model should use the Responses API.
         let endpointType = modelEndpointTypes[requestModel] ?? .chatCompletions
         if endpointType == .responses {
             responsesAPIRequest(
@@ -1746,7 +1665,6 @@ class AIService: ObservableObject {
             return requestHandle
         }
 
-        // Build API request
         let apiURL: String
         do {
             apiURL = try getAPIURL(deploymentName: requestModel, provider: effectiveProvider)
@@ -1779,7 +1697,6 @@ class AIService: ObservableObject {
             ]
         )
 
-        // Inject memory context into messages
         let systemPrompt = messages.first { $0.role == .system }?.content
         let conversationHistory = messages.filter { $0.role != .system }
         let memoryContext = MemoryContextProvider.shared.buildContext(
@@ -1791,8 +1708,6 @@ class AIService: ObservableObject {
             conversationHistory: conversationHistory
         )
 
-        // Claim the foreground/model transport slot before attachment loading so
-        // a superseded response cannot retry while the replacement is building.
         takeDataTask(
             flightID: flightID,
             requestLane: requestLane,
@@ -1896,22 +1811,7 @@ class AIService: ObservableObject {
         return requestHandle
     }
 
-    // MARK: - Multi-Model Parallel Requests
-
     // swiftlint:disable function_body_length cyclomatic_complexity
-    /// Sends a message to multiple models in parallel using TaskGroup.
-    /// Each model streams independently, and tool calls are deferred until the user selects a response.
-    ///
-    /// - Parameters:
-    ///   - messages: The conversation history to send
-    ///   - models: Array of model names to query in parallel
-    ///   - temperature: Optional temperature override
-    ///   - onChunk: Called with (modelName, chunk) for each streaming chunk
-    ///   - onModelComplete: Called when a specific model finishes streaming
-    ///   - onAllComplete: Called when all models have finished
-    ///   - onError: Called with (modelName, error) when a model encounters an error
-    ///   - onPendingToolCall: Called when a model requests a tool call (deferred until selection)
-    ///   - onReasoning: Called with (modelName, reasoning) for reasoning content
     @discardableResult
     func sendToMultipleModels(
         messages: [Message],
@@ -2007,7 +1907,6 @@ class AIService: ObservableObject {
             multiModelAppleIntelligenceTasks.removeAll()
         #endif
 
-        // Cancel the batch first so pending runners are fenced before active request handles are cancelled.
         previousBatchTask?.cancel()
         previousDataTasks.forEach { $0.cancel() }
         previousRequestBuildTasks.forEach { $0.cancel() }
@@ -2119,7 +2018,7 @@ class AIService: ObservableObject {
                                 model: model,
                                 temperature: temperature,
                                 stream: true,
-                                tools: nil, // Tools disabled in multi-model mode - deferred
+                                tools: nil,
                                 conversationId: nil,
                                 isMultiModelRequest: true,
                                 onChunk: { chunk in
@@ -2131,7 +2030,7 @@ class AIService: ObservableObject {
                                 onError: { error in
                                     callbackForwarder.enqueue(.error(error))
                                 },
-                                onToolCall: nil, // Deferred - not executed during multi-model
+                                onToolCall: nil,
                                 onToolCallRequested: { toolID, toolName, arguments in
                                     callbackForwarder.enqueue(
                                         .toolRequest(id: toolID, name: toolName, arguments: arguments)
@@ -2280,7 +2179,6 @@ class AIService: ObservableObject {
         )
     }
 
-    /// UI-test messages starting with this get a long streamed reply.
     static let uiTestLongStreamPrefix = "[long-stream]"
 
     // swiftlint:disable:next function_parameter_count
@@ -2312,15 +2210,11 @@ class AIService: ObservableObject {
         let fallback = "Mock response"
         let userContent = messages.last(where: { $0.role == .user })?.content ?? fallback
 
-        // Handle title generation
         if userContent.starts(with: "Generate a very short title") {
-            // Extract the original content from the prompt
-            // Prompt format: ... starts with: "CONTENT". Only respond ...
             if let range = userContent.range(of: "starts with: \""),
                let endRange = userContent.range(of: "\". Only respond")
             {
                 let content = String(userContent[range.upperBound ..< endRange.lowerBound])
-                // Return just the content as the title (or a shortened version)
                 let title = String(content.prefix(50))
                 callbacks.onChunk(title)
                 callbacks.onComplete()
@@ -2330,7 +2224,6 @@ class AIService: ObservableObject {
 
         let response = "UI Test Response: \(userContent)"
 
-        // A long, slow stream for checking scrolling behavior while a reply grows.
         if stream, userContent.hasPrefix(Self.uiTestLongStreamPrefix) {
             let task = Task { @MainActor in
                 for line in 1 ... 150 {
@@ -2482,7 +2375,6 @@ class AIService: ObservableObject {
         return true
     }
 
-    // The Responses API flow handles multimodal payload assembly in one place for debugging clarity.
     // swiftlint:disable superfluous_disable_command
     // swiftlint:disable:next function_body_length cyclomatic_complexity
     private func responsesAPIRequest(
@@ -2522,7 +2414,6 @@ class AIService: ObservableObject {
             }
         }
 
-        // Check if this model has a provider override
         let effectiveProvider: AIProvider
         do {
             effectiveProvider = try resolvedProvider(for: model)
@@ -2533,7 +2424,6 @@ class AIService: ObservableObject {
         let endpointInfo = customEndpoint(for: model)
         let usesAzureEndpoint = endpointInfo.map { isAzureEndpoint($0.endpoint) } ?? false
 
-        // Apple Intelligence doesn't support the responses API
         if effectiveProvider == .appleIntelligence {
             reportSetupError(AIError.apiError("Apple Intelligence doesn't support the Responses API endpoint"))
             return
@@ -2563,7 +2453,6 @@ class AIService: ObservableObject {
             )
         }
 
-        // Inject memory context into messages
         let systemPrompt = messages.first { $0.role == .system }?.content
         let conversationHistory = messages.filter { $0.role != .system }
         let memoryContext = MemoryContextProvider.shared.buildContext(
@@ -2644,7 +2533,6 @@ class AIService: ObservableObject {
                     )
                     self.requestFlightObserver.record(.dataCallback, ownsFlight)
                     guard ownsFlight else { return }
-                    // A non-2xx status is an error too, so it can be retried like a network failure.
                     let error = transportError ?? self.httpStatusError(
                         response: response,
                         data: data,
@@ -2652,7 +2540,6 @@ class AIService: ObservableObject {
                     )
 
                     if let error {
-                        // Don't report error if it was cancelled
                         if (error as NSError).code == NSURLErrorCancelled {
                             self.clearDataFlight(
                                 flightID,
@@ -2847,9 +2734,6 @@ class AIService: ObservableObject {
 
     // swiftlint:enable superfluous_disable_command
 
-    // MARK: - Helper Methods for streamResponse
-
-    /// Builds an error for a non-2xx response; nil for success or a non-HTTP response.
     private nonisolated func httpStatusError(
         response: URLResponse?,
         data: Data?,
@@ -2886,16 +2770,12 @@ class AIService: ObservableObject {
         }
     }
 
-    /// Extracts error message from API response JSON, with special handling for rate limits
     private nonisolated func extractAPIErrorMessage(from data: Data, statusCode: Int) -> String {
-        // Check for rate limit status codes first
         if statusCode == 429 {
-            // Try to get more specific message, but provide friendly fallback
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let error = json["error"] as? [String: Any],
                let message = error["message"] as? String
             {
-                // Make the message more user-friendly
                 if message.lowercased().contains("rate") || message.lowercased().contains("limit") {
                     return "Too many requests. Please wait a minute before trying again."
                 }
@@ -2904,19 +2784,15 @@ class AIService: ObservableObject {
             return "Too many requests. Please wait a minute before trying again."
         }
 
-        // Try to parse as JSON error response
         if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            // OpenAI-style error: {"error": {"message": "..."}}
             if let error = json["error"] as? [String: Any],
                let message = error["message"] as? String
             {
                 return message
             }
-            // Simple message field: {"message": "..."}
             if let message = json["message"] as? String {
                 return message
             }
-            // OAuth-style error: {"error": "...", "error_description": "..."}
             if let errorDesc = json["error_description"] as? String {
                 return errorDesc
             }
@@ -2924,7 +2800,6 @@ class AIService: ObservableObject {
                 return error
             }
         }
-        // Fall back to raw text if not JSON
         if let text = String(data: data, encoding: .utf8), !text.isEmpty {
             return String(text.prefix(200))
         }
@@ -3121,14 +2996,11 @@ class AIService: ObservableObject {
             metadata: ["url": request.url?.absoluteString ?? "unknown"]
         )
 
-        // Read and parse the byte stream off the main actor; ownership checks and delivery hop
-        // back with MainActor.run, so the UI thread only sees batched chunks.
         let task = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             var hasReceivedData = false
 
             do {
-                // Use withTaskCancellationHandler to ensure proper cleanup
                 try await withTaskCancellationHandler {
                     let (bytes, response) = try await session.bytes(for: request)
 
@@ -3152,19 +3024,15 @@ class AIService: ObservableObject {
                     )
 
                     guard httpResponse.statusCode == 200 else {
-                        // Read the error response body for better error messages
                         var errorData = Data()
                         do {
                             for try await byte in bytes {
                                 errorData.append(byte)
-                                // Limit error body size to prevent memory issues
                                 if errorData.count > 4096 {
                                     break
                                 }
                             }
-                        } catch {
-                            // Ignore errors reading error body
-                        }
+                        } catch {}
 
                         let errorMessage: String = if !errorData.isEmpty {
                             self.extractAPIErrorMessage(from: errorData, statusCode: httpResponse.statusCode)
@@ -3249,28 +3117,23 @@ class AIService: ObservableObject {
                         nil
                     }
 
-                    // Batching buffers
                     var contentBuffer = ""
                     var reasoningBuffer = ""
                     var totalBytesReceived = 0
 
-                    // Maximum line length to prevent OOM from malformed streams without newlines
-                    let maxLineLength = 65536 // 64KB
+                    let maxLineLength = 65536
 
                     for try await byte in bytes {
-                        // Check for cancellation at each byte
                         try Task.checkCancellation()
 
                         hasReceivedData = true
                         totalBytesReceived += 1
                         buffer.append(byte)
 
-                        // Prevent unbounded buffer growth from malformed streams
                         if buffer.count > maxLineLength {
                             throw AynaError.apiError(message: "Malformed stream: line exceeds maximum length")
                         }
 
-                        // Log first byte received
                         if totalBytesReceived == 1 {
                             DiagnosticsLogger.log(
                                 .aiService,
@@ -3279,7 +3142,6 @@ class AIService: ObservableObject {
                             )
                         }
 
-                        // Check if we have a newline (UTF-8: 0x0A)
                         if byte == 0x0A {
                             if let line = String(data: buffer, encoding: .utf8) {
                                 let ownsFlight = await MainActor.run {
@@ -3321,7 +3183,6 @@ class AIService: ObservableObject {
                                 }
 
                                 if result.shouldComplete {
-                                    // Flush remaining buffers
                                     let contentToSend = contentBuffer
                                     let reasoningToSend = reasoningBuffer
                                     _ = await MainActor.run {
@@ -3339,10 +3200,6 @@ class AIService: ObservableObject {
                                     return
                                 }
 
-                                // Deliver each parsed SSE event before waiting for another byte.
-                                // Deferring a short tail until a later event can silently lose it
-                                // when Stop cancels a quiet stream between events. Platform views
-                                // perform their own render throttling where needed.
                                 if !contentBuffer.isEmpty || !reasoningBuffer.isEmpty {
                                     let contentToSend = contentBuffer
                                     let reasoningToSend = reasoningBuffer
@@ -3367,9 +3224,6 @@ class AIService: ObservableObject {
                         }
                     }
 
-                    // Some providers close immediately after their final SSE `data:` record
-                    // without a trailing newline. Parse that residual record once before EOF
-                    // finalization instead of silently discarding it.
                     if !buffer.isEmpty, let line = String(data: buffer, encoding: .utf8) {
                         let ownsFlight = await MainActor.run {
                             self.ownsStreamFlight(
@@ -3398,7 +3252,6 @@ class AIService: ObservableObject {
                         buffer.removeAll()
                     }
 
-                    // Flush any remaining content
                     let contentToSend = contentBuffer
                     let reasoningToSend = reasoningBuffer
                     let receivedData = hasReceivedData
@@ -3425,7 +3278,6 @@ class AIService: ObservableObject {
                             ]
                         )
 
-                        // Log warning if no data was received but no error occurred
                         if !receivedData {
                             DiagnosticsLogger.log(
                                 .aiService,
@@ -3564,7 +3416,6 @@ class AIService: ObservableObject {
             return
         }
 
-        // Check if it's a timeout error and provide a better message
         if let urlError = error as? URLError, urlError.code == .timedOut {
             callbacks.onError(
                 AIError.apiError(
@@ -3717,7 +3568,6 @@ class AIService: ObservableObject {
                 )
                 self.requestFlightObserver.record(.dataCallback, ownsFlight)
                 guard ownsFlight else { return }
-                // A non-2xx status is an error too, so it can be retried like a network failure.
                 let error = transportError ?? self.httpStatusError(
                     response: response,
                     data: data,
@@ -3806,7 +3656,6 @@ class AIService: ObservableObject {
                        let firstChoice = choices.first,
                        let message = firstChoice["message"] as? [String: Any]
                     {
-                        // Check for reasoning in various possible locations
                         var foundReasoning: String?
                         if let reasoning = message["reasoning"] as? String {
                             foundReasoning = reasoning
@@ -3816,11 +3665,9 @@ class AIService: ObservableObject {
                                   let details = usage["completion_tokens_details"] as? [String: Any],
                                   let reasoningTokens = details["reasoning_tokens"] as? Int, reasoningTokens > 0
                         {
-                            // Show reasoning token count
                             foundReasoning = "💭 Reasoning tokens used: \(reasoningTokens)"
                         }
 
-                        // Handle reasoning content if found
                         if let reasoning = foundReasoning, let onReasoning {
                             onReasoning(reasoning)
                             guard self.ownsDataFlight(
@@ -3833,7 +3680,6 @@ class AIService: ObservableObject {
                             }
                         }
 
-                        // Handle regular content
                         if let contentField = message["content"], !(contentField is NSNull) {
                             let textSegments = OpenAIStreamParser.extractTextSegments(
                                 from: contentField,
@@ -4561,8 +4407,6 @@ class AIService: ObservableObject {
         }
     #endif
 
-    // MARK: - Anthropic Provider Handler
-
     private func ownsAnthropicFlight(
         _ flightID: RequestFlightID,
         requestLane: AITextRequestLane,
@@ -4615,23 +4459,20 @@ class AIService: ObservableObject {
         let modelAPIKey = getAPIKey(for: model)
         let endpointInfo = customEndpoint(for: model)
 
-        // Validate API key
         guard !modelAPIKey.isEmpty else {
             callbacks.onError(AynaError.missingAPIKey(provider: AIProvider.anthropic.displayName))
             return
         }
 
-        // Build provider config
         let config = AIProviderRequestConfig(
             model: model,
             apiKey: modelAPIKey,
             customEndpoint: endpointInfo?.endpoint,
-            maxTokens: nil, // Use provider default
-            temperature: nil, // Use provider default
-            thinkingBudget: nil // TODO: Add UI for thinking budget
+            maxTokens: nil,
+            temperature: nil,
+            thinkingBudget: nil
         )
 
-        // Inject memory context into messages
         let systemPrompt = messages.first { $0.role == .system }?.content
         let conversationHistory = messages.filter { $0.role != .system }
         let memoryContext = MemoryContextProvider.shared.buildContext(
@@ -4643,7 +4484,6 @@ class AIService: ObservableObject {
             conversationHistory: conversationHistory
         )
 
-        // Install ownership before sending because a provider may fail synchronously.
         let provider = anthropicProviderFactory(urlSession)
         if requestLane == .background {
             backgroundAnthropicProviders.updateValue(provider, forKey: flightID)?.cancelRequest()
@@ -4758,7 +4598,6 @@ class AIService: ObservableObject {
         )
     }
 
-    /// Retry logic delegated to AIRetryPolicy
     private func shouldRetry(error: Error, attempt: Int, hasReceivedData: Bool = false) -> Bool {
         AIRetryPolicy.shouldRetry(
             error: error,
@@ -4864,8 +4703,6 @@ extension AIService {
     private func isAPIKeyConfigured(for provider: AIProvider, model: String?) -> Bool {
         guard requiresAPIKey(for: provider, model: model) else { return true }
 
-        // Requests only ever send the model's own key (see `getAPIKey(for:)`), so another
-        // model's key does not make this one usable.
         guard let model,
               let modelKey = modelAPIKeys[model]?.trimmingCharacters(in: .whitespacesAndNewlines)
         else {
@@ -4884,7 +4721,6 @@ extension AIService {
         return isAPIKeyConfigured(for: activeProvider, model: normalizedModel)
     }
 
-    /// Check if a specific model is ready to use (has API key or doesn't need one)
     func isModelConfigured(_ model: String) -> Bool {
         let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedModel.isEmpty else { return isAPIKeyConfigured }
@@ -4927,8 +4763,6 @@ extension AIService {
                 return false
             }
             #if os(watchOS)
-                // Apple Intelligence requires on-device processing which isn't available on watchOS
-                // The watch app makes API calls directly, not via iPhone relay
                 if modelProviders[model] == .appleIntelligence {
                     return false
                 }
@@ -4936,17 +4770,13 @@ extension AIService {
             return true
         }
 
-        // Check if running in UI test mode
         let isUITestMode = ProcessInfo.processInfo.environment["AYNA_UI_TESTING"] == "1" ||
             ProcessInfo.processInfo.arguments.contains("--ui-testing") ||
             ProcessInfo.processInfo.arguments.contains("-AYNA_UI_TESTING")
 
-        // Ensure test model is available during UI testing
-        // This is a fallback in case the init-time detection didn't work
         let testModelName = "ui-test-model"
         if isUITestMode, !models.contains(testModelName) {
             models.insert(testModelName, at: 0)
-            // Also ensure the test model is fully configured
             if modelProviders[testModelName] == nil {
                 modelProviders[testModelName] = .openai
             }
@@ -4967,8 +4797,6 @@ extension AIService {
         return models
     }
 
-    /// Models that support text generation (excludes image generation models)
-    /// Use this for multi-model comparison mode where comparing text to images doesn't make sense
     var textGenerationModels: [String] {
         usableModels.filter { model in
             getModelCapability(model) != .imageGeneration
@@ -4976,20 +4804,14 @@ extension AIService {
     }
 }
 
-// MARK: - Tool Management
-
 extension AIService {
-    /// Returns system prompt context for agentic capabilities.
-    /// This should be appended to the user's system prompt when tools are available.
     func getAgenticSystemPromptContext() -> String? {
         var contexts: [String] = []
 
-        // Add web_fetch context on all platforms
         if let webFetchContext = WebFetchService.shared.systemPromptContext() {
             contexts.append(webFetchContext)
         }
 
-        // Add macOS-specific tool context
         #if os(macOS)
             if let builtinContext = builtinToolService?.systemPromptContext() {
                 contexts.append(builtinContext)
@@ -4999,14 +4821,10 @@ extension AIService {
         return contexts.isEmpty ? nil : contexts.joined(separator: "\n\n")
     }
 
-    /// Returns all available tools for function calling, including built-in tools and MCP tools.
-    /// This is a cross-platform method that returns Tavily on all platforms and MCP only on macOS.
     func getAllAvailableTools() -> [[String: Any]]? {
         var tools: [[String: Any]] = []
 
-        // Add web search tool (Tavily if configured, else DuckDuckGo)
         #if os(watchOS)
-            // On watchOS, use synced settings
             if webSearchEnabled {
                 tools.append(WebSearchCoordinator.shared.toolDefinition())
                 DiagnosticsLogger.log(
@@ -5026,7 +4844,6 @@ extension AIService {
             }
         #endif
 
-        // Add web_fetch tool (available on all platforms)
         if WebFetchService.shared.isEnabled {
             tools.append(WebFetchService.shared.toolDefinition())
             DiagnosticsLogger.log(
@@ -5036,7 +4853,6 @@ extension AIService {
             )
         }
 
-        // Add native agentic tools (macOS only)
         #if os(macOS)
             if let builtinService = builtinToolService {
                 let builtinTools = builtinService.allToolDefinitions()
@@ -5059,7 +4875,6 @@ extension AIService {
             }
         #endif
 
-        // Add MCP tools (macOS only)
         #if os(macOS)
             let mcpTools = MCPServerManager.shared.getEnabledToolsAsOpenAIFunctions()
             tools.append(contentsOf: mcpTools)
@@ -5083,9 +4898,6 @@ extension AIService {
         return tools.isEmpty ? nil : tools
     }
 
-    /// Checks if a tool call is for a built-in tool (like web_search) that we handle internally.
-    /// - Parameter toolName: The name of the tool being called
-    /// - Returns: True if this is a built-in tool we handle, false if it should be routed to MCP
     func isBuiltInTool(_ toolName: String) -> Bool {
         #if os(watchOS)
             toolName == WebSearchCoordinator.toolName || WebFetchService.isWebFetchTool(toolName)
@@ -5096,14 +4908,7 @@ extension AIService {
         #endif
     }
 
-    /// Executes a built-in tool call and returns the result.
-    /// - Parameters:
-    ///   - toolName: The name of the tool to execute
-    ///   - arguments: The arguments passed to the tool
-    ///   - conversationId: The conversation ID for permission tracking (macOS only)
-    /// - Returns: The tool execution result as a string
     func executeBuiltInTool(name toolName: String, arguments: [String: Any], conversationId: UUID? = nil) async -> String {
-        // Handle web_fetch on all platforms
         if WebFetchService.isWebFetchTool(toolName) {
             return await WebFetchService.shared.executeToolCall(arguments: arguments)
         }
@@ -5116,7 +4921,6 @@ extension AIService {
                 return "Error: Unknown built-in tool '\(toolName)'"
             }
         #elseif os(macOS)
-            // Native agentic tools
             if BuiltinToolService.isBuiltinTool(toolName) {
                 guard let service = builtinToolService else {
                     return "Error: Agentic tools not configured"
@@ -5147,25 +4951,17 @@ extension AIService {
         #endif
     }
 
-    /// Executes a built-in tool call and returns both the result and citations (if any).
-    /// - Parameters:
-    ///   - toolName: The name of the tool to execute
-    ///   - arguments: The arguments passed to the tool
-    ///   - conversationId: The conversation ID for permission tracking (macOS only)
-    /// - Returns: Tuple of (result string, optional citations for inline display)
     func executeBuiltInToolWithCitations(
         name toolName: String,
         arguments: [String: Any],
         conversationId: UUID? = nil
     ) async -> (String, [CitationReference]?) {
-        // Handle web_fetch on all platforms (no citations)
         if WebFetchService.isWebFetchTool(toolName) {
             let result = await WebFetchService.shared.executeToolCall(arguments: arguments)
             return (result, nil)
         }
 
         #if os(watchOS)
-            // watchOS uses WebSearchCoordinator (with citations)
             switch toolName {
             case WebSearchCoordinator.toolName:
                 let (result, citations) = await WebSearchCoordinator.shared.executeToolCallWithCitations(arguments: arguments)
@@ -5175,7 +4971,6 @@ extension AIService {
                 return (result, nil)
             }
         #elseif os(macOS)
-            // Native agentic tools don't have citations (excluding web_fetch which is handled above)
             if BuiltinToolService.isBuiltinTool(toolName) {
                 let result = await executeBuiltInTool(name: toolName, arguments: arguments, conversationId: conversationId)
                 return (result, nil)
@@ -5199,7 +4994,5 @@ extension AIService {
         #endif
     }
 }
-
-// Keychain Helper
 
 // swiftlint:enable type_body_length

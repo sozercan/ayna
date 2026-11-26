@@ -1,11 +1,3 @@
-//
-//  ConversationManager.swift
-//  ayna
-//
-//  Created on 11/2/25.
-//
-
-// This legacy coordinator remains in one file while persistence responsibilities are extracted incrementally.
 // swiftlint:disable file_length
 
 import Combine
@@ -47,7 +39,6 @@ private struct AttachmentCleanupFencePreparation: Sendable {
 }
 
 @MainActor
-// The manager remains monolithic while persistence responsibilities are extracted incrementally.
 // swiftlint:disable:next type_body_length
 final class ConversationManager: ObservableObject {
     private static let searchIndexWarmupLimit = 16
@@ -98,17 +89,11 @@ final class ConversationManager: ObservableObject {
     private var loadRetryAttempt = 0
     private var selectionRevision: UInt64 = 0
 
-    // Performance: O(1) conversation index lookup cache
     private var conversationIndexCache: [UUID: Int] = [:]
 
-    // Conversations represented by lightweight metadata only until selected/opened.
     private var metadataOnlyConversationIds: Set<UUID> = []
     private var metadataSearchTextById: [UUID: String] = [:]
-    // What the last metadata load found on disk. In metadata-loading mode the persistence
-    // coordinator only knows this session's saves, so Watch publication fills in the rest
-    // from here. `isMetadataOnly` entries carry no message history.
     private var durableDiskBaseline: [UUID: (conversation: Conversation, isMetadataOnly: Bool)] = [:]
-    /// Conversations with a reply in progress, which a refresh must not replace.
     private var generatingConversationIds: Set<UUID> = []
     private var fullConversationLoadTasks: [UUID: Task<Conversation?, Never>] = [:]
     private var fullConversationLoadTaskVersions: [UUID: UInt64] = [:]
@@ -155,10 +140,8 @@ final class ConversationManager: ObservableObject {
     private let spotlightBatchIndexOperation: @Sendable ([Conversation], Bool) async throws -> Void
     private let spotlightDeleteOperation: @Sendable (UUID) async throws -> Void
     private let attachmentDeleteOperation: @MainActor @Sendable ([String]) -> Void
-    // Attachment paths recorded in metadata, for conversations whose messages are not loaded.
     private var metadataAttachmentPathsById: [UUID: [String]] = [:]
     private let spotlightIndexingEnabled: Bool
-    // Performance: Spotlight indexing debounce (3 seconds per conversation)
     private var indexingDebounceTasks: [UUID: Task<Void, Never>] = [:]
     private let indexingDebounceDuration: Duration = .seconds(3)
     private var spotlightIndexGeneration: UInt64 = 0
@@ -172,9 +155,6 @@ final class ConversationManager: ObservableObject {
         DiagnosticsLogger.log(.conversationManager, level: level, message: message, metadata: metadata)
     }
 
-    // MARK: - Index Cache Management
-
-    /// Rebuilds the entire conversation index cache. Call after bulk operations.
     private func rebuildIndexCache() {
         conversationIndexCache.removeAll(keepingCapacity: true)
         for (index, conversation) in conversations.enumerated() {
@@ -182,20 +162,15 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    /// Gets the index for a conversation ID using O(1) cache lookup.
-    /// Falls back to O(n) search if not in cache.
     private func getConversationIndex(for id: UUID) -> Int? {
         if let cachedIndex = conversationIndexCache[id] {
-            // Verify cache is still valid
             if cachedIndex < conversations.count, conversations[cachedIndex].id == id {
                 return cachedIndex
             }
-            // Cache is stale, rebuild
             rebuildIndexCache()
             return conversationIndexCache[id]
         }
 
-        // Not in cache, do linear search and cache result
         if let index = conversations.firstIndex(where: { $0.id == id }) {
             conversationIndexCache[id] = index
             return index
@@ -204,24 +179,19 @@ final class ConversationManager: ObservableObject {
         return nil
     }
 
-    /// Updates the cache when a conversation is inserted at a specific index.
     private func updateCacheForInsertion(at index: Int) {
-        // Update all indices >= insertion point
         for idx in index ..< conversations.count {
             conversationIndexCache[conversations[idx].id] = idx
         }
     }
 
-    /// Updates the cache when a conversation is removed.
     private func updateCacheForRemoval(id: UUID, at index: Int) {
         conversationIndexCache.removeValue(forKey: id)
-        // Update all indices > removal point
         for idx in index ..< conversations.count {
             conversationIndexCache[conversations[idx].id] = idx
         }
     }
 
-    // Dependency wiring remains centralized until the manager is split into smaller collaborators.
     // swiftlint:disable:next function_body_length
     init(
         store: (any ConversationStoreAdapter)? = nil,
@@ -425,7 +395,6 @@ final class ConversationManager: ObservableObject {
         persistenceCoordinator.observeDurableSnapshotChanges { [weak self] in
             self?.durableConversationRevision &+= 1
         }
-        // Summaries follow what is on disk, so every durable save refreshes one.
         persistenceCoordinator.observeDurableSaves { [weak self] conversation in
             self?.conversationDidPersist(conversation)
         }
@@ -438,8 +407,6 @@ final class ConversationManager: ObservableObject {
             isConversationStateAuthoritative = true
         }
     }
-
-    // MARK: - Persistence
 
     func save(_ conversation: Conversation, allowsRecreation: Bool = false) {
         if allowsRecreation {
@@ -520,7 +487,6 @@ final class ConversationManager: ObservableObject {
             return
         }
 
-        // Track the preparation task so lifecycle flushes cannot overtake it.
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { finishPersistenceTask(for: conversation.id, sequence: persistenceSequence) }
@@ -756,8 +722,6 @@ final class ConversationManager: ObservableObject {
         }
         metadataOnlyConversationIds.remove(conversation.id)
         metadataSearchTextById.removeValue(forKey: conversation.id)
-        // A conversation new to the manager was saved before this insert, so the durable-save
-        // observer skipped it; record what is on disk and refresh its summary now.
         durableDiskBaseline[conversation.id] = (conversation, false)
         conversationSummaryUpdateOperation(conversation)
         #if !os(watchOS)
@@ -899,16 +863,12 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    /// A save that lands after its conversation was deleted or cleared must not restore the
-    /// conversation's summary.
     private func conversationDidPersist(_ conversation: Conversation) {
         guard getConversationIndex(for: conversation.id) != nil else { return }
-        // What is on disk now, so a reload can tell saved changes from unsaved ones.
         durableDiskBaseline[conversation.id] = (conversation, metadataOnlyConversationIds.contains(conversation.id))
         conversationSummaryUpdateOperation(conversation)
     }
 
-    /// Files a conversation owns: from its messages, or from metadata when they aren't loaded.
     private func ownedAttachmentPaths(of conversation: Conversation) -> [String] {
         if metadataOnlyConversationIds.contains(conversation.id) || conversation.metadataPreview != nil {
             return metadataAttachmentPathsById[conversation.id] ?? conversation.attachmentPaths
@@ -924,8 +884,6 @@ final class ConversationManager: ObservableObject {
         durableSyncSnapshot().conversations
     }
 
-    /// Durable conversations for Watch publication, plus the IDs whose message history is not
-    /// loaded and therefore must not be published as a conversation body.
     func durableSyncSnapshot() -> (conversations: [Conversation], bodyUnavailableIDs: Set<UUID>) {
         let saved = persistenceCoordinator.durableConversations()
         guard usesMetadataLoading else { return (saved, []) }
@@ -933,8 +891,6 @@ final class ConversationManager: ObservableObject {
         let savedById = Dictionary(saved.map { ($0.id, $0) }, uniquingKeysWith: { _, new in new })
         var durable: [Conversation] = []
         var bodyUnavailableIDs: Set<UUID> = []
-        // In-memory membership decides what still exists: deletions leave `conversations`, and a
-        // failed deletion restores the conversation there.
         for conversation in conversations {
             if let savedConversation = savedById[conversation.id] {
                 durable.append(savedConversation)
@@ -967,8 +923,6 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    /// Flushes all pending debounced saves immediately.
-    /// Call on app termination to prevent data loss.
     func flushPendingSaves() async {
         while true {
             while let clearTask = clearConversationsTask {
@@ -1114,7 +1068,6 @@ final class ConversationManager: ObservableObject {
         registerManagerDeletionTask(task, for: conversationId, version: deletionVersion)
     }
 
-    // Loading reconciles legacy, metadata-only, and durable snapshots in one transaction.
     // swiftlint:disable:next function_body_length
     private func loadConversations(
         allowingActiveClearGeneration allowedClearGeneration: UInt64? = nil,
@@ -1156,7 +1109,6 @@ final class ConversationManager: ObservableObject {
                 return
             }
 
-            // Validate and fix models that no longer exist for the in-memory list.
             let usableModels = AIService.shared.usableModels
             let availableModelSet = Set(usableModels)
             let selectedModel = AIService.shared.selectedModel
@@ -1238,7 +1190,6 @@ final class ConversationManager: ObservableObject {
                 nextMetadataOnlyIds.insert(metadata.id)
             }
 
-            // Add any dirty in-memory conversations not present on disk yet (e.g., newly created)
             let recreatedAfterLoadIds = Set(latestManagerRecreationVersionById.compactMap { id, version in
                 let deletionVersion = latestManagerDeletionVersionById[id] ?? 0
                 return version > reconciliationVersionAtLoadStart && version > deletionVersion ? id : nil
@@ -1252,7 +1203,6 @@ final class ConversationManager: ObservableObject {
                 }
             }
 
-            // Sort by updated date descending to ensure correct order
             reconciled.sort { $0.updatedAt > $1.updatedAt }
             let searchIndexWarmupIds = Set(
                 reconciled.lazy
@@ -1273,8 +1223,6 @@ final class ConversationManager: ObservableObject {
                 pathsById[metadata.id] = paths
             }
 
-            // If selected conversation no longer exists, clear selection. The new-chat
-            // placeholder is never stored, and clearing it would discard its draft.
             if let selectedId = selectedConversationId,
                selectedId != Self.newConversationId,
                !conversations.contains(where: { $0.id == selectedId })
@@ -1284,7 +1232,6 @@ final class ConversationManager: ObservableObject {
                 scheduleFullConversationLoadIfNeeded(selectedId)
             }
 
-            // Rebuild the index cache after loading and sorting
             rebuildIndexCache()
 
             isLoaded = true
@@ -1302,8 +1249,6 @@ final class ConversationManager: ObservableObject {
                 metadata: ["count": "\(conversations.count)"]
             )
 
-            // Index loaded full conversations for Spotlight; avoid replacing a rich existing
-            // index with title-only metadata placeholders.
             #if !os(watchOS)
                 indexAllConversations(includingMetadataOnly: spotlightIndexWasCleared)
             #endif
@@ -1329,7 +1274,6 @@ final class ConversationManager: ObservableObject {
                 conversationIndexCache.removeAll()
             }
             isLoaded = true
-            // A retried refresh still keeps a reply that is streaming in.
             scheduleLoadRetry(preservingUnsavedChanges: preservingUnsavedChanges)
         }
     }
@@ -1470,7 +1414,6 @@ final class ConversationManager: ObservableObject {
                 try Task.checkCancellation()
                 try await encryptedStore.warmConversationSearchIndex(candidateIds: conversationIds)
             } catch is CancellationError {
-                // A reload or clear superseded this warmup.
             } catch {
                 self?.logManager(
                     "Conversation search-index warmup failed",
@@ -1494,17 +1437,12 @@ final class ConversationManager: ObservableObject {
         searchIndexWarmupTask = nil
     }
 
-    /// Resets the record of what is on disk from freshly loaded metadata. A full snapshot is
-    /// kept unless the stored copy is newer; a row kept in memory but missing from the
-    /// metadata was saved while it loaded, so the baseline its save recorded is kept too
-    /// (only a completed save creates one).
     private func rebuildDurableDiskBaseline(
         from metadataFromDisk: [ConversationMetadata],
         keeping reconciled: [Conversation]
     ) {
         let previousBaseline = durableDiskBaseline
         durableDiskBaseline = metadataFromDisk.reduce(into: [:]) { baseline, metadata in
-            // A save that finished after the metadata was read leaves the snapshot newer.
             if let previous = previousBaseline[metadata.id], !previous.isMetadataOnly,
                previous.conversation.updatedAt >= metadata.updatedAt
             {
@@ -1687,7 +1625,6 @@ final class ConversationManager: ObservableObject {
         metadataOnlyConversationIds.contains(conversationId)
     }
 
-    /// The most recent conversations with their full message history, for summary backfill.
     func recentConversationsWithHistory(limit: Int) async -> [Conversation] {
         _ = await loadingTask?.value
         let recentIds = conversations
@@ -1703,7 +1640,6 @@ final class ConversationManager: ObservableObject {
         return result
     }
 
-    /// Loads a metadata-backed conversation's full message history if needed.
     @discardableResult
     func ensureConversationLoaded(_ conversationId: UUID) async -> Conversation? {
         if let existingTask = fullConversationLoadTasks[conversationId] {
@@ -1717,12 +1653,9 @@ final class ConversationManager: ObservableObject {
         return await startFullConversationLoad(conversationId).value
     }
 
-    /// A metadata-only conversation has no messages in memory, so an edit built from it and saved
-    /// directly would overwrite its history on disk. Returns false if the history could not load.
     func loadFullHistoryBeforeEdit(_ conversationId: UUID) async -> Bool {
         guard metadataOnlyConversationIds.contains(conversationId) else { return true }
         _ = await ensureConversationLoaded(conversationId)
-        // A delete or clear during the load also clears the marker; that is not a success.
         return conversationSnapshot(byId: conversationId) != nil
             && !metadataOnlyConversationIds.contains(conversationId)
     }
@@ -1820,8 +1753,6 @@ final class ConversationManager: ObservableObject {
         return conversations[index]
     }
 
-    /// Public method to reload conversations from storage.
-    /// Used for pull-to-refresh on iOS.
     func reloadConversations() async {
         logManager("🔄 Reloading conversations from storage", level: .info)
         loadRetryTask?.cancel()
@@ -1832,8 +1763,6 @@ final class ConversationManager: ObservableObject {
         await loadConversations(preservingUnsavedChanges: true)
     }
 
-    /// Marks whether a reply is being generated for a conversation. While one is, a refresh
-    /// keeps the in-memory copy so later chunks still find the reply message.
     func isGenerating(_ conversationId: UUID) -> Bool {
         generatingConversationIds.contains(conversationId)
     }
@@ -1846,10 +1775,6 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    /// Stored conversations that a user-requested reload keeps instead of replacing with the
-    /// stored copy: one with a reply in progress, or whose fully loaded in-memory copy has
-    /// changes not yet saved (streaming updates are saved when the reply finishes).
-    /// Conversations that are not on disk keep following the dirty-save rule.
     private func unsavedStoredConversationIds(in metadataFromDisk: [ConversationMetadata]) -> Set<UUID> {
         let storedIds = Set(metadataFromDisk.map(\.id))
         return Set(conversations.lazy.filter { conversation in
@@ -1860,7 +1785,6 @@ final class ConversationManager: ObservableObject {
         }.map(\.id))
     }
 
-    /// Clearing coordinates storage, attachments, summaries, and Spotlight rollback.
     @discardableResult
     func clearAllConversations() -> Task<Void, Never> { // swiftlint:disable:this function_body_length
         persistenceErrorMessage = nil
@@ -2496,13 +2420,6 @@ final class ConversationManager: ObservableObject {
         save(conversation, allowsRecreation: allowsRecreation)
     }
 
-    /// Start a new conversation with optional model, prompt, and system prompt.
-    /// Used by deep links to create a conversation and optionally auto-send a message.
-    /// - Parameters:
-    ///   - model: The model to use. If nil, uses the currently selected model.
-    ///   - prompt: An initial prompt to auto-send. If nil, no message is sent automatically.
-    ///   - systemPrompt: A custom system prompt for this conversation. If nil, inherits global.
-    /// - Returns: The created conversation.
     @discardableResult
     func startConversation(
         model: String? = nil,
@@ -2511,7 +2428,6 @@ final class ConversationManager: ObservableObject {
     ) -> Conversation {
         let effectiveModel = model ?? AIService.shared.selectedModel
 
-        // Validate model exists
         let availableModels = AIService.shared.customModels
         let validatedModel = availableModels.contains(effectiveModel)
             ? effectiveModel
@@ -2522,12 +2438,10 @@ final class ConversationManager: ObservableObject {
             model: validatedModel
         )
 
-        // Set system prompt mode
         if let systemPrompt, !systemPrompt.isEmpty {
             conversation.systemPromptMode = .custom(systemPrompt)
         }
 
-        // Set pending auto-send prompt (will be picked up by the chat view)
         if let prompt, !prompt.isEmpty {
             conversation.pendingAutoSendPrompt = prompt
         }
@@ -2699,7 +2613,6 @@ final class ConversationManager: ObservableObject {
         if let index = getConversationIndex(for: conversation.id) {
             conversations[index].addMessage(message)
 
-            // Auto-generate title from first user message
             let autoGenerateTitle = AppPreferences.storage.object(forKey: "autoGenerateTitle") as? Bool ?? true
             let userMessageCount = conversations[index].messages.count(where: { $0.role == .user })
             let currentTitle = conversations[index].title
@@ -2734,7 +2647,6 @@ final class ConversationManager: ObservableObject {
         else {
             return false
         }
-        // One write per update: every write to `conversations` re-renders every observer.
         modifyConversation(at: convIndex) { conversation in
             update(&conversation.messages[msgIndex])
             conversation.updatedAt = Date()
@@ -2743,9 +2655,6 @@ final class ConversationManager: ObservableObject {
         return true
     }
 
-    // MARK: - Safe ID-Based Access
-
-    /// Safely get a conversation by ID. Returns nil if not found.
     func conversation(byId id: UUID) -> Conversation? {
         if metadataOnlyConversationIds.contains(id) {
             scheduleFullConversationLoadIfNeeded(id)
@@ -2757,7 +2666,6 @@ final class ConversationManager: ObservableObject {
         return nil
     }
 
-    /// Safely update a message by IDs. Returns true if update succeeded.
     @discardableResult
     func updateMessage(
         conversationId: UUID,
@@ -2776,7 +2684,6 @@ final class ConversationManager: ObservableObject {
         return true
     }
 
-    /// Safely append content to a message. Returns true if update succeeded.
     @discardableResult
     func appendToMessage(
         conversationId: UUID,
@@ -2788,7 +2695,6 @@ final class ConversationManager: ObservableObject {
         else {
             return false
         }
-        // Streaming calls this every flush; a single in-place write publishes one change.
         modifyConversation(at: convIndex) { conversation in
             conversation.messages[msgIndex].content += chunk
             conversation.updatedAt = Date()
@@ -2796,13 +2702,10 @@ final class ConversationManager: ObservableObject {
         return true
     }
 
-    /// Mutates one conversation in place with a single write to `conversations`, so observers
-    /// see one change instead of one per modified property.
     private func modifyConversation(at index: Int, _ body: (inout Conversation) -> Void) {
         body(&conversations[index])
     }
 
-    /// Safely remove a message by IDs. Returns true if removal succeeded.
     @discardableResult
     func removeMessage(
         conversationId: UUID,
@@ -2818,7 +2721,6 @@ final class ConversationManager: ObservableObject {
         return true
     }
 
-    /// Safely update a response group status by IDs. Returns true if update succeeded.
     @discardableResult
     func updateResponseGroupStatus(
         conversationId: UUID,
@@ -2844,12 +2746,6 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    /// Edits the content of a user message and marks it as edited.
-    /// - Parameters:
-    ///   - conversation: The conversation containing the message.
-    ///   - messageId: The ID of the message to edit.
-    ///   - newContent: The new content for the message.
-    /// - Returns: True if the edit was successful, false if the message wasn't found or isn't editable.
     @discardableResult
     func editMessage(in conversation: Conversation, messageId: UUID, newContent: String) -> Bool {
         guard let convIndex = getConversationIndex(for: conversation.id),
@@ -2864,12 +2760,10 @@ final class ConversationManager: ObservableObject {
             return false
         }
 
-        // Don't edit if content hasn't changed
         guard conversations[convIndex].messages[msgIndex].content != newContent else {
             return true
         }
 
-        // Remove all messages after the edited message to avoid stale responses
         let nextIndex = conversations[convIndex].messages.index(after: msgIndex)
         if nextIndex < conversations[convIndex].messages.endIndex {
             conversations[convIndex].messages.removeSubrange(nextIndex...)
@@ -2909,9 +2803,6 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    // MARK: - Multi-Model Support
-
-    /// Toggles multi-model mode for a conversation
     func setMultiModelEnabled(for conversation: Conversation, enabled: Bool) {
         if let index = getConversationIndex(for: conversation.id) {
             conversations[index].multiModelEnabled = enabled
@@ -2920,7 +2811,6 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    /// Sets the active models for multi-model parallel queries
     func setActiveModels(for conversation: Conversation, models: [String]) {
         if let index = getConversationIndex(for: conversation.id) {
             conversations[index].activeModels = models
@@ -2929,7 +2819,6 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    /// Starts or retries a multi-model response as one conversation mutation.
     func beginMultiModelResponse(
         to conversation: Conversation,
         messages: [Message],
@@ -2944,7 +2833,6 @@ final class ConversationManager: ObservableObject {
         return conversations[index]
     }
 
-    /// Updates a response group (e.g., when streaming completes)
     func updateResponseGroup(in conversation: Conversation, group: ResponseGroup) {
         if let index = getConversationIndex(for: conversation.id) {
             conversations[index].updateResponseGroup(group)
@@ -2952,7 +2840,6 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    /// Selects a response from a response group, enabling deferred tool execution
     func selectResponse(in conversation: Conversation, groupId: UUID, messageId: UUID) {
         if let index = getConversationIndex(for: conversation.id) {
             conversations[index].selectResponse(in: groupId, messageId: messageId)
@@ -2971,29 +2858,23 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    /// Gets the effective message history for API requests, filtering out unselected responses
     func getEffectiveHistory(for conversation: Conversation) -> [Message] {
         conversation.getEffectiveHistory()
     }
 
-    /// Checks if a message is part of a response group
     func isPartOfResponseGroup(message: Message, in conversation: Conversation) -> Bool {
         guard let groupId = message.responseGroupId else { return false }
         return conversation.getResponseGroup(groupId) != nil
     }
 
-    /// Gets all responses in a response group
     func getResponsesInGroup(groupId: UUID, in conversation: Conversation) -> [Message] {
         conversation.messages.filter { $0.responseGroupId == groupId }
     }
 
-    /// Checks if a response group has a selection
     func hasSelection(groupId: UUID, in conversation: Conversation) -> Bool {
         conversation.getResponseGroup(groupId)?.hasSelection ?? false
     }
 
-    /// Resolves the effective system prompt for a conversation based on its mode.
-    /// - Returns: The system prompt string, or nil if no prompt should be used.
     func effectiveSystemPrompt(for conversation: Conversation) -> String? {
         switch conversation.systemPromptMode {
         case .inheritGlobal:
@@ -3006,17 +2887,7 @@ final class ConversationManager: ObservableObject {
         }
     }
 
-    // MARK: - Attach from App Context
-
     #if os(macOS)
-        /// Creates a new conversation with app context from "Attach from App" feature.
-        /// - Parameters:
-        ///   - appName: The name of the source application
-        ///   - windowTitle: The window title (optional)
-        ///   - contentType: The type of content extracted
-        ///   - content: The extracted content
-        ///   - userMessage: The user's question about the content
-        /// - Returns: The created conversation
         @discardableResult
         func createConversationWithContext(
             appName: String,
@@ -3027,7 +2898,6 @@ final class ConversationManager: ObservableObject {
         ) -> Conversation {
             let defaultModel = AIService.shared.selectedModel
 
-            // Build the system message with context
             var systemContent = """
             You have been given context from the user's \(appName) application.
             """
@@ -3040,20 +2910,16 @@ final class ConversationManager: ObservableObject {
             systemContent += "\n\n---\n\(content)\n---"
             systemContent += "\n\nAnswer the user's question based on this context."
 
-            // Create conversation with custom system prompt
             var conversation = Conversation(title: "New Conversation", model: defaultModel)
             conversation.systemPromptMode = .custom(systemContent)
 
-            // Add the user message
             let message = Message(role: .user, content: userMessage)
             conversation.addMessage(message)
 
-            // Insert and save
             conversations.insert(conversation, at: 0)
             updateCacheForInsertion(at: 0)
             save(conversation)
 
-            // Select the new conversation
             selectedConversationId = conversation.id
 
             logManager(
@@ -3066,8 +2932,6 @@ final class ConversationManager: ObservableObject {
                 ]
             )
 
-            // Post notification to trigger AI response in the view
-            // Delay slightly to allow SwiftUI to instantiate the new MacChatView
             let conversationId = conversation.id
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(100))
@@ -3098,10 +2962,8 @@ final class ConversationManager: ObservableObject {
             return
         }
 
-        // Skip AI title generation for image generation models - use fallback instead
         let modelCapability = AIService.shared.getModelCapability(conversation.model)
         if modelCapability == .imageGeneration {
-            // Use simple fallback title for image generation conversations
             let fallbackTitle = String(content.prefix(50))
             renameConversation(conversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
             return
@@ -3110,7 +2972,6 @@ final class ConversationManager: ObservableObject {
         let titleRequestGeneration = beginTitleRequest(for: conversation.id)
         let firstMessageId = firstMessage.id
 
-        // Use AI to generate a concise title using the same model as the conversation
         let titlePrompt = "Generate a very short title (3-5 words maximum) for a conversation that starts with: \"\(content.prefix(200))\". Only respond with the title, nothing else."
 
         let titleMessage = Message(role: .user, content: titlePrompt)
@@ -3136,7 +2997,6 @@ final class ConversationManager: ObservableObject {
                           ),
                           let currentConversation = self.conversationSnapshot(byId: conversation.id)
                     else { return }
-                    // Use the AI-generated title, trimmed and cleaned
                     let accumulatedTitle = await accumulator.getTitle()
                     let cleanTitle = accumulatedTitle
                         .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
@@ -3146,7 +3006,6 @@ final class ConversationManager: ObservableObject {
                     if !cleanTitle.isEmpty {
                         self.renameConversation(currentConversation, newTitle: cleanTitle)
                     } else {
-                        // Fallback to simple title if empty
                         let fallbackTitle = String(content.prefix(50))
                         self.renameConversation(currentConversation, newTitle: fallbackTitle + (content.count > 50 ? "..." : ""))
                     }
@@ -3163,7 +3022,6 @@ final class ConversationManager: ObservableObject {
                           ),
                           let currentConversation = self.conversationSnapshot(byId: conversation.id)
                     else { return }
-                    // Fallback to simple title if AI fails
                     self.logManager(
                         "⚠️ Failed to generate AI title",
                         level: .error,
@@ -3197,8 +3055,6 @@ final class ConversationManager: ObservableObject {
         return currentConversation.messages.first(where: { $0.role == .user })?.id == firstMessageId
     }
 
-    // MARK: - Spotlight Indexing
-
     #if !os(watchOS)
         private nonisolated static func createSearchableItem(for conversation: Conversation)
             -> CSSearchableItem
@@ -3217,7 +3073,6 @@ final class ConversationManager: ObservableObject {
             keywords.append(contentsOf: conversation.title.components(separatedBy: .whitespacesAndNewlines))
             attributeSet.keywords = keywords
 
-            // Index full content
             let allContent = conversation.messages.map(\.content).joined(separator: "\n")
             attributeSet.textContent = allContent
             attributeSet.contentModificationDate = conversation.updatedAt
@@ -3229,8 +3084,6 @@ final class ConversationManager: ObservableObject {
             )
         }
 
-        /// Index a conversation with debouncing to avoid excessive Spotlight updates during streaming.
-        /// Uses a 3-second debounce per conversation to coalesce rapid updates.
         private func indexConversation(_ conversation: Conversation) {
             guard spotlightIndexingEnabled else { return }
             let conversationId = conversation.id
@@ -3282,8 +3135,6 @@ final class ConversationManager: ObservableObject {
             }
         }
 
-        /// Index a conversation immediately without debouncing.
-        /// Used for final saves when streaming completes or conversation is deleted.
         private func indexConversationImmediately(_ conversation: Conversation) {
             guard spotlightIndexingEnabled else { return }
             indexingDebounceTasks[conversation.id]?.cancel()
@@ -3311,9 +3162,6 @@ final class ConversationManager: ObservableObject {
                 }
 
                 do {
-                    // Metadata-only startup normally preserves an existing rich index. When
-                    // pending privacy cleanup just cleared the domain, placeholders must be
-                    // republished so surviving conversations remain discoverable.
                     try await indexOperation(conversationsToIndex, shouldResetIndex)
 
                     DiagnosticsLogger.log(
@@ -3383,8 +3231,6 @@ final class ConversationManager: ObservableObject {
             let cleanupOperation = spotlightCleanupOperation
             let result = CleanupResultBox()
 
-            // Queue deletion behind every index submission accepted before the clear.
-            // New submissions are queued afterward, so cleared content cannot be republished.
             let task = spotlightOperationQueue.enqueue(priority: .utility) { [weak self] in
                 do {
                     try await cleanupOperation()
@@ -3496,7 +3342,6 @@ final class ConversationManager: ObservableObject {
     }
 }
 
-/// Helper actor for thread-safe title generation
 private actor TitleAccumulator {
     var title = ""
 

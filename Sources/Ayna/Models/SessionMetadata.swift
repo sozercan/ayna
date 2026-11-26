@@ -1,14 +1,5 @@
-//
-//  SessionMetadata.swift
-//  ayna
-//
-//  Created on 12/25/25.
-//
-
 import Foundation
 
-/// Ephemeral metadata about the current session.
-/// Generated fresh each session and not persisted.
 struct SessionMetadata: Sendable {
     let deviceType: DeviceType
     let platform: Platform
@@ -36,7 +27,6 @@ struct SessionMetadata: Sendable {
         self.conversationPatterns = conversationPatterns
     }
 
-    /// The device type category
     enum DeviceType: String, Codable, Sendable {
         case desktop
         case tablet
@@ -53,7 +43,6 @@ struct SessionMetadata: Sendable {
         }
     }
 
-    /// The platform/OS
     enum Platform: String, Codable, Sendable {
         case macOS
         case iOS
@@ -64,7 +53,6 @@ struct SessionMetadata: Sendable {
         }
     }
 
-    /// Patterns derived from the user's conversation history
     struct ConversationPatterns: Codable, Sendable {
         var averageMessageLength: Int?
         var averageConversationDepth: Int?
@@ -84,14 +72,11 @@ struct SessionMetadata: Sendable {
         }
     }
 
-    /// Gets the current app version from the bundle
     private static var currentAppVersion: String {
         (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
-            // The SwiftPM binary embeds Info.plist without expanding build settings.
             .flatMap { $0.hasPrefix("$(") ? nil : $0 } ?? "1.0"
     }
 
-    /// Formats the metadata for injection into the AI context.
     func formattedForContext() -> String {
         let formatter = DateFormatter()
         formatter.timeStyle = .short

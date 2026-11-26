@@ -1,13 +1,4 @@
-//
-//  MCPModels.swift
-//  ayna
-//
-//  Created on 11/3/25.
-//
-
 import Foundation
-
-// MARK: - MCP Server Configuration
 
 struct MCPServerConfig: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
@@ -34,14 +25,12 @@ struct MCPServerConfig: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
-// MARK: - MCP Tool
-
 struct MCPTool: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     let name: String
     let description: String
     let inputSchema: JSONSchema
-    let serverName: String // Which MCP server provides this tool
+    let serverName: String
 
     init(
         id: UUID = UUID(),
@@ -57,7 +46,6 @@ struct MCPTool: Identifiable, Codable, Equatable, Sendable {
         self.serverName = serverName
     }
 
-    /// Convert to OpenAI function format, optionally under a model-facing alias.
     func toOpenAIFunction(exposedName: String? = nil) -> [String: Any] {
         [
             "type": "function",
@@ -70,13 +58,6 @@ struct MCPTool: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
-/// Names MCP tools are offered to the model under, bound for the whole session.
-///
-/// A tool keeps its own name unless that name is reserved (served by Ayna) or already taken by
-/// another server's tool; then it becomes `server__tool`, cleaned to the `^[A-Za-z0-9_-]{1,64}$`
-/// form function-calling APIs accept. Once an alias is bound to a server and tool it is never
-/// given to anything else, so a call made against an older tool list either reaches the same
-/// tool or fails, and never runs on a different server.
 struct MCPToolNaming {
     private var aliasByKey: [String: String] = [:]
     private var keyByAlias: [String: String] = [:]
@@ -85,13 +66,11 @@ struct MCPToolNaming {
         "\(server)\u{0}\(tool)"
     }
 
-    /// Model-facing name for each tool, by tool ID.
     mutating func assign(_ tools: [MCPTool], reserved: Set<String>) -> [UUID: String] {
         let ordered = tools.sorted { Self.key(server: $0.serverName, tool: $0.name) < Self.key(server: $1.serverName, tool: $1.name) }
         var result: [UUID: String] = [:]
         var taken = reserved
 
-        // Keep every alias already bound to a tool that is still here.
         for tool in ordered {
             let key = Self.key(server: tool.serverName, tool: tool.name)
             if let alias = aliasByKey[key], !taken.contains(alias) {
@@ -105,7 +84,6 @@ struct MCPToolNaming {
         for tool in unassigned {
             let key = Self.key(server: tool.serverName, tool: tool.name)
             let alias: String
-            // Raw names are kept only when function-calling APIs accept them as they are.
             if rawNameCounts[tool.name] == 1, Self.isValidFunctionName(tool.name),
                isAvailable(tool.name, for: key, taken: taken)
             {
@@ -142,8 +120,6 @@ struct MCPToolNaming {
         return String(String(name.map { allowed.contains($0) ? $0 : "_" }).prefix(64))
     }
 }
-
-// MARK: - JSON Schema
 
 struct JSONSchema: Codable, Equatable, Sendable {
     let type: String
@@ -202,8 +178,6 @@ extension JSONSchema.Property {
     }
 }
 
-// MARK: - MCP Resource
-
 struct MCPResource: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     let uri: String
@@ -228,8 +202,6 @@ struct MCPResource: Identifiable, Codable, Equatable, Sendable {
         self.serverName = serverName
     }
 }
-
-// MARK: - MCP JSON-RPC Messages
 
 struct MCPRequest: Codable, Sendable {
     let jsonrpc: String = "2.0"
@@ -260,8 +232,6 @@ struct MCPError: Codable, Sendable {
     let message: String
     let data: AnyCodable?
 }
-
-// MARK: - Tool Call Result
 
 struct MCPToolCall: Identifiable, Codable, Equatable, Sendable {
     let id: String

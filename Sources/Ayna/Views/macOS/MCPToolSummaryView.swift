@@ -1,11 +1,5 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  MCPToolSummaryView.swift
-//  ayna
-//
-//  Created on 11/20/25.
-//
 
 import SwiftUI
 
@@ -55,7 +49,6 @@ struct MCPToolSummaryView: View {
 
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: Spacing.sm) {
-                                // Agentic Tools chip - always show
                                 Button {
                                     agentSettingsStore.settings.isEnabled.toggle()
                                 } label: {
@@ -66,7 +59,6 @@ struct MCPToolSummaryView: View {
                                 }
                                 .buttonStyle(.plain)
 
-                                // Web Search chip - always show when enabled
                                 if tavilyService.isEnabled {
                                     Button {
                                         tavilyService.isEnabled.toggle()
@@ -76,7 +68,6 @@ struct MCPToolSummaryView: View {
                                     .buttonStyle(.plain)
                                 }
 
-                                // MCP Server chips
                                 ForEach(toolStatusChipModels) { chip in
                                     Button {
                                         toggleServer(chip.id)
@@ -132,7 +123,6 @@ struct MCPToolSummaryView: View {
     }
 
     private var shouldShowToolSummary: Bool {
-        // Always show since agentic tools are always available
         true
     }
 
@@ -166,12 +156,10 @@ struct MCPToolSummaryView: View {
             .filter { $0.state?.isConnected ?? false }
             .reduce(0) { $0 + $1.toolsCount }
 
-        // Add web search tool if enabled (DDG is always available, no API key needed)
         if tavilyService.isEnabled {
             count += 1
         }
 
-        // Add agentic tools if enabled (6 tools)
         if agentSettingsStore.settings.isEnabled {
             count += 6
         }
@@ -182,9 +170,7 @@ struct MCPToolSummaryView: View {
     private var toolSummaryText: String {
         guard shouldShowToolSummary else { return "" }
 
-        // Check if no MCP servers configured
         if mcpManager.serverConfigs.isEmpty {
-            // Build list of available tools
             var sources: [String] = []
             if agentSettingsStore.settings.isEnabled {
                 sources.append("Agentic")
@@ -279,7 +265,6 @@ struct MCPToolSummaryView: View {
     }
 }
 
-/// Chip for Web Search tool status
 @MainActor
 struct WebSearchChip: View {
     let isEnabled: Bool
@@ -334,7 +319,6 @@ struct WebSearchChip: View {
     }
 }
 
-/// Chip for Agentic Tools status
 @MainActor
 struct AgenticToolsChip: View {
     let isEnabled: Bool

@@ -1,18 +1,8 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  MacScrollToBottomButton.swift
-//  ayna
-//
-//  Design System: Scroll-to-Bottom Button (macOS)
-//  A floating pill button that appears when user scrolls up from bottom.
-//  Native macOS design with material background.
-//
 
 import SwiftUI
 
-/// macOS floating scroll-to-bottom button
-/// Appears with animation when user scrolls away from bottom
 struct MacScrollToBottomButton: View {
     let isVisible: Bool
     let unreadCount: Int

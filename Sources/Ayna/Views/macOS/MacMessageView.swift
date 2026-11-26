@@ -1,21 +1,11 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  MacMessageView.swift
-//  ayna
-//
-//  Created on 11/2/25.
-//
 
 // swiftlint:disable file_length
 
 import Combine
 import ImageIO
 import SwiftUI
-
-// MARK: - Design System Integration
-
-// Uses Theme, Typography, Spacing, and Motion from Design/
 
 @MainActor
 struct MacMessageView: View {
@@ -31,8 +21,6 @@ struct MacMessageView: View {
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject private var aiService = AIService.shared
 
-    // Performance: Cache parsed content blocks to avoid re-parsing on every render
-    // Initialize synchronously to avoid flash of empty bubbles on first render
     @State private var cachedContentBlocks: [ContentBlock]
     @State private var cachedReasoningBlocks: [ContentBlock]
     @State private var lastContentHash: Int
@@ -42,7 +30,6 @@ struct MacMessageView: View {
     @State private var parseDebounceTask: Task<Void, Never>?
     @State private var lastParseTime: Date = .distantPast
 
-    // Image caching to prevent memory leaks from repeated decoding
     @State private var cachedGeneratedImage: NSImage?
     @State private var cachedAttachmentImages: [Int: NSImage] = [:]
 
@@ -63,9 +50,6 @@ struct MacMessageView: View {
         self.onRetry = onRetry
         self.onSwitchModel = onSwitchModel
         self.onEdit = onEdit
-        // Only hydrate from the shared markdown cache in init. Parsing here would
-        // run on every SwiftUI view refresh and can stall the macOS chat UI for
-        // large markdown responses.
         if message.role == .tool {
             _cachedContentBlocks = State(initialValue: [])
             _lastContentHash = State(initialValue: 0)
@@ -116,7 +100,6 @@ struct MacMessageView: View {
         return formatter
     }()
 
-    // Design tokens from Design/
     private let userBubbleGradient = Theme.userBubbleGradient
     private let recipientBubbleGradient = Theme.assistantBubbleGradient
     private let toolBubbleColor = Theme.toolBubble
@@ -237,7 +220,6 @@ struct MacMessageView: View {
                 updateCachedReasoningBlocks()
             }
             .onAppear {
-                // Pre-load images when view appears
                 if message.mediaType == .image, cachedGeneratedImage == nil {
                     loadGeneratedImage()
                 }
@@ -256,14 +238,12 @@ struct MacMessageView: View {
                 updateCachedReasoningBlocks()
             }
             .onChange(of: message.imagePath) { _, newPath in
-                // Reload image when path changes (e.g., after generation completes)
                 if newPath != nil {
                     cachedGeneratedImage = nil
                     loadGeneratedImage()
                 }
             }
             .onChange(of: message.imageData) { _, newData in
-                // Reload image when data changes
                 if newData != nil {
                     cachedGeneratedImage = nil
                     loadGeneratedImage()
@@ -414,7 +394,6 @@ struct MacMessageView: View {
 
     @MainActor @ViewBuilder
     private var bubbleContent: some View {
-        // Attachments - use cached images to prevent memory leaks
         if let attachments = message.attachments, !attachments.isEmpty {
             ForEach(attachments.indices, id: \.self) { index in
                 let attachment = attachments[index]
@@ -450,7 +429,6 @@ struct MacMessageView: View {
             }
         }
 
-        // Generated images - use cached image to prevent memory leaks
         if message.mediaType == .image {
             if let nsImage = cachedGeneratedImage {
                 Image(nsImage: nsImage)
@@ -475,7 +453,6 @@ struct MacMessageView: View {
             }
         }
 
-        // Check if message has meaningful reasoning content
         let hasReasoning = message.reasoning.map { !$0.isEmpty } ?? false
         let hasCitations = !(message.citations?.isEmpty ?? true)
         let shouldShowTypingIndicator = if let displayKind {
@@ -485,14 +462,11 @@ struct MacMessageView: View {
                 && !hasReasoning && !hasCitations
         }
 
-        // Show typing indicator for empty assistant messages (waiting for response)
-        // But not if we have reasoning content (model is thinking)
         if shouldShowTypingIndicator {
             TypingIndicatorView()
         }
 
         if hasReasoning, let reasoning = message.reasoning {
-            // Determine if still actively thinking (has reasoning but no content yet)
             let isStillThinking = message.content.isEmpty && message.mediaType != .image
 
             Button(action: {
@@ -506,7 +480,6 @@ struct MacMessageView: View {
                     Text(isStillThinking ? "Thinking..." : "Thinking")
                         .font(Typography.captionBold)
                     if isStillThinking {
-                        // Show animated indicator while still thinking
                         ThinkingIndicatorDots()
                     }
                     Spacer(minLength: 0)
@@ -547,7 +520,6 @@ struct MacMessageView: View {
             }
         }
 
-        // Citation sources footer for web search results
         if let citations = message.citations, !citations.isEmpty {
             CitationSourcesFooter(citations: citations)
                 .padding(.top, 8)
@@ -659,19 +631,15 @@ struct MacMessageView: View {
         guard newHash != lastContentHash || needsInitialParse else { return }
         lastContentHash = newHash
 
-        // Cancel any pending debounce task
         parseDebounceTask?.cancel()
 
-        // Check if enough time has passed since last parse (400ms minimum during streaming)
         let now = Date()
         let timeSinceLastParse = now.timeIntervalSince(lastParseTime)
-        let minInterval: TimeInterval = 0.4 // 400ms minimum between parses
+        let minInterval: TimeInterval = 0.4
 
         if timeSinceLastParse >= minInterval {
-            // Enough time has passed, parse immediately
             performParse(content: content)
         } else {
-            // Debounce: wait for remaining time before parsing
             let waitTime = minInterval - timeSinceLastParse
             parseDebounceTask = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(Int(waitTime * 1000)))
@@ -713,8 +681,6 @@ struct MacMessageView: View {
         }
     }
 
-    /// Loads and caches the generated image to prevent memory leaks from repeated decoding
-    /// Note: NSImage is non-Sendable so we create it on @MainActor directly
     private func loadGeneratedImage() {
         guard cachedGeneratedImage == nil else { return }
         Task { @MainActor in
@@ -725,8 +691,6 @@ struct MacMessageView: View {
         }
     }
 
-    /// Loads and caches an attachment image to prevent memory leaks from repeated decoding.
-    /// ImageIO performs the decode off actor; NSImage remains main-actor confined.
     private func loadAttachmentImage(at index: Int, attachment: Message.FileAttachment) {
         guard cachedAttachmentImages[index] == nil else { return }
         Task { @MainActor in
@@ -797,47 +761,36 @@ private struct MessageBubbleShape: Shape {
             let radius: CGFloat = Spacing.CornerRadius.bubble
 
             if isFromCurrentUser {
-                // Right bubble
                 let bodyMaxX = rect.maxX - tailWidth
 
-                // Start top-left
                 path.move(to: CGPoint(x: rect.minX, y: rect.minY + radius))
 
-                // Top-left corner
                 path.addArc(center: CGPoint(x: rect.minX + radius, y: rect.minY + radius),
                             radius: radius,
                             startAngle: Angle(degrees: 180),
                             endAngle: Angle(degrees: 270),
                             clockwise: false)
 
-                // Top edge
                 path.addLine(to: CGPoint(x: bodyMaxX - radius, y: rect.minY))
 
-                // Top-right corner
                 path.addArc(center: CGPoint(x: bodyMaxX - radius, y: rect.minY + radius),
                             radius: radius,
                             startAngle: Angle(degrees: 270),
                             endAngle: Angle(degrees: 0),
                             clockwise: false)
 
-                // Right edge
                 path.addLine(to: CGPoint(x: bodyMaxX, y: rect.maxY - radius))
 
-                // Tail (Bottom-Right)
-                // Curve out to tip
                 path.addCurve(to: CGPoint(x: rect.maxX, y: rect.maxY),
                               control1: CGPoint(x: bodyMaxX, y: rect.maxY),
                               control2: CGPoint(x: rect.maxX, y: rect.maxY))
 
-                // Curve back to bottom
                 path.addCurve(to: CGPoint(x: bodyMaxX - 4, y: rect.maxY),
                               control1: CGPoint(x: rect.maxX - 2, y: rect.maxY),
                               control2: CGPoint(x: bodyMaxX + 2, y: rect.maxY))
 
-                // Bottom edge
                 path.addLine(to: CGPoint(x: rect.minX + radius, y: rect.maxY))
 
-                // Bottom-left corner
                 path.addArc(center: CGPoint(x: rect.minX + radius, y: rect.maxY - radius),
                             radius: radius,
                             startAngle: Angle(degrees: 90),
@@ -847,54 +800,42 @@ private struct MessageBubbleShape: Shape {
                 path.closeSubpath()
 
             } else {
-                // Left bubble
                 let bodyMinX = rect.minX + tailWidth
 
-                // Start top-left (after tail)
                 path.move(to: CGPoint(x: bodyMinX, y: rect.minY + radius))
 
-                // Top-left corner
                 path.addArc(center: CGPoint(x: bodyMinX + radius, y: rect.minY + radius),
                             radius: radius,
                             startAngle: Angle(degrees: 180),
                             endAngle: Angle(degrees: 270),
                             clockwise: false)
 
-                // Top edge
                 path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
 
-                // Top-right corner
                 path.addArc(center: CGPoint(x: rect.maxX - radius, y: rect.minY + radius),
                             radius: radius,
                             startAngle: Angle(degrees: 270),
                             endAngle: Angle(degrees: 0),
                             clockwise: false)
 
-                // Right edge
                 path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
 
-                // Bottom-right corner
                 path.addArc(center: CGPoint(x: rect.maxX - radius, y: rect.maxY - radius),
                             radius: radius,
                             startAngle: Angle(degrees: 0),
                             endAngle: Angle(degrees: 90),
                             clockwise: false)
 
-                // Bottom edge
                 path.addLine(to: CGPoint(x: bodyMinX + 4, y: rect.maxY))
 
-                // Tail (Bottom-Left)
-                // Curve out to tip
                 path.addCurve(to: CGPoint(x: rect.minX, y: rect.maxY),
                               control1: CGPoint(x: bodyMinX - 2, y: rect.maxY),
                               control2: CGPoint(x: rect.minX + 2, y: rect.maxY))
 
-                // Curve back to side
                 path.addCurve(to: CGPoint(x: bodyMinX, y: rect.maxY - radius),
                               control1: CGPoint(x: rect.minX, y: rect.maxY),
                               control2: CGPoint(x: bodyMinX, y: rect.maxY))
 
-                // Left edge
                 path.addLine(to: CGPoint(x: bodyMinX, y: rect.minY + radius))
 
                 path.closeSubpath()
@@ -1006,7 +947,6 @@ extension ContentBlock {
 
         case let .code(code, language):
             VStack(alignment: .leading, spacing: 0) {
-                // Header with language and copy button
                 HStack {
                     if !language.isEmpty {
                         Text(language.lowercased())
@@ -1036,7 +976,6 @@ extension ContentBlock {
 
                 Divider()
 
-                // Code content with syntax highlighting
                 ScrollView(.horizontal, showsIndicators: false) {
                     SyntaxHighlightedCodeView(code: code, language: language)
                         .padding(Spacing.md)
@@ -1052,7 +991,6 @@ extension ContentBlock {
 
         case let .tool(name, result):
             VStack(alignment: .leading, spacing: 0) {
-                // Tool header
                 HStack(spacing: Spacing.sm) {
                     Image(systemName: "wrench.and.screwdriver.fill")
                         .font(Typography.caption)
@@ -1089,7 +1027,6 @@ extension ContentBlock {
 
                 Divider()
 
-                // Tool result
                 ScrollView(.horizontal, showsIndicators: false) {
                     Text(result)
                         .font(Typography.bodySecondary)
@@ -1171,19 +1108,16 @@ extension ContentBlock {
     .frame(width: 600)
 }
 
-/// Loading animation for image generation
 struct ImageGeneratingView: View {
     @State private var phase: CGFloat = 0
 
     var body: some View {
         ZStack {
-            // Background
             RoundedRectangle(cornerRadius: Spacing.CornerRadius.xl)
                 .fill(Theme.textSecondary.opacity(0.08))
                 .strokeBorder(Theme.border, lineWidth: Spacing.Border.standard)
 
             VStack(spacing: Spacing.lg) {
-                // Animated Icon
                 ZStack {
                     Circle()
                         .fill(Theme.accent.opacity(0.1))
@@ -1217,13 +1151,7 @@ struct ImageGeneratingView: View {
     }
 }
 
-// MARK: - Syntax Highlighting Regex Cache
-
-/// Pre-compiled regex patterns for syntax highlighting to avoid expensive regex compilation
-/// on every render. This cache is shared across all instances of SyntaxHighlightedCodeView.
-/// Thread-safety is ensured through the use of nonisolated(unsafe) and atomic initialization.
 private enum SyntaxRegexCache {
-    /// Thread-safe cache for compiled regex patterns using a concurrent dictionary pattern
     private final class RegexCache: @unchecked Sendable {
         private var cache: [String: NSRegularExpression] = [:]
         private let lock = NSLock()
@@ -1247,7 +1175,6 @@ private enum SyntaxRegexCache {
 
     private static let sharedCache = RegexCache()
 
-    /// Pre-compiled keyword patterns for each language
     static let swiftKeywords = createKeywordPattern([
         "func", "var", "let", "if", "else", "for", "while", "return", "import", "class", "struct",
         "enum", "protocol", "extension", "public", "private", "internal", "static", "override",
@@ -1312,7 +1239,6 @@ private enum SyntaxRegexCache {
         "catch", "throw", "null", "true", "false", "echo", "print", "require", "include"
     ])
 
-    // Common patterns used across multiple languages
     static let doubleQuoteString = getOrCreate("\"(?:[^\"\\\\]|\\\\.)*\"")
     static let singleQuoteString = getOrCreate("'(?:[^'\\\\]|\\\\.)*'")
     static let backtickString = getOrCreate("`(?:[^`\\\\]|\\\\.)*`")
@@ -1329,13 +1255,11 @@ private enum SyntaxRegexCache {
     static let cssSelector = getOrCreate("[.#][a-zA-Z][a-zA-Z0-9_-]*")
     static let cssProperty = getOrCreate("[a-zA-Z-]+(?=\\s*:)")
 
-    /// Create a keyword pattern from array of keywords
     private static func createKeywordPattern(_ keywords: [String]) -> NSRegularExpression? {
         let pattern = "\\b(" + keywords.joined(separator: "|") + ")\\b"
         return try? NSRegularExpression(pattern: pattern, options: [])
     }
 
-    /// Get or create a cached regex for the given pattern
     static func getOrCreate(_ pattern: String) -> NSRegularExpression? {
         sharedCache.get(pattern)
     }
@@ -1374,14 +1298,10 @@ private enum SyntaxHighlightCache {
     }
 }
 
-/// Syntax highlighted code view
 struct SyntaxHighlightedCodeView: View {
     let code: String
     let language: String
 
-    /// Above this size, skip regex syntax highlighting on first render. The view still
-    /// shows selectable monospaced text immediately, but avoids multiple full-string
-    /// regex passes that can stall the main thread on very large code blocks.
     static let largeCodeFastPathByteLimit = 32_000
     static let largeCodeFastPathLineLimit = 600
 
@@ -1404,7 +1324,6 @@ struct SyntaxHighlightedCodeView: View {
             return highlighted
         }
 
-        // Apply syntax highlighting based on language
         let normalizedLang = language.lowercased()
 
         switch normalizedLang {
@@ -1481,7 +1400,6 @@ struct SyntaxHighlightedCodeView: View {
     }
 
     private func highlightSwift(_ attributedString: NSMutableAttributedString) {
-        // Use pre-compiled patterns from cache
         if let keywordRegex = SyntaxRegexCache.swiftKeywords {
             applyRegex(keywordRegex, to: attributedString, color: .systemPink)
         }
@@ -1617,9 +1535,6 @@ struct SyntaxHighlightedCodeView: View {
         highlightNumbers(attributedString, color: .systemBlue)
     }
 
-    // MARK: - Optimized Helper Methods
-
-    /// Apply a pre-compiled regex to the attributed string
     private func applyRegex(_ regex: NSRegularExpression, to attributedString: NSMutableAttributedString, color: NSColor) {
         let range = NSRange(location: 0, length: attributedString.length)
         let matches = regex.matches(in: attributedString.string, options: [], range: range)
@@ -1629,15 +1544,12 @@ struct SyntaxHighlightedCodeView: View {
     }
 
     private func highlightStrings(_ attributedString: NSMutableAttributedString, color: NSColor) {
-        // Double quotes
         if let regex = SyntaxRegexCache.doubleQuoteString {
             applyRegex(regex, to: attributedString, color: color)
         }
-        // Single quotes
         if let regex = SyntaxRegexCache.singleQuoteString {
             applyRegex(regex, to: attributedString, color: color)
         }
-        // Backticks (template literals)
         if let regex = SyntaxRegexCache.backtickString {
             applyRegex(regex, to: attributedString, color: color)
         }
@@ -1653,7 +1565,6 @@ struct SyntaxHighlightedCodeView: View {
                 applyRegex(regex, to: attributedString, color: color)
             }
         }
-        // Multi-line comments
         if let regex = SyntaxRegexCache.multiLineComment {
             applyRegex(regex, to: attributedString, color: color)
         }
@@ -1666,7 +1577,6 @@ struct SyntaxHighlightedCodeView: View {
     }
 }
 
-/// Compact thinking indicator dots for inline use
 struct ThinkingIndicatorDots: View {
     @State private var animatingDot = 0
 
@@ -1687,7 +1597,6 @@ struct ThinkingIndicatorDots: View {
     }
 }
 
-/// Typing indicator for text responses: the shared wave dots with vertical padding
 struct TypingIndicatorView: View {
     var body: some View {
         TypingDotsView()

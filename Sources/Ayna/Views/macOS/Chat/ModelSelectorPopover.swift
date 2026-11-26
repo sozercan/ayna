@@ -1,15 +1,8 @@
 // swiftformat:options --ifdef no-indent
 #if os(macOS)
-//
-//  ModelSelectorPopover.swift
-//  ayna
-//
-//  Extracted from MacChatView/MacNewChatView - Model selection popover
-//
 
 import SwiftUI
 
-/// A popover for selecting AI models with multi-model support
 struct ModelSelectorPopover: View {
     @Binding var selectedModels: Set<String>
     @Binding var selectedModel: String
@@ -18,12 +11,10 @@ struct ModelSelectorPopover: View {
 
     @ObservedObject private var aiService = AIService.shared
 
-    /// Whether multi-model selection is enabled in preferences
     private var multiModelEnabled: Bool {
         AppPreferences.multiModelSelectionEnabled
     }
 
-    /// The capability type of currently selected models
     private var selectedCapabilityType: AIService.ModelCapability? {
         guard let firstSelected = selectedModels.first else { return nil }
         return aiService.getModelCapability(firstSelected)
@@ -31,7 +22,6 @@ struct ModelSelectorPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            // Header
             Text(multiModelEnabled ? "Select models" : "Select model")
                 .font(Typography.captionBold)
                 .foregroundStyle(Theme.textSecondary)
@@ -45,14 +35,12 @@ struct ModelSelectorPopover: View {
             Divider()
                 .padding(.vertical, Spacing.xxs)
 
-            // Model list or empty state
             if aiService.usableModels.isEmpty {
                 emptyStateView
             } else {
                 modelListView
             }
 
-            // Clear multi-selection button
             if multiModelEnabled, selectedModels.count > 1 {
                 clearMultiSelectionButton
             }
@@ -61,16 +49,12 @@ struct ModelSelectorPopover: View {
         .frame(minWidth: 220)
     }
 
-    // MARK: - Empty State
-
     private var emptyStateView: some View {
         SettingsLink {
             Label("Add Model in Settings", systemImage: "slider.horizontal.3")
         }
         .routeSettings(to: .models)
     }
-
-    // MARK: - Model List
 
     private var modelListView: some View {
         ForEach(aiService.usableModels, id: \.self) { model in
@@ -85,21 +69,17 @@ struct ModelSelectorPopover: View {
             guard let selectedType = selectedCapabilityType else { return false }
             return modelCapability != selectedType
         }()
-        // Only disable in multi-model mode when mixing capability types
         let isDisabled = multiModelEnabled && !isSelected && isCapabilityMismatch
 
         return Button(action: { onToggleModel(model) }) {
             HStack {
-                // Checkbox/radio icon
                 selectionIcon(isSelected: isSelected)
 
-                // Model name
                 Text(model)
                     .font(Typography.modelName)
 
                 Spacer()
 
-                // Capability badge for image gen models
                 if modelCapability == .imageGeneration {
                     Image(systemName: "photo")
                         .font(.system(size: Typography.Size.xs))
@@ -130,8 +110,6 @@ struct ModelSelectorPopover: View {
                 .font(.system(size: Typography.Size.body))
         }
     }
-
-    // MARK: - Clear Multi-Selection
 
     private var clearMultiSelectionButton: some View {
         VStack {
