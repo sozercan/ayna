@@ -10,9 +10,9 @@ Ayna extracts durable user facts (`UserMemoryService`, `MemoryFactExtractor`) an
 
 ## Decision
 
-### 1. Privacy-First Extraction Routing
-- Fact and summary extraction prefers on-device Apple Intelligence when available so conversation content never leaves the device.
-- When on-device extraction is unavailable, extraction falls back to the conversation's own model (which already saw those messages), never silently sending content to an unrelated third-party provider.
+### 1. Privacy-First Extraction & Local Summary Generation
+- Fact extraction (`MemoryFactExtractor`) prefers on-device Apple Intelligence when available so conversation content never leaves the device. When on-device extraction is unavailable, it falls back to the conversation's own model (which already saw those messages), never silently sending content to an unrelated third-party provider.
+- Conversation summaries (`ConversationSummaryService.generateSummary(for:)`) are built synchronously and entirely locally from user-message prefixes and keyword frequencies, without invoking Apple Intelligence or any remote model.
 
 ### 2. Non-Destructive Load/Save Reconciliation
 - Edits arriving before initial encrypted load completes are queued (`PendingChange` / `initialLoadTask`) and replayed once loaded.

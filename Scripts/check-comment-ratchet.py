@@ -37,12 +37,8 @@ def is_directive(comment_text: str) -> bool:
     return any(stripped.startswith(prefix) for prefix in DIRECTIVE_PREFIXES)
 
 
-def scan_swift_comments(path: str) -> list[tuple[int, str]]:
-    with open(path, "r", encoding="utf-8", errors="replace") as fh:
-        text = fh.read()
-
+def scan_swift_text(text: str) -> list[tuple[int, str]]:
     n = len(text)
-    i = 0
     line_no = 1
     violations: list[tuple[int, str]] = []
 
@@ -52,26 +48,151 @@ def scan_swift_comments(path: str) -> list[tuple[int, str]]:
             j += 1
         return j > pos and j < n and text[j] == '"'
 
-    def skip_interpolation(pos: int) -> tuple[int, int]:
+    def is_extended_regex_start(pos: int) -> bool:
+        j = pos
+        while j < n and text[j] == "#":
+            j += 1
+        return j > pos and j < n and text[j] == "/"
+
+    def is_bare_regex_start(pos: int, prev_sig_char: str) -> bool:
+        # In Swift, bare /.../ cannot start with // or /*, cannot have leading space/tab
+        # immediately after the opening / (SE-0354), and must close on the same line
+        # without an unescaped newline. It only appears in prefix/expression position.
+        if text[pos] != "/" or pos + 1 >= n:
+            return False
+        nxt = text[pos + 1]
+        if nxt in ("/", "*", " ", "\t", "\n", "\r"):
+            return False
+        if prev_sig_char and (prev_sig_char.isalnum() or prev_sig_char in (")", "]", "}", "_", '"', "'", "?", "!")):
+            return False
+        # Verify a closing unescaped '/' exists on the same line (respecting [...] char classes).
+        k = pos + 1
+        in_class = False
+        while k < n and text[k] != "\n":
+            c = text[k]
+            if c == "\\":
+                k += 2
+                continue
+            if c == "[" and not in_class:
+                in_class = True
+            elif c == "]" and in_class:
+                in_class = False
+            elif c == "/" and not in_class:
+                return True
+            k += 1
+        return False
+
+    def skip_line_comment(pos: int) -> int:
+        end = text.find("\n", pos)
+        if end == -1:
+            end = n
+        comment_text = text[pos:end]
+        if not is_directive(comment_text):
+            violations.append((line_no, comment_text.strip()))
+        return end
+
+    def skip_block_comment(pos: int) -> int:
+        nonlocal line_no
+        start_line = line_no
+        depth = 1
+        k = pos + 2
+        while k < n and depth > 0:
+            if text[k] == "\n":
+                line_no += 1
+                k += 1
+            elif text[k : k + 2] == "/*":
+                depth += 1
+                k += 2
+            elif text[k : k + 2] == "*/":
+                depth -= 1
+                k += 2
+            else:
+                k += 1
+        snippet = text[pos:k].splitlines()[0].strip()
+        violations.append((start_line, snippet))
+        return k
+
+    def skip_extended_regex(pos: int) -> int:
+        nonlocal line_no
+        j = pos
+        while j < n and text[j] == "#":
+            j += 1
+        hashes = j - pos
+        close_seq = "/" + "#" * hashes
+        k = j + 1
+        while k < n:
+            if text[k] == "\n":
+                line_no += 1
+                k += 1
+            elif text[k] == "\\":
+                if k + 1 < n and text[k + 1] == "\n":
+                    line_no += 1
+                k += 2
+            elif text[k : k + len(close_seq)] == close_seq:
+                return k + len(close_seq)
+            else:
+                k += 1
+        return n
+
+    def skip_bare_regex(pos: int) -> int:
+        k = pos + 1
+        in_class = False
+        while k < n and text[k] != "\n":
+            c = text[k]
+            if c == "\\":
+                k += 2
+                continue
+            if c == "[" and not in_class:
+                in_class = True
+            elif c == "]" and in_class:
+                in_class = False
+            elif c == "/" and not in_class:
+                return k + 1
+            k += 1
+        return k
+
+    def skip_interpolation(pos: int) -> int:
         nonlocal line_no
         depth = 1
         k = pos
+        prev_sig = "("
         while k < n and depth > 0:
             ch = text[k]
             if ch == "\n":
                 line_no += 1
                 k += 1
-            elif ch == "(":
+                continue
+            if ch == '"' or (ch == "#" and is_raw_string_start(k)):
+                k = skip_string(k)
+                prev_sig = '"'
+                continue
+            if ch == "#" and is_extended_regex_start(k):
+                k = skip_extended_regex(k)
+                prev_sig = "/"
+                continue
+            if text[k : k + 2] == "//":
+                k = skip_line_comment(k)
+                continue
+            if text[k : k + 2] == "/*":
+                k = skip_block_comment(k)
+                continue
+            if ch == "/" and is_bare_regex_start(k, prev_sig):
+                k = skip_bare_regex(k)
+                prev_sig = "/"
+                continue
+            if ch == "(":
                 depth += 1
+                prev_sig = "("
                 k += 1
             elif ch == ")":
                 depth -= 1
+                prev_sig = ")"
                 k += 1
-            elif ch == '"' or (ch == "#" and is_raw_string_start(k)):
-                k = skip_string(k)
             else:
+                if not ch.isspace():
+                    prev_sig = ch
                 k += 1
-        return k, line_no
+        return k
 
     def skip_string(pos: int) -> int:
         nonlocal line_no
@@ -90,7 +211,7 @@ def scan_swift_comments(path: str) -> list[tuple[int, str]]:
                 elif text[k : k + len(esc_seq)] == esc_seq:
                     k += len(esc_seq)
                     if k < n and text[k] == "(":
-                        k, _ = skip_interpolation(k + 1)
+                        k = skip_interpolation(k + 1)
                     elif k < n:
                         if text[k] == "\n":
                             line_no += 1
@@ -110,7 +231,7 @@ def scan_swift_comments(path: str) -> list[tuple[int, str]]:
             if text[k : k + len(esc_seq)] == esc_seq:
                 k += len(esc_seq)
                 if k < n and text[k] == "(":
-                    k, _ = skip_interpolation(k + 1)
+                    k = skip_interpolation(k + 1)
                 elif k < n:
                     k += 1
             elif text[k : k + len(close_seq)] == close_seq:
@@ -119,6 +240,8 @@ def scan_swift_comments(path: str) -> list[tuple[int, str]]:
                 k += 1
         return n
 
+    i = 0
+    prev_sig = ""
     while i < n:
         ch = text[i]
         if ch == "\n":
@@ -128,42 +251,37 @@ def scan_swift_comments(path: str) -> list[tuple[int, str]]:
 
         if ch == '"' or (ch == "#" and is_raw_string_start(i)):
             i = skip_string(i)
+            prev_sig = '"'
+            continue
+
+        if ch == "#" and is_extended_regex_start(i):
+            i = skip_extended_regex(i)
+            prev_sig = "/"
             continue
 
         if text[i : i + 2] == "//":
-            end = text.find("\n", i)
-            if end == -1:
-                end = n
-            comment_text = text[i:end]
-            if not is_directive(comment_text):
-                violations.append((line_no, comment_text.strip()))
-            i = end
+            i = skip_line_comment(i)
             continue
 
         if text[i : i + 2] == "/*":
-            start_line = line_no
-            depth = 1
-            k = i + 2
-            while k < n and depth > 0:
-                if text[k] == "\n":
-                    line_no += 1
-                    k += 1
-                elif text[k : k + 2] == "/*":
-                    depth += 1
-                    k += 2
-                elif text[k : k + 2] == "*/":
-                    depth -= 1
-                    k += 2
-                else:
-                    k += 1
-            snippet = text[i:k].splitlines()[0].strip()
-            violations.append((start_line, snippet))
-            i = k
+            i = skip_block_comment(i)
             continue
 
+        if ch == "/" and is_bare_regex_start(i, prev_sig):
+            i = skip_bare_regex(i)
+            prev_sig = "/"
+            continue
+
+        if not ch.isspace():
+            prev_sig = ch
         i += 1
 
     return violations
+
+
+def scan_swift_comments(path: str) -> list[tuple[int, str]]:
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        return scan_swift_text(fh.read())
 
 
 def collect_swift_files(root: Path) -> list[str]:

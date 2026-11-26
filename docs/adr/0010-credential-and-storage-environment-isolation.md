@@ -27,7 +27,7 @@ On macOS without paid Keychain access groups, Keychain items are tied to the app
 
 ### 4. Metadata-First Persistence, Attachments & Spotlight Reconciliation
 - `AttachmentStorage` stores message attachments out-of-band on disk to keep encrypted conversation records small. Legacy metadata sidecars written before attachment paths were recorded are backfilled once from the full record so deleting an unopened conversation can still garbage-collect its attachment files (`ConversationMetadata`).
-- `EncryptedConversationStore` deletes the plaintext search index entry **before** deleting the authoritative encrypted conversation file so indexed text cannot outlive the record.
+- `EncryptedConversationStore` deletes the encrypted search index entry (which contains full message text) **before** deleting the authoritative encrypted conversation file so indexed message text cannot outlive the record.
 - `ConversationPersistenceCoordinator`'s compatibility API intentionally erases the store's concrete error type across the coordinator boundary.
 - `ConversationManager` maintains a `durableDiskBaseline` to distinguish persisted disk state from unsaved in-memory edits:
   - Late-landing durable saves after a delete or clear never restore a conversation or its summary.
