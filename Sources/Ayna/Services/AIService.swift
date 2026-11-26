@@ -365,6 +365,8 @@ class AIService: ObservableObject {
         private let imageService: OpenAIImageService
     #endif
 
+    private let webFetchService: WebFetchService
+
     #if os(macOS)
         private(set) var builtinToolService: BuiltinToolService?
         private(set) var permissionService: PermissionService?
@@ -489,7 +491,8 @@ class AIService: ObservableObject {
                 retryDelay: retryDelay,
                 requestFlightObserver: requestFlightObserver,
                 responseSimulator: responseSimulator,
-                appleIntelligenceService: appleIntelligenceService
+                appleIntelligenceService: appleIntelligenceService,
+                webFetchService: webFetchService
             )
             if let builtinService = builtinToolService,
                let permService = permissionService
@@ -514,12 +517,14 @@ class AIService: ObservableObject {
         },
         requestFlightObserver: RequestFlightObserver = .none,
         responseSimulator: AIServiceResponseSimulator? = nil,
-        appleIntelligenceService: (any AppleIntelligenceServing)? = nil
+        appleIntelligenceService: (any AppleIntelligenceServing)? = nil,
+        webFetchService: WebFetchService = WebFetchService.shared
     ) {
         self.anthropicProviderFactory = anthropicProviderFactory
         self.retryDelay = retryDelay
         self.requestFlightObserver = requestFlightObserver
         self.responseSimulator = responseSimulator
+        self.webFetchService = webFetchService
         #if !os(watchOS)
             injectedAppleIntelligenceService = appleIntelligenceService
         #endif
@@ -4856,7 +4861,7 @@ extension AIService {
     func getAgenticSystemPromptContext() -> String? {
         var contexts: [String] = []
 
-        if let webFetchContext = WebFetchService.shared.systemPromptContext() {
+        if let webFetchContext = webFetchService.systemPromptContext() {
             contexts.append(webFetchContext)
         }
 
@@ -4892,8 +4897,8 @@ extension AIService {
             }
         #endif
 
-        if WebFetchService.shared.isEnabled {
-            tools.append(WebFetchService.shared.toolDefinition())
+        if webFetchService.isEnabled {
+            tools.append(webFetchService.toolDefinition())
             DiagnosticsLogger.log(
                 .aiService,
                 level: .info,
@@ -4958,7 +4963,7 @@ extension AIService {
 
     func executeBuiltInTool(name toolName: String, arguments: [String: Any], conversationId: UUID? = nil) async -> String {
         if WebFetchService.isWebFetchTool(toolName) {
-            return await WebFetchService.shared.executeToolCall(
+            return await webFetchService.executeToolCall(
                 arguments: arguments,
                 conversationId: conversationId
             )
@@ -5008,7 +5013,7 @@ extension AIService {
         conversationId: UUID? = nil
     ) async -> (String, [CitationReference]?) {
         if WebFetchService.isWebFetchTool(toolName) {
-            let result = await WebFetchService.shared.executeToolCall(
+            let result = await webFetchService.executeToolCall(
                 arguments: arguments,
                 conversationId: conversationId
             )
