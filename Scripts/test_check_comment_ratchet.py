@@ -67,6 +67,15 @@ class CommentRatchetScannerTests(unittest.TestCase):
         violations = MOD.scan_swift_text(src)
         self.assertEqual(violations, [(1, "// after")])
 
+    def test_skips_returned_bare_regex_at_top_level_and_in_interpolation(self) -> None:
+        src = (
+            "func pattern() -> Regex<Substring> { return /foo[//]bar/ }\n"
+            'let s = "\\({ return /foo[//]bar/ }())"\n'
+            "let ratio = a/b // comment after division\n"
+        )
+        violations = MOD.scan_swift_text(src)
+        self.assertEqual(violations, [(3, "// comment after division")])
+
     def test_preserves_directives(self) -> None:
         src = (
             "// swift-tools-version: 6.2\n"

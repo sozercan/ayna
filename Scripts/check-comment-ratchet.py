@@ -54,7 +54,25 @@ def scan_swift_text(text: str) -> list[tuple[int, str]]:
             j += 1
         return j > pos and j < n and text[j] == "/"
 
-    def is_bare_regex_start(pos: int, prev_sig_char: str) -> bool:
+    REGEX_PREFIX_KEYWORDS = {
+        "return",
+        "throw",
+        "try",
+        "await",
+        "yield",
+        "case",
+        "in",
+        "where",
+        "if",
+        "else",
+        "while",
+        "guard",
+        "switch",
+        "is",
+        "as",
+    }
+
+    def is_bare_regex_start(pos: int, prev_token: str) -> bool:
         # In Swift, bare /.../ cannot start with // or /*, cannot have leading space/tab
         # immediately after the opening / (SE-0354), and must close on the same line
         # without an unescaped newline. It only appears in prefix/expression position.
@@ -63,8 +81,11 @@ def scan_swift_text(text: str) -> list[tuple[int, str]]:
         nxt = text[pos + 1]
         if nxt in ("/", "*", " ", "\t", "\n", "\r"):
             return False
-        if prev_sig_char and (prev_sig_char.isalnum() or prev_sig_char in (")", "]", "}", "_", '"', "'", "?", "!")):
-            return False
+        if prev_token:
+            if prev_token in REGEX_PREFIX_KEYWORDS:
+                pass
+            elif prev_token[-1].isalnum() or prev_token[-1] in (")", "]", "}", "_", '"', "'", "?", "!"):
+                return False
         # Verify a closing unescaped '/' exists on the same line (respecting [...] char classes).
         k = pos + 1
         in_class = False
@@ -151,11 +172,17 @@ def scan_swift_text(text: str) -> list[tuple[int, str]]:
             k += 1
         return k
 
+    def read_identifier(pos: int) -> tuple[str, int]:
+        k = pos
+        while k < n and (text[k].isalnum() or text[k] == "_"):
+            k += 1
+        return text[pos:k], k
+
     def skip_interpolation(pos: int) -> int:
         nonlocal line_no
         depth = 1
         k = pos
-        prev_sig = "("
+        prev_token = "("
         while k < n and depth > 0:
             ch = text[k]
             if ch == "\n":
@@ -164,11 +191,11 @@ def scan_swift_text(text: str) -> list[tuple[int, str]]:
                 continue
             if ch == '"' or (ch == "#" and is_raw_string_start(k)):
                 k = skip_string(k)
-                prev_sig = '"'
+                prev_token = '"'
                 continue
             if ch == "#" and is_extended_regex_start(k):
                 k = skip_extended_regex(k)
-                prev_sig = "/"
+                prev_token = "/"
                 continue
             if text[k : k + 2] == "//":
                 k = skip_line_comment(k)
@@ -176,21 +203,23 @@ def scan_swift_text(text: str) -> list[tuple[int, str]]:
             if text[k : k + 2] == "/*":
                 k = skip_block_comment(k)
                 continue
-            if ch == "/" and is_bare_regex_start(k, prev_sig):
+            if ch == "/" and is_bare_regex_start(k, prev_token):
                 k = skip_bare_regex(k)
-                prev_sig = "/"
+                prev_token = "/"
                 continue
             if ch == "(":
                 depth += 1
-                prev_sig = "("
+                prev_token = "("
                 k += 1
             elif ch == ")":
                 depth -= 1
-                prev_sig = ")"
+                prev_token = ")"
                 k += 1
+            elif ch.isalpha() or ch == "_":
+                prev_token, k = read_identifier(k)
             else:
                 if not ch.isspace():
-                    prev_sig = ch
+                    prev_token = ch
                 k += 1
         return k
 
@@ -241,7 +270,7 @@ def scan_swift_text(text: str) -> list[tuple[int, str]]:
         return n
 
     i = 0
-    prev_sig = ""
+    prev_token = ""
     while i < n:
         ch = text[i]
         if ch == "\n":
@@ -251,12 +280,12 @@ def scan_swift_text(text: str) -> list[tuple[int, str]]:
 
         if ch == '"' or (ch == "#" and is_raw_string_start(i)):
             i = skip_string(i)
-            prev_sig = '"'
+            prev_token = '"'
             continue
 
         if ch == "#" and is_extended_regex_start(i):
             i = skip_extended_regex(i)
-            prev_sig = "/"
+            prev_token = "/"
             continue
 
         if text[i : i + 2] == "//":
@@ -267,13 +296,17 @@ def scan_swift_text(text: str) -> list[tuple[int, str]]:
             i = skip_block_comment(i)
             continue
 
-        if ch == "/" and is_bare_regex_start(i, prev_sig):
+        if ch == "/" and is_bare_regex_start(i, prev_token):
             i = skip_bare_regex(i)
-            prev_sig = "/"
+            prev_token = "/"
+            continue
+
+        if ch.isalpha() or ch == "_":
+            prev_token, i = read_identifier(i)
             continue
 
         if not ch.isspace():
-            prev_sig = ch
+            prev_token = ch
         i += 1
 
     return violations
