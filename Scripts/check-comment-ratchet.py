@@ -18,10 +18,10 @@ import sys
 from pathlib import Path
 
 DIRECTIVE_PREFIXES = (
-    "// swiftlint:",
-    "// swiftformat:",
-    "// swift-tools-version:",
-    "// sourceLocation",
+    "swiftlint:",
+    "swiftformat:",
+    "swift-tools-version:",
+    "sourceLocation(",
 )
 
 SCAN_GLOBS = (
@@ -34,7 +34,10 @@ SCAN_GLOBS = (
 
 def is_directive(comment_text: str) -> bool:
     stripped = comment_text.strip()
-    return any(stripped.startswith(prefix) for prefix in DIRECTIVE_PREFIXES)
+    if not stripped.startswith("//"):
+        return False
+    body = stripped[2:].lstrip()
+    return any(body.startswith(prefix) for prefix in DIRECTIVE_PREFIXES)
 
 
 def scan_swift_text(text: str) -> list[tuple[int, str]]:
@@ -82,7 +85,7 @@ def scan_swift_text(text: str) -> list[tuple[int, str]]:
         if nxt in ("/", "*", " ", "\t", "\n", "\r"):
             return False
         if prev_token:
-            if prev_token in REGEX_PREFIX_KEYWORDS:
+            if prev_token in REGEX_PREFIX_KEYWORDS or prev_token in ("??", " ?"):
                 pass
             elif prev_token[-1].isalnum() or prev_token[-1] in (")", "]", "}", "_", '"', "'", "?", "!"):
                 return False
@@ -217,6 +220,12 @@ def scan_swift_text(text: str) -> list[tuple[int, str]]:
                 k += 1
             elif ch.isalpha() or ch == "_":
                 prev_token, k = read_identifier(k)
+            elif text[k : k + 2] == "??":
+                prev_token = "??"
+                k += 2
+            elif ch == "?" and k > 0 and text[k - 1].isspace():
+                prev_token = " ?"
+                k += 1
             else:
                 if not ch.isspace():
                     prev_token = ch
@@ -303,6 +312,16 @@ def scan_swift_text(text: str) -> list[tuple[int, str]]:
 
         if ch.isalpha() or ch == "_":
             prev_token, i = read_identifier(i)
+            continue
+
+        if text[i : i + 2] == "??":
+            prev_token = "??"
+            i += 2
+            continue
+
+        if ch == "?" and i > 0 and text[i - 1].isspace():
+            prev_token = " ?"
+            i += 1
             continue
 
         if not ch.isspace():

@@ -76,11 +76,22 @@ class CommentRatchetScannerTests(unittest.TestCase):
         violations = MOD.scan_swift_text(src)
         self.assertEqual(violations, [(3, "// comment after division")])
 
+    def test_skips_bare_regex_after_ternary_and_nil_coalescing(self) -> None:
+        src = (
+            "let a = flag ? /foo[//]bar/ : /baz[//]qux/\n"
+            "let b = optionalRegex ?? /foo[//]bar/\n"
+            'let c = "\\(flag ? /foo[//]bar/ : /baz/) \\(optionalRegex ?? /a[//]b/)"\n'
+            "let d = value! / divisor // division after force unwrap\n"
+        )
+        violations = MOD.scan_swift_text(src)
+        self.assertEqual(violations, [(4, "// division after force unwrap")])
+
     def test_preserves_directives(self) -> None:
         src = (
             "// swift-tools-version: 6.2\n"
-            "// swiftformat:options --ifdef no-indent\n"
-            "// swiftlint:disable:next nesting\n"
+            "//swiftlint:disable:next identifier_name\n"
+            "//  swiftformat:options --ifdef no-indent\n"
+            "//\tswiftlint:disable:next nesting\n"
         )
         self.assertEqual(MOD.scan_swift_text(src), [])
 
