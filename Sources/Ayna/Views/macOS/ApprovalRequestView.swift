@@ -71,7 +71,7 @@ struct ApprovalRequestView: View {
             }
         } else {
             HStack(spacing: 4) {
-                Image(systemName: "folder")
+                Image(systemName: approval.toolName == WebFetchService.toolName ? "globe" : "folder")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text(approval.details)
@@ -141,6 +141,8 @@ struct ApprovalRequestView: View {
             "folder"
         case "search_files":
             "magnifyingglass"
+        case "web_fetch":
+            "globe"
         case "run_command":
             "terminal"
         default:
@@ -150,7 +152,7 @@ struct ApprovalRequestView: View {
 
     private var iconColor: Color {
         switch approval.toolName {
-        case "read_file", "list_directory", "search_files":
+        case "read_file", "list_directory", "search_files", "web_fetch":
             .blue
         case "write_file", "edit_file":
             .orange

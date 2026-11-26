@@ -105,9 +105,8 @@ struct AgentSettings: Codable, Sendable {
             permissionService.approvalTimeoutSeconds = settings.approvalTimeoutSeconds
             permissionService.persistApprovalsAcrossSessions = settings.persistApprovals
 
-            WebFetchService.shared.isEnabled = settings.isEnabled
-                && settings.permissionLevel(for: WebFetchService.toolName) != .denied
-            WebFetchService.shared.timeoutSeconds = settings.commandTimeoutSeconds
+            WebFetchService.shared.permissionService = permissionService
+            WebFetchService.shared.apply(settings)
         }
 
         func resetToDefaults() {

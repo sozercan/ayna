@@ -32,7 +32,7 @@ struct AgentsSettingsSection: View {
                 permissionPicker(for: "git_context", label: "Git Context")
                 permissionPicker(for: "project_context", label: "Project Context")
                 permissionPicker(for: "update_tasks", label: "Task List")
-                permissionPicker(for: "web_fetch", label: "Web Fetch", levels: [.automatic, .denied])
+                permissionPicker(for: "web_fetch", label: "Web Fetch")
             }
 
             Section {

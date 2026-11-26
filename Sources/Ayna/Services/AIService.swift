@@ -4910,7 +4910,10 @@ extension AIService {
 
     func executeBuiltInTool(name toolName: String, arguments: [String: Any], conversationId: UUID? = nil) async -> String {
         if WebFetchService.isWebFetchTool(toolName) {
-            return await WebFetchService.shared.executeToolCall(arguments: arguments)
+            return await WebFetchService.shared.executeToolCall(
+                arguments: arguments,
+                conversationId: conversationId
+            )
         }
 
         #if os(watchOS)
@@ -4957,7 +4960,10 @@ extension AIService {
         conversationId: UUID? = nil
     ) async -> (String, [CitationReference]?) {
         if WebFetchService.isWebFetchTool(toolName) {
-            let result = await WebFetchService.shared.executeToolCall(arguments: arguments)
+            let result = await WebFetchService.shared.executeToolCall(
+                arguments: arguments,
+                conversationId: conversationId
+            )
             return (result, nil)
         }
 

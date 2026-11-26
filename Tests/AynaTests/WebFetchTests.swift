@@ -586,6 +586,196 @@ struct WebFetchTests {
     }
 }
 
+#if os(macOS)
+    @Suite("WebFetch Permission Tests", .serialized)
+    @MainActor
+    struct WebFetchPermissionTests {
+        private struct Harness {
+            let service: WebFetchService
+            let permissionService: PermissionService
+            let counter: FetchCounter
+        }
+
+        private func makeService(
+            level: PermissionLevel,
+            isEnabled: Bool = true
+        ) -> Harness {
+            let permissionService = PermissionService()
+            let counter = FetchCounter()
+            let service = WebFetchService(
+                permissionService: permissionService,
+                fetcher: { url, _, _ in
+                    await counter.record(url)
+                    return "fetched:\(url)"
+                }
+            )
+            var settings = AgentSettings.default
+            settings.isEnabled = isEnabled
+            settings.setPermissionLevel(level, for: WebFetchService.toolName)
+            service.apply(settings)
+            return Harness(service: service, permissionService: permissionService, counter: counter)
+        }
+
+        private func waitForPending(_ permissionService: PermissionService) async -> PendingApproval? {
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(2))
+            while permissionService.pendingApprovals.isEmpty, clock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            return permissionService.pendingApprovals.first
+        }
+
+        @Test("Automatic web_fetch runs without requesting approval")
+        func automaticRunsWithoutApproval() async throws {
+            let harness = makeService(level: .automatic)
+            let url = "https://example.com/auto"
+
+            let result = try await harness.service.fetch(url: url, conversationId: UUID())
+
+            #expect(result == "fetched:\(url)")
+            #expect(harness.permissionService.pendingApprovals.isEmpty)
+            #expect(await harness.counter.urls == [url])
+        }
+
+        @Test("Denied web_fetch refuses without requesting approval")
+        func deniedRefusesWithoutApproval() async {
+            let harness = makeService(level: .denied)
+            let url = "https://example.com/denied"
+
+            #expect(harness.service.isEnabled == false)
+            await #expect(throws: WebFetchError.self) {
+                _ = try await harness.service.fetch(url: url, conversationId: UUID())
+            }
+
+            harness.service.isEnabled = true
+            let output = await harness.service.executeToolCall(
+                arguments: ["url": url],
+                conversationId: UUID()
+            )
+            #expect(output.contains("Permission denied"))
+            #expect(harness.permissionService.pendingApprovals.isEmpty)
+            #expect(await harness.counter.urls.isEmpty)
+        }
+
+        @Test("Ask Once prompts the first time and remembers the URL for the session", .timeLimit(.minutes(1)))
+        func askOncePromptsOnceAndRemembersURL() async throws {
+            let harness = makeService(level: .askOnce)
+            let conversationId = UUID()
+            let firstURL = "https://example.com/one"
+            let secondURL = "https://example.com/two"
+
+            let firstFetch = Task {
+                try await harness.service.fetch(url: firstURL, conversationId: conversationId)
+            }
+            let firstPending = try #require(await waitForPending(harness.permissionService))
+            #expect(firstPending.toolName == WebFetchService.toolName)
+            #expect(firstPending.details == firstURL)
+            #expect(firstPending.conversationId == conversationId)
+            harness.permissionService.approve(firstPending.id)
+
+            let firstResult = try await firstFetch.value
+            #expect(firstResult == "fetched:\(firstURL)")
+
+            let repeatResult = try await harness.service.fetch(url: firstURL, conversationId: conversationId)
+            #expect(repeatResult == "fetched:\(firstURL)")
+            #expect(harness.permissionService.pendingApprovals.isEmpty)
+
+            let secondFetch = Task {
+                try await harness.service.fetch(url: secondURL, conversationId: conversationId)
+            }
+            let secondPending = try #require(await waitForPending(harness.permissionService))
+            #expect(secondPending.details == secondURL)
+            harness.permissionService.deny(secondPending.id)
+
+            await #expect(throws: WebFetchError.self) {
+                _ = try await secondFetch.value
+            }
+            #expect(await harness.counter.urls == [firstURL, firstURL])
+        }
+
+        @Test("Ask Always prompts on every fetch unless explicitly remembered", .timeLimit(.minutes(1)))
+        func askAlwaysPromptsEveryTime() async throws {
+            let harness = makeService(level: .askAlways)
+            let conversationId = UUID()
+            let url = "https://example.com/always"
+
+            let firstFetch = Task {
+                try await harness.service.fetch(url: url, conversationId: conversationId)
+            }
+            let firstPending = try #require(await waitForPending(harness.permissionService))
+            harness.permissionService.approve(firstPending.id)
+            #expect(try await firstFetch.value == "fetched:\(url)")
+
+            let secondFetch = Task {
+                try await harness.service.fetch(url: url, conversationId: conversationId)
+            }
+            let secondPending = try #require(await waitForPending(harness.permissionService))
+            #expect(secondPending.details == url)
+            harness.permissionService.deny(secondPending.id)
+
+            await #expect(throws: WebFetchError.self) {
+                _ = try await secondFetch.value
+            }
+            #expect(await harness.counter.urls == [url])
+        }
+
+        @Test("Ask Always honors Allow and Remember for session", .timeLimit(.minutes(1)))
+        func askAlwaysHonorsRememberForSession() async throws {
+            let harness = makeService(level: .askAlways)
+            let conversationId = UUID()
+            let url = "https://example.com/remember"
+
+            let firstFetch = Task {
+                try await harness.service.fetch(url: url, conversationId: conversationId)
+            }
+            let firstPending = try #require(await waitForPending(harness.permissionService))
+            harness.permissionService.approve(firstPending.id, rememberForSession: true)
+            #expect(try await firstFetch.value == "fetched:\(url)")
+
+            let secondResult = try await harness.service.fetch(url: url, conversationId: conversationId)
+            #expect(secondResult == "fetched:\(url)")
+            #expect(harness.permissionService.pendingApprovals.isEmpty)
+            #expect(await harness.counter.urls == [url, url])
+        }
+
+        @Test("Denying web_fetch while approval is pending stops the fetch", .timeLimit(.minutes(1)))
+        func denyingWhileApprovalPendingStopsFetch() async throws {
+            let harness = makeService(level: .askAlways)
+            let url = "https://example.com/revoked"
+
+            let fetchTask = Task {
+                await harness.service.executeToolCall(arguments: ["url": url], conversationId: UUID())
+            }
+            let pending = try #require(await waitForPending(harness.permissionService))
+            harness.service.permissionLevel = .denied
+            harness.permissionService.approve(pending.id)
+
+            let output = await fetchTask.value
+            #expect(output.contains("Permission denied"))
+            #expect(await harness.counter.urls.isEmpty)
+        }
+
+        @Test("Ask Always without conversation ID fails closed without fetching")
+        func missingConversationIDFailsClosed() async {
+            let harness = makeService(level: .askAlways)
+            let url = "https://example.com/no-conversation"
+
+            let output = await harness.service.executeToolCall(arguments: ["url": url], conversationId: nil)
+            #expect(output.contains("Permission denied"))
+            #expect(harness.permissionService.pendingApprovals.isEmpty)
+            #expect(await harness.counter.urls.isEmpty)
+        }
+    }
+
+    private actor FetchCounter {
+        private(set) var urls: [String] = []
+
+        func record(_ url: String) {
+            urls.append(url)
+        }
+    }
+#endif
+
 private enum WebFetchTestResolverError: LocalizedError, Sendable {
     case lookupFailed
     case unexpectedHost(String)

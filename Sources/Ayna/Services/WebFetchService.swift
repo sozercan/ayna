@@ -501,6 +501,7 @@ enum WebFetchError: Error, LocalizedError, Sendable {
     case binaryContent
     case networkError(underlying: String)
     case serviceDisabled
+    case permissionDenied(reason: String)
 
     var errorDescription: String? {
         switch self {
@@ -518,6 +519,8 @@ enum WebFetchError: Error, LocalizedError, Sendable {
             "Network error: \(underlying)"
         case .serviceDisabled:
             "Web fetch is disabled"
+        case let .permissionDenied(reason):
+            "Permission denied for web_fetch: \(reason)"
         }
     }
 
@@ -537,6 +540,8 @@ enum WebFetchError: Error, LocalizedError, Sendable {
             "ERROR: Network request failed: \(underlying)"
         case .serviceDisabled:
             "ERROR: Web fetch is currently disabled. Ask the user to enable it in Settings."
+        case let .permissionDenied(reason):
+            "ERROR: Permission denied for web_fetch: \(reason)"
         }
     }
 }
@@ -862,23 +867,109 @@ final class WebFetchService {
 
     var timeoutSeconds: Int = 30
 
+    #if os(macOS)
+        var permissionLevel: PermissionLevel = PermissionService.defaultPermissionLevel(for: toolName)
+        var permissionService: PermissionService?
+    #endif
+
     private let maxResponseSize: Int = 10 * 1024 * 1024
+    private let fetcher: @Sendable (String, TimeInterval, Int) async throws -> String
 
     static let toolName = "web_fetch"
 
-    private init() {}
+    private init() {
+        fetcher = { url, timeoutSeconds, maxResponseSize in
+            try await WebFetchRequestExecutor.fetchText(
+                from: url,
+                timeoutSeconds: timeoutSeconds,
+                maxResponseSize: maxResponseSize
+            )
+        }
+    }
 
-    func fetch(url: String) async throws -> String {
+    #if os(macOS)
+        init(
+            permissionService: PermissionService?,
+            permissionLevel: PermissionLevel = PermissionService.defaultPermissionLevel(for: WebFetchService.toolName),
+            fetcher: @escaping @Sendable (String, TimeInterval, Int) async throws -> String = { url, timeoutSeconds, maxResponseSize in
+                try await WebFetchRequestExecutor.fetchText(
+                    from: url,
+                    timeoutSeconds: timeoutSeconds,
+                    maxResponseSize: maxResponseSize
+                )
+            }
+        ) {
+            self.permissionService = permissionService
+            self.permissionLevel = permissionLevel
+            self.fetcher = fetcher
+        }
+
+        func apply(_ settings: AgentSettings) {
+            permissionLevel = settings.permissionLevel(for: Self.toolName)
+            isEnabled = settings.isEnabled && permissionLevel != .denied
+            timeoutSeconds = settings.commandTimeoutSeconds
+        }
+
+        private func authorize(url: String, conversationId: UUID?) async throws {
+            let level = permissionLevel
+            guard level != .denied else {
+                throw WebFetchError.permissionDenied(reason: "Set to Denied in Agent settings")
+            }
+            guard level != .automatic else { return }
+
+            let activePermissionService = permissionService ?? AIService.shared.permissionService
+            guard let activePermissionService else {
+                throw WebFetchError.permissionDenied(reason: "Approval service unavailable")
+            }
+
+            let rememberedForSession = activePermissionService.checkPermission(
+                tool: Self.toolName,
+                details: url,
+                defaultLevel: .askAlways
+            ) == .automatic
+            guard !rememberedForSession else { return }
+
+            guard let conversationId else {
+                throw WebFetchError.permissionDenied(reason: "Conversation ID required for approval")
+            }
+
+            let approved = await activePermissionService.requestApproval(
+                toolName: Self.toolName,
+                description: "Fetch URL",
+                details: url,
+                conversationId: conversationId
+            )
+            try Task.checkCancellation()
+            guard approved else {
+                throw WebFetchError.permissionDenied(reason: "User denied")
+            }
+            guard isEnabled else {
+                throw WebFetchError.serviceDisabled
+            }
+            guard permissionLevel != .denied else {
+                throw WebFetchError.permissionDenied(reason: "Set to Denied in Agent settings")
+            }
+            if permissionLevel == .askOnce {
+                activePermissionService.recordSessionApproval(tool: Self.toolName, details: url)
+            }
+        }
+    #endif
+
+    func fetch(url: String, conversationId: UUID? = nil) async throws -> String {
         guard isEnabled else {
             throw WebFetchError.serviceDisabled
         }
 
+        #if os(macOS)
+            try await authorize(url: url, conversationId: conversationId)
+        #endif
+
         log(.info, "web_fetch requested", metadata: ["url": url])
 
-        let result = try await WebFetchRequestExecutor.fetchText(
-            from: url,
-            timeoutSeconds: TimeInterval(timeoutSeconds),
-            maxResponseSize: maxResponseSize
+        let result = try await fetcher(
+            url,
+            TimeInterval(timeoutSeconds),
+            maxResponseSize
         )
 
         log(.info, "web_fetch completed", metadata: ["url": url, "size": "\(result.count)"])
@@ -909,13 +1000,13 @@ final class WebFetchService {
         name == toolName
     }
 
-    func executeToolCall(arguments: [String: Any]) async -> String {
+    func executeToolCall(arguments: [String: Any], conversationId: UUID? = nil) async -> String {
         guard let url = arguments["url"] as? String else {
             return "ERROR: Missing required parameter 'url'"
         }
 
         do {
-            return try await fetch(url: url)
+            return try await fetch(url: url, conversationId: conversationId)
         } catch let error as WebFetchError {
             return error.modelFacingDescription
         } catch {
