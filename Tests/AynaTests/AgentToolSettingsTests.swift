@@ -305,6 +305,112 @@ import Testing
             try permissionService.deny(#require(permissionService.pendingApprovals.first).id)
             #expect(await unrelated.value == false)
         }
+
+        @Test
+        func `AIService applies AgentSettingsStore synchronously on initialization`() throws {
+            let root = try makeRoot()
+            defer { try? FileManager.default.removeItem(at: root) }
+
+            var configured = AgentSettings.default
+            configured.isEnabled = false
+            configured.commandTimeoutSeconds = 90
+            configured.approvalTimeoutSeconds = 60
+            configured.persistApprovals = true
+            configured.requireApprovalOutsideProject = false
+            configured.projectRootPath = root.path
+            configured.setPermissionLevel(.denied, for: "read_file")
+            configured.setPermissionLevel(.denied, for: WebFetchService.toolName)
+
+            let webFetchService = WebFetchService()
+            let store = AgentSettingsStore(
+                initialSettings: configured,
+                webFetchService: webFetchService
+            )
+
+            let aiService = AIService(
+                agentSettingsStore: store,
+                webFetchService: webFetchService
+            )
+
+            let builtinService = try #require(aiService.builtinToolService)
+            let permissionService = try #require(aiService.permissionService)
+
+            #expect(builtinService.isEnabled == false)
+            #expect(builtinService.commandTimeoutSeconds == 90)
+            #expect(builtinService.requireApprovalOutsideProject == false)
+            #expect(builtinService.projectRoot?.path == root.path)
+            #expect(builtinService.toolPermissions["read_file"] == .denied)
+            #expect(permissionService.approvalTimeoutSeconds == 60)
+            #expect(permissionService.persistApprovalsAcrossSessions == true)
+            #expect(webFetchService.isEnabled == false)
+            #expect(webFetchService.timeoutSeconds == 90)
+        }
+
+        @Test
+        func `Updating AgentSettingsStore propagates immediately to attached services`() throws {
+            var initial = AgentSettings.default
+            initial.isEnabled = false
+            initial.commandTimeoutSeconds = 45
+            initial.approvalTimeoutSeconds = 120
+            initial.persistApprovals = false
+
+            let webFetchService = WebFetchService()
+            let store = AgentSettingsStore(
+                initialSettings: initial,
+                webFetchService: webFetchService
+            )
+            let aiService = AIService(
+                agentSettingsStore: store,
+                webFetchService: webFetchService
+            )
+            let builtinService = try #require(aiService.builtinToolService)
+            let permissionService = try #require(aiService.permissionService)
+
+            #expect(builtinService.isEnabled == false)
+            #expect(webFetchService.isEnabled == false)
+
+            var updated = initial
+            updated.isEnabled = true
+            updated.commandTimeoutSeconds = 15
+            updated.approvalTimeoutSeconds = 900
+            updated.persistApprovals = true
+            updated.setPermissionLevel(.automatic, for: WebFetchService.toolName)
+            store.settings = updated
+
+            #expect(builtinService.isEnabled == true)
+            #expect(builtinService.commandTimeoutSeconds == 15)
+            #expect(permissionService.approvalTimeoutSeconds == 900)
+            #expect(permissionService.persistApprovalsAcrossSessions == true)
+            #expect(webFetchService.isEnabled == true)
+            #expect(webFetchService.timeoutSeconds == 15)
+        }
+
+        @Test
+        func `AgentSettingsStore applies settings immediately when initialized with services`() {
+            var configured = AgentSettings.default
+            configured.isEnabled = false
+            configured.commandTimeoutSeconds = 75
+            configured.approvalTimeoutSeconds = 0
+            configured.persistApprovals = true
+
+            let permissionService = PermissionService()
+            let builtinService = BuiltinToolService(permissionService: permissionService)
+            let webFetchService = WebFetchService()
+
+            _ = AgentSettingsStore(
+                initialSettings: configured,
+                builtinToolService: builtinService,
+                permissionService: permissionService,
+                webFetchService: webFetchService
+            )
+
+            #expect(builtinService.isEnabled == false)
+            #expect(builtinService.commandTimeoutSeconds == 75)
+            #expect(permissionService.approvalTimeoutSeconds == 0)
+            #expect(permissionService.persistApprovalsAcrossSessions == true)
+            #expect(webFetchService.isEnabled == false)
+            #expect(webFetchService.timeoutSeconds == 75)
+        }
     }
 #endif
 

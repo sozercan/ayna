@@ -285,7 +285,14 @@ typealias AIServiceResponseSimulator = @MainActor @Sendable (
 
 @MainActor
 class AIService: ObservableObject {
-    static let shared = AIService()
+    #if os(macOS)
+        static let shared = AIService(
+            agentSettingsStore: AgentSettingsStore.shared,
+            webFetchService: WebFetchService.shared
+        )
+    #else
+        static let shared = AIService()
+    #endif
     static var keychain: KeychainStoring = KeychainStorage.standard
 
     private enum KeychainKeys {
@@ -461,6 +468,41 @@ class AIService: ObservableObject {
         }
     #endif
 
+    #if os(macOS)
+        convenience init(
+            urlSession: URLSession? = nil,
+            anthropicProviderFactory: @escaping @MainActor (URLSession) -> any AIProviderProtocol = {
+                AnthropicProvider(urlSession: $0)
+            },
+            retryDelay: @escaping @Sendable (Int, Date?) async -> Void = { attempt, retryAfterDate in
+                await AIRetryPolicy.wait(for: attempt, retryAfterDate: retryAfterDate)
+            },
+            requestFlightObserver: RequestFlightObserver = .none,
+            responseSimulator: AIServiceResponseSimulator? = nil,
+            appleIntelligenceService: (any AppleIntelligenceServing)? = nil,
+            agentSettingsStore: AgentSettingsStore,
+            webFetchService: WebFetchService = WebFetchService.shared
+        ) {
+            self.init(
+                urlSession: urlSession,
+                anthropicProviderFactory: anthropicProviderFactory,
+                retryDelay: retryDelay,
+                requestFlightObserver: requestFlightObserver,
+                responseSimulator: responseSimulator,
+                appleIntelligenceService: appleIntelligenceService
+            )
+            if let builtinService = builtinToolService,
+               let permService = permissionService
+            {
+                agentSettingsStore.attach(
+                    builtinToolService: builtinService,
+                    permissionService: permService,
+                    webFetchService: webFetchService
+                )
+            }
+        }
+    #endif
+
     // swiftlint:disable:next function_body_length
     init(
         urlSession: URLSession? = nil,
@@ -630,9 +672,15 @@ class AIService: ObservableObject {
 
         #if os(macOS)
             let permService = PermissionService()
-            self.permissionService = permService
-            self.builtinToolService = BuiltinToolService(permissionService: permService)
-            _ = AgentSettingsStore.shared
+            let builtinService = BuiltinToolService(permissionService: permService)
+            permissionService = permService
+            builtinToolService = builtinService
+            AgentSettingsStore.apply(
+                AgentSettings.load(),
+                builtinToolService: builtinService,
+                permissionService: permService,
+                webFetchService: nil
+            )
         #endif
     }
 
