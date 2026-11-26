@@ -645,7 +645,7 @@ struct MCPServersList: View {
                 ForEach(mcpManager.serverConfigs) { config in
                     MCPServerRow(
                         config: config,
-                        status: mcpManager.getServerStatus(config.name),
+                        status: mcpManager.getServerStatus(config.id),
                         tools: mcpManager.availableTools.filter { $0.serverName == config.name },
                         onEdit: { editingServer = config },
                         onDelete: { mcpManager.removeServerConfig(config) },

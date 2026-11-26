@@ -777,6 +777,115 @@ struct MCPServerManagerTests {
         #expect(completion.pendingWaiterCount == 0)
     }
 
+    @Test("Duplicate server names preserve distinct status entries keyed by config ID", .timeLimit(.minutes(1)))
+    func duplicateServerNamesPreserveDistinctStatusEntriesKeyedByConfigID() throws {
+        let first = MCPServerConfig(name: "shared", command: "cmd-a", enabled: true)
+        let second = MCPServerConfig(name: "shared", command: "cmd-b", enabled: false)
+        let encoded = try JSONEncoder().encode([first, second])
+        defaults.set(encoded, forKey: "mcp_server_configs")
+
+        let manager = MCPServerManager(
+            serviceFactory: { StubMCPService(config: $0) },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+
+        #expect(manager.serverStatuses.count == 2)
+        #expect(manager.getServerStatus(first.id)?.configID == first.id)
+        #expect(manager.getServerStatus(first.id)?.state == .idle)
+        #expect(manager.getServerStatus(second.id)?.configID == second.id)
+        #expect(manager.getServerStatus(second.id)?.state == .disabled)
+
+        var renamedSecond = second
+        renamedSecond.name = "shared-renamed"
+        manager.updateServerConfig(renamedSecond)
+
+        #expect(manager.serverStatuses.count == 2)
+        #expect(manager.getServerStatus(first.id)?.name == "shared")
+        #expect(manager.getServerStatus(second.id)?.name == "shared-renamed")
+
+        manager.removeServerConfig(first)
+        #expect(manager.serverStatuses.count == 1)
+        #expect(manager.getServerStatus(first.id) == nil)
+        #expect(manager.getServerStatus(second.id)?.name == "shared-renamed")
+    }
+
+    @Test("Wait for pending discovery awaits in-flight startup tools", .timeLimit(.minutes(1)))
+    func waitForPendingDiscoveryAwaitsInFlightStartupTools() async {
+        let config = MCPServerConfig(name: "startup-tools", command: "cmd", enabled: true)
+        let discoveryStarted = FlightTestSignal()
+        let releaseDiscovery = FlightTestSignal()
+        let service = StubMCPService(config: config)
+        service.listToolsHandler = {
+            discoveryStarted.signal()
+            await releaseDiscovery.wait()
+            return [makeMCPTool(name: "ready-tool", serverName: config.name)]
+        }
+
+        let manager = MCPServerManager(
+            serviceFactory: { _ in service },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
+
+        let startupTask = Task { @MainActor in
+            await manager.connectToAllEnabledServers()
+        }
+        #expect(await discoveryStarted.wait(timeout: .seconds(1)))
+        #expect(manager.getEnabledTools().isEmpty)
+
+        let waitTask = Task { @MainActor in
+            await manager.waitForPendingDiscovery(timeout: .seconds(2))
+        }
+        releaseDiscovery.signal()
+        await waitTask.value
+        await startupTask.value
+
+        #expect(manager.getEnabledTools().map(\.name) == ["ready-tool"])
+    }
+
+    @Test("Wait for pending discovery respects timeout without cancelling connection", .timeLimit(.minutes(1)))
+    func waitForPendingDiscoveryRespectsTimeoutWithoutCancellingConnection() async {
+        let config = MCPServerConfig(name: "slow-startup", command: "cmd", enabled: true)
+        let connectStarted = FlightTestSignal()
+        let releaseConnect = FlightTestSignal()
+        let service = StubMCPService(config: config)
+        service.connectHandler = {
+            connectStarted.signal()
+            await releaseConnect.wait()
+        }
+        service.listToolsResult = .success([makeMCPTool(name: "late-tool", serverName: config.name)])
+
+        let manager = MCPServerManager(
+            serviceFactory: { _ in service },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 0 }
+        )
+        manager.serverConfigs = [config]
+        manager.updateServerConfig(config)
+
+        let startupTask = Task { @MainActor in
+            await manager.connectToAllEnabledServers()
+        }
+        #expect(await connectStarted.wait(timeout: .seconds(1)))
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        await manager.waitForPendingDiscovery(timeout: .milliseconds(50))
+        let elapsed = start.duration(to: clock.now)
+
+        #expect(elapsed < .seconds(1))
+        #expect(manager.getEnabledTools().isEmpty)
+
+        releaseConnect.signal()
+        await startupTask.value
+
+        #expect(manager.isServerConnected(config.id))
+        #expect(manager.getEnabledTools().map(\.name) == ["late-tool"])
+    }
+
     private func waitUntil(
         timeout: Duration = .seconds(2),
         condition: @MainActor () -> Bool

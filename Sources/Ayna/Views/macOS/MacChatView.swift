@@ -1203,17 +1203,6 @@ struct MacChatView: View {
             return
         }
 
-        let currentMessages = updatedConversation.getEffectiveHistory()
-
-        var messagesToSend = currentMessages
-        if let systemPrompt = buildFullSystemPrompt(for: updatedConversation) {
-            let systemMessage = Message(role: .system, content: systemPrompt)
-            messagesToSend.insert(systemMessage, at: 0)
-        }
-
-        let assistantMessage = Message(role: .assistant, content: "", model: activeModel)
-        conversationManager.addMessage(to: conversation, message: assistantMessage)
-
         let mcpManager = MCPServerManager.shared
 
         logChat(
@@ -1230,23 +1219,38 @@ struct MacChatView: View {
             ]
         )
 
-        let enabledMCPTools = mcpManager.getEnabledTools()
-
-        if enabledMCPTools.isEmpty {
-            let hasEnabledServers = !mcpManager.serverConfigs.filter(\.enabled).isEmpty
-            if hasEnabledServers {
-                logChat("⏳ Enabled servers found but no tools yet, waiting for discovery...", level: .info)
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(500))
-                    let updatedTools = mcpManager.getEnabledTools()
-                    logChat(
-                        "⏳ After delay: \(updatedTools.count) tools available",
-                        level: .info,
-                        metadata: ["availableTools": "\(updatedTools.count)"]
-                    )
-                }
-            }
+        if mcpManager.getEnabledTools().isEmpty,
+           mcpManager.serverConfigs.contains(where: \.enabled)
+        {
+            logChat("⏳ Enabled servers found but no tools yet, waiting for discovery...", level: .info)
+            await mcpManager.waitForPendingDiscovery()
+            guard sendPreparationID == preparationID, !Task.isCancelled else { return }
+            let updatedTools = mcpManager.getEnabledTools()
+            logChat(
+                "⏳ After waiting for discovery: \(updatedTools.count) tools available",
+                level: .info,
+                metadata: ["availableTools": "\(updatedTools.count)"]
+            )
         }
+
+        guard
+            let latestConversation = conversationManager.conversations.first(where: {
+                $0.id == conversation.id
+            })
+        else {
+            return
+        }
+
+        let currentMessages = latestConversation.getEffectiveHistory()
+
+        var messagesToSend = currentMessages
+        if let systemPrompt = buildFullSystemPrompt(for: latestConversation) {
+            let systemMessage = Message(role: .system, content: systemPrompt)
+            messagesToSend.insert(systemMessage, at: 0)
+        }
+
+        let assistantMessage = Message(role: .assistant, content: "", model: activeModel)
+        conversationManager.addMessage(to: conversation, message: assistantMessage)
 
         let tools = aiService.getAllAvailableTools()
 
@@ -1273,7 +1277,7 @@ struct MacChatView: View {
         sendMessageWithToolSupport(
             messages: messagesToSend,
             model: activeModel,
-            temperature: updatedConversation.temperature,
+            temperature: latestConversation.temperature,
             tools: tools,
             isInitialRequest: true,
             assistantMessageID: assistantMessage.id
