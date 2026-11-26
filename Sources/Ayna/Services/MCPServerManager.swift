@@ -361,6 +361,15 @@
             if let previous = services.removeValue(forKey: config.name) {
                 previous.service.delegate = nil
                 previous.service.disconnect()
+                if previous.configID != config.id,
+                   let displacedConfig = serverConfigs.first(where: { $0.id == previous.configID })
+                {
+                    setStatus(
+                        for: displacedConfig,
+                        state: displacedConfig.enabled ? .idle : .disabled,
+                        clearExistingError: true
+                    )
+                }
             }
             removeArtifacts(for: config.name)
 
@@ -1201,7 +1210,10 @@
                 resolvedError = message
             }
 
-            let toolCount = availableTools.count(where: { $0.serverName == config.name })
+            let ownsService = services[config.name]?.configID == config.id
+            let toolCount = ownsService
+                ? availableTools.count(where: { $0.serverName == config.name })
+                : 0
             serverStatuses[config.id] = MCPServerStatus(
                 configID: config.id,
                 name: config.name,
