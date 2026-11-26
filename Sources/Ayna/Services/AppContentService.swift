@@ -629,17 +629,234 @@
         }
 
         private func findURLFromBrowser(element: AXUIElement) async -> String? {
-            var result: String?
+            let accessibility = AccessibilityService.shared
 
-            if let focused = AccessibilityService.shared.getFocusedElement(in: element) {
-                if let value = AccessibilityService.shared.getValue(focused) {
-                    if value.hasPrefix("http://") || value.hasPrefix("https://") || value.contains(".") {
-                        result = value
-                    }
+            if let window = accessibility.getFocusedWindow(in: element) {
+                if let documentURL = Self.normalizedBrowserURL(from: accessibility.getDocument(window)) {
+                    return documentURL
+                }
+
+                if let hierarchyURL = findURLInHierarchy(root: window, accessibility: accessibility) {
+                    return hierarchyURL
                 }
             }
 
-            return result
+            if let focused = accessibility.getFocusedElement(in: element) {
+                if let directURL = Self.normalizedBrowserURL(from: accessibility.getURL(focused))
+                    ?? Self.normalizedBrowserURL(from: accessibility.getDocument(focused))
+                {
+                    return directURL
+                }
+
+                if isAddressBarCandidate(focused, accessibility: accessibility),
+                   let valueURL = Self.normalizedBrowserURL(from: accessibility.getValue(focused))
+                {
+                    return valueURL
+                }
+            }
+
+            return nil
+        }
+
+        private func findURLInHierarchy(root: AXUIElement, accessibility: AccessibilityService) -> String? {
+            let maxDepth = 8
+            let maxVisitedElements = 300
+            var queue: [(element: AXUIElement, depth: Int)] = [(root, 0)]
+            var queueIndex = 0
+            var visitedCount = 0
+            var fallbackCandidate: String?
+
+            while queueIndex < queue.count, visitedCount < maxVisitedElements {
+                let current = queue[queueIndex]
+                queueIndex += 1
+                visitedCount += 1
+
+                if current.depth > 0 {
+                    let role = accessibility.getRole(current.element)
+
+                    if role == "AXWebArea" {
+                        if let webAreaURL = Self.normalizedBrowserURL(from: accessibility.getURL(current.element))
+                            ?? Self.normalizedBrowserURL(from: accessibility.getDocument(current.element))
+                        {
+                            return webAreaURL
+                        }
+                    }
+
+                    if Self.isAddressBarRole(role) {
+                        let candidate = Self.normalizedBrowserURL(from: accessibility.getValue(current.element))
+                            ?? Self.normalizedBrowserURL(from: accessibility.getURL(current.element))
+                        if let candidate {
+                            if Self.isAddressBarDescriptor(
+                                identifier: accessibility.getIdentifier(current.element),
+                                description: accessibility.getDescription(current.element),
+                                title: accessibility.getTitle(current.element),
+                                subrole: accessibility.getSubrole(current.element)
+                            ) {
+                                return candidate
+                            }
+                            if fallbackCandidate == nil {
+                                fallbackCandidate = candidate
+                            }
+                        }
+                    }
+                }
+
+                guard current.depth < maxDepth else { continue }
+
+                for child in accessibility.getChildren(current.element) {
+                    queue.append((child, current.depth + 1))
+                }
+            }
+
+            return fallbackCandidate
+        }
+
+        private func isAddressBarCandidate(_ element: AXUIElement, accessibility: AccessibilityService) -> Bool {
+            guard Self.isAddressBarRole(accessibility.getRole(element)) else {
+                return false
+            }
+
+            return Self.isAddressBarDescriptor(
+                identifier: accessibility.getIdentifier(element),
+                description: accessibility.getDescription(element),
+                title: accessibility.getTitle(element),
+                subrole: accessibility.getSubrole(element)
+            )
+        }
+
+        static func isAddressBarRole(_ role: String?) -> Bool {
+            guard let role else { return false }
+            return role == (kAXTextFieldRole as String) || role == (kAXComboBoxRole as String)
+        }
+
+        static func isAddressBarDescriptor(
+            identifier: String?,
+            description: String?,
+            title: String?,
+            subrole: String?
+        ) -> Bool {
+            let fields = [identifier, description, title, subrole]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                .filter { !$0.isEmpty }
+
+            let keywords = [
+                "address",
+                "url",
+                "location",
+                "omnibox",
+                "webbrowseraddressandsearchfield",
+                "urlbar"
+            ]
+
+            return fields.contains { field in
+                keywords.contains { field.contains($0) }
+            }
+        }
+
+        static func normalizedBrowserURL(from rawValue: String?) -> String? {
+            guard let rawValue else { return nil }
+
+            let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty,
+                  trimmed.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+            else {
+                return nil
+            }
+
+            if trimmed.contains("://") || trimmed.lowercased().hasPrefix("file:") {
+                guard let url = URL(string: trimmed),
+                      let scheme = url.scheme?.lowercased()
+                else {
+                    return nil
+                }
+
+                if scheme == "http" || scheme == "https" {
+                    guard let host = url.host, isValidWebHost(host) else {
+                        return nil
+                    }
+                    return url.absoluteString
+                }
+
+                if scheme == "file" {
+                    return url.absoluteString
+                }
+
+                return nil
+            }
+
+            if hasUnsupportedSchemePrefix(trimmed) {
+                return nil
+            }
+
+            guard let prefixedURL = URL(string: "https://\(trimmed)"),
+                  prefixedURL.user == nil,
+                  prefixedURL.password == nil,
+                  let host = prefixedURL.host,
+                  host == host.lowercased(),
+                  isValidWebHost(host)
+            else {
+                return nil
+            }
+
+            return prefixedURL.absoluteString
+        }
+
+        private static func hasUnsupportedSchemePrefix(_ value: String) -> Bool {
+            let authorityEnd = value.firstIndex { $0 == "/" || $0 == "?" || $0 == "#" } ?? value.endIndex
+            let authority = value[..<authorityEnd]
+            guard let colonIndex = authority.firstIndex(of: ":") else {
+                return false
+            }
+
+            let afterColon = authority[authority.index(after: colonIndex)...]
+            guard !afterColon.isEmpty,
+                  afterColon.allSatisfy(\.isNumber),
+                  let port = Int(afterColon),
+                  (1 ... 65535).contains(port)
+            else {
+                return true
+            }
+
+            return false
+        }
+
+        private static func isValidWebHost(_ host: String) -> Bool {
+            let lowercased = host.lowercased()
+            if lowercased == "localhost" {
+                return true
+            }
+
+            if lowercased.contains(":") {
+                return true
+            }
+
+            guard lowercased.contains("."),
+                  !lowercased.hasPrefix("."),
+                  !lowercased.hasSuffix("."),
+                  !lowercased.contains("..")
+            else {
+                return false
+            }
+
+            let labels = lowercased.split(separator: ".")
+            if labels.count == 4, labels.allSatisfy({ Int($0).map { (0 ... 255).contains($0) } ?? false }) {
+                return true
+            }
+
+            guard labels.count >= 2,
+                  let tld = labels.last,
+                  tld.count >= 2,
+                  tld.allSatisfy(\.isLetter)
+            else {
+                return false
+            }
+
+            return labels.allSatisfy { label in
+                !label.isEmpty &&
+                    !label.hasPrefix("-") &&
+                    !label.hasSuffix("-") &&
+                    label.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" }
+            }
         }
 
         private func createContent(

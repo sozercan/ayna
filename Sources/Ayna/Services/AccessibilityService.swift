@@ -161,6 +161,44 @@
             getStringAttribute(element, attribute: kAXTitleAttribute as String)
         }
 
+        func getDescription(_ element: AXUIElement) -> String? {
+            getStringAttribute(element, attribute: kAXDescriptionAttribute as String)
+        }
+
+        func getIdentifier(_ element: AXUIElement) -> String? {
+            getStringAttribute(element, attribute: kAXIdentifierAttribute as String)
+        }
+
+        func getSubrole(_ element: AXUIElement) -> String? {
+            getStringAttribute(element, attribute: kAXSubroleAttribute as String)
+        }
+
+        func getDocument(_ element: AXUIElement) -> String? {
+            getStringAttribute(element, attribute: kAXDocumentAttribute as String)
+        }
+
+        func getURL(_ element: AXUIElement) -> String? {
+            guard let value = getAttributeValue(element, attribute: kAXURLAttribute as String) else {
+                return nil
+            }
+
+            if let url = value as? URL {
+                return url.absoluteString
+            }
+
+            return value as? String
+        }
+
+        func getChildren(_ element: AXUIElement) -> [AXUIElement] {
+            guard let value = getAttributeValue(element, attribute: kAXChildrenAttribute as String),
+                  let children = value as? [AXUIElement]
+            else {
+                return []
+            }
+
+            return children
+        }
+
         func getFocusedWindow(in appElement: AXUIElement) -> AXUIElement? {
             var focusedWindow: CFTypeRef?
             let result = AXUIElementCopyAttributeValue(

@@ -141,6 +141,63 @@
             #expect(!extractor.canHandle(bundleIdentifier: "com.apple.Terminal"))
             #expect(!extractor.canHandle(bundleIdentifier: "com.apple.dt.Xcode"))
         }
+
+        @Test("Normalizes valid browser URLs")
+        func normalizesValidBrowserURLs() {
+            #expect(BrowserExtractor.normalizedBrowserURL(from: "https://github.com/sozercan/ayna") == "https://github.com/sozercan/ayna")
+            #expect(BrowserExtractor.normalizedBrowserURL(from: "http://localhost:3000/dashboard") == "http://localhost:3000/dashboard")
+            #expect(BrowserExtractor.normalizedBrowserURL(from: "github.com/sozercan/ayna") == "https://github.com/sozercan/ayna")
+            #expect(BrowserExtractor.normalizedBrowserURL(from: "localhost:8080/api") == "https://localhost:8080/api")
+            #expect(BrowserExtractor.normalizedBrowserURL(from: "127.0.0.1:8080") == "https://127.0.0.1:8080")
+            #expect(BrowserExtractor.normalizedBrowserURL(from: "  https://example.com/path?q=1  ") == "https://example.com/path?q=1")
+            #expect(BrowserExtractor.normalizedBrowserURL(from: "file:///Users/test/index.html") == "file:///Users/test/index.html")
+        }
+
+        @Test("Rejects non-URL text with periods and unsupported schemes")
+        func rejectsNonURLTextWithPeriods() {
+            #expect(BrowserExtractor.normalizedBrowserURL(from: nil) == nil)
+            #expect(BrowserExtractor.normalizedBrowserURL(from: "") == nil)
+            #expect(BrowserExtractor.normalizedBrowserURL(from: "Hello world. This is a sentence.") == nil)
+            #expect(BrowserExtractor.normalizedBrowserURL(from: "Mr.Smith") == nil)
+            #expect(BrowserExtractor.normalizedBrowserURL(from: "v1.2.3") == nil)
+            #expect(BrowserExtractor.normalizedBrowserURL(from: "javascript:alert(1)") == nil)
+            #expect(BrowserExtractor.normalizedBrowserURL(from: "mailto:user@example.com") == nil)
+            #expect(BrowserExtractor.normalizedBrowserURL(from: "https://") == nil)
+            #expect(BrowserExtractor.normalizedBrowserURL(from: "ftp://files.example.com") == nil)
+        }
+
+        @Test("Identifies address bar roles and descriptors")
+        func identifiesAddressBarRolesAndDescriptors() {
+            #expect(BrowserExtractor.isAddressBarRole("AXTextField"))
+            #expect(BrowserExtractor.isAddressBarRole("AXComboBox"))
+            #expect(!BrowserExtractor.isAddressBarRole("AXTextArea"))
+            #expect(!BrowserExtractor.isAddressBarRole(nil))
+
+            #expect(BrowserExtractor.isAddressBarDescriptor(
+                identifier: "WEB_BROWSER_ADDRESS_AND_SEARCH_FIELD",
+                description: nil,
+                title: nil,
+                subrole: nil
+            ))
+            #expect(BrowserExtractor.isAddressBarDescriptor(
+                identifier: nil,
+                description: "Address and search bar",
+                title: nil,
+                subrole: nil
+            ))
+            #expect(BrowserExtractor.isAddressBarDescriptor(
+                identifier: "urlbar-input",
+                description: nil,
+                title: nil,
+                subrole: nil
+            ))
+            #expect(!BrowserExtractor.isAddressBarDescriptor(
+                identifier: "search-input",
+                description: "Find in page",
+                title: "Search",
+                subrole: nil
+            ))
+        }
     }
 
     @Suite("GenericExtractor Tests")
