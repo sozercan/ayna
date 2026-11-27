@@ -218,7 +218,7 @@ extension ConversationManager {
                         conversation,
                         persistenceSequence: persistenceSequence,
                         allowsRecreation: effectiveAllowsRecreation,
-                        outcome: outcome
+                        outcome: nil
                     )
                 }
                 return
@@ -264,7 +264,7 @@ extension ConversationManager {
                         conversationToSave,
                         persistenceSequence: persistenceSequence,
                         allowsRecreation: effectiveAllowsRecreation,
-                        outcome: outcome
+                        outcome: nil
                     )
                     return
                 }
@@ -680,7 +680,7 @@ extension ConversationManager {
         _ result: ConversationDeleteResult,
         conversationId: UUID,
         deletionReconciliationVersion: UInt64,
-        repairToken: UUID?
+        repairToken: ConversationSnapshotRepairToken
     ) {
         switch result {
         case .deleted:
