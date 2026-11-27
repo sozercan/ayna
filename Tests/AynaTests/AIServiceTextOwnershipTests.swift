@@ -654,6 +654,183 @@ extension AIServiceTests {
         #expect(replacementChunk.value == "replacement")
     }
 
+    private static let nonStreamMultiToolPayload = Data("""
+    {
+      "choices": [
+        {
+          "message": {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "call_1",
+                "type": "function",
+                "function": {
+                  "name": "lookup_weather",
+                  "arguments": "{\\"city\\":\\"Seattle\\"}"
+                }
+              },
+              {
+                "id": "call_2",
+                "type": "function",
+                "function": {
+                  "name": "lookup_time",
+                  "arguments": "{\\"zone\\":\\"PST\\"}"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+    """.utf8)
+
+    @Test(
+        "Non-streaming OpenAI tool calls deliver in order before completion",
+        .timeLimit(.minutes(1))
+    )
+    func nonStreamOpenAIToolCallsDeliverInOrderBeforeCompletion() async {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        defer { FlightTestURLProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        let service = AIService(urlSession: URLSession(configuration: config))
+        let model = "nonstream-tool-calls-order"
+        service.customModels = [model]
+        service.selectedModel = model
+        service.modelProviders[model] = .openai
+        service.modelAPIKeys[model] = "sk-unit-test"
+
+        let events = FlightTestBox<[String]>([])
+        let completed = FlightTestSignal()
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Use both tools")],
+            model: model,
+            stream: false,
+            onChunk: { chunk in events.update { $0.append("chunk:\(chunk)") } },
+            onComplete: {
+                events.update { $0.append("complete") }
+                completed.signal()
+            },
+            onError: { error in Issue.record("Unexpected error: \(error)") },
+            onToolCallRequested: { id, name, args in
+                let detail = args["city"] as? String ?? args["zone"] as? String ?? ""
+                events.update { $0.append("tool:\(id):\(name):\(detail)") }
+            }
+        )
+
+        let exchange = await server.exchange(at: 0)
+        exchange.sendResponse(statusCode: 200, headers: ["Content-Type": "application/json"])
+        exchange.send(Self.nonStreamMultiToolPayload)
+        exchange.finish()
+
+        #expect(await completed.wait(timeout: .seconds(1)))
+        #expect(events.value == [
+            "tool:call_1:lookup_weather:Seattle",
+            "tool:call_2:lookup_time:PST",
+            "complete",
+        ])
+    }
+
+    @Test(
+        "Non-streaming OpenAI tool calls fence subsequent callbacks after cancel or replacement",
+        .timeLimit(.minutes(1))
+    )
+    func nonStreamOpenAIToolCallsFenceAfterCancelOrReplacement() async {
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        defer { FlightTestURLProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        let service = AIService(urlSession: URLSession(configuration: config))
+        let model = "nonstream-tool-calls-fence"
+        service.customModels = [model]
+        service.selectedModel = model
+        service.modelProviders[model] = .openai
+        service.modelAPIKeys[model] = "sk-unit-test"
+
+        let cancelledEvents = FlightTestBox<[String]>([])
+        let firstCancelledToolSeen = FlightTestSignal()
+        let cancelledComplete = FlightTestSignal()
+        let cancelledRequest = FlightTestBox<AITextRequest?>(nil)
+        cancelledRequest.value = service.sendMessage(
+            messages: [Message(role: .user, content: "Cancel on first tool")],
+            model: model,
+            stream: false,
+            onChunk: { chunk in cancelledEvents.update { $0.append("chunk:\(chunk)") } },
+            onComplete: {
+                cancelledEvents.update { $0.append("complete") }
+                cancelledComplete.signal()
+            },
+            onError: { error in Issue.record("Unexpected error: \(error)") },
+            onToolCallRequested: { id, name, _ in
+                cancelledEvents.update { $0.append("tool:\(id):\(name)") }
+                if id == "call_1" {
+                    MainActor.assumeIsolated {
+                        cancelledRequest.value?.cancel()
+                    }
+                    firstCancelledToolSeen.signal()
+                }
+            }
+        )
+
+        let cancelExchange = await server.exchange(at: 0)
+        cancelExchange.sendResponse(statusCode: 200, headers: ["Content-Type": "application/json"])
+        cancelExchange.send(Self.nonStreamMultiToolPayload)
+        cancelExchange.finish()
+
+        #expect(await firstCancelledToolSeen.wait(timeout: .seconds(1)))
+        #expect(await !(cancelledComplete.wait(timeout: .milliseconds(150))))
+        #expect(cancelledEvents.value == ["tool:call_1:lookup_weather"])
+
+        let replacedEvents = FlightTestBox<[String]>([])
+        let replacedComplete = FlightTestSignal()
+        let replacementChunk = FlightTestBox("")
+        let replacementComplete = FlightTestSignal()
+        service.sendMessage(
+            messages: [Message(role: .user, content: "Replace on first tool")],
+            model: model,
+            stream: false,
+            onChunk: { chunk in replacedEvents.update { $0.append("chunk:\(chunk)") } },
+            onComplete: {
+                replacedEvents.update { $0.append("complete") }
+                replacedComplete.signal()
+            },
+            onError: { error in Issue.record("Unexpected error: \(error)") },
+            onToolCallRequested: { id, name, _ in
+                replacedEvents.update { $0.append("tool:\(id):\(name)") }
+                if id == "call_1" {
+                    MainActor.assumeIsolated {
+                        service.sendMessage(
+                            messages: [Message(role: .user, content: "Replacement")],
+                            model: model,
+                            stream: false,
+                            onChunk: { replacementChunk.value += $0 },
+                            onComplete: { replacementComplete.signal() },
+                            onError: { error in Issue.record("Unexpected replacement error: \(error)") }
+                        )
+                    }
+                }
+            }
+        )
+
+        let replaceExchange = await server.exchange(at: 1)
+        replaceExchange.sendResponse(statusCode: 200, headers: ["Content-Type": "application/json"])
+        replaceExchange.send(Self.nonStreamMultiToolPayload)
+        replaceExchange.finish()
+
+        let replacementExchange = await server.exchange(at: 2)
+        replacementExchange.sendResponse(statusCode: 200, headers: ["Content-Type": "application/json"])
+        replacementExchange.send(Data(#"{"choices":[{"message":{"role":"assistant","content":"replacement"}}]}"#.utf8))
+        replacementExchange.finish()
+
+        #expect(await replacementComplete.wait(timeout: .seconds(1)))
+        #expect(await !(replacedComplete.wait(timeout: .milliseconds(150))))
+        #expect(replacedEvents.value == ["tool:call_1:lookup_weather"])
+        #expect(replacementChunk.value == "replacement")
+    }
+
     #if !os(watchOS)
         @Test("Apple Intelligence handles cancel and fence only their owned request", .timeLimit(.minutes(1)))
         func appleIntelligenceHandlesCancelAndFenceOnlyOwnedRequest() async throws {

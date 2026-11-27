@@ -1077,14 +1077,27 @@ final class ConversationManager: ObservableObject {
         let deletionVersion = nextManagerDeletionVersion()
         let deletionReconciliationVersion = nextReconciliationVersion()
         latestManagerDeletionVersionById[conversationId] = deletionReconciliationVersion
+        let rollbackSnapshot: Conversation? = if let conversation = conversationSnapshot(byId: conversationId),
+                                                 !isMetadataBackedSnapshot(conversation)
+        {
+            resolvingInterruptedImageGeneration(in: conversation)
+        } else {
+            nil
+        }
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { finishManagerDeletionTask(for: conversationId, version: deletionVersion) }
             suppressedPersistenceIds.insert(conversationId)
-            let receipt = persistenceCoordinator.delete(id: conversationId)
+            let receipt: DestructivePersistenceReceipt<ConversationDeleteResult> = if let rollbackSnapshot {
+                persistenceCoordinator.delete(rollbackSnapshot)
+            } else {
+                persistenceCoordinator.delete(id: conversationId)
+            }
+            beginDestructivePersistenceOperation(receipt.repairToken)
             let result = await receipt.value
             switch result {
-            case .deleted, .superseded:
+            case .deleted:
+                finishDestructivePersistenceOperation()
                 conversationSummaryRemoveOperation(conversationId)
                 if let index = getConversationIndex(for: conversationId) {
                     conversations.remove(at: index)
@@ -1096,10 +1109,38 @@ final class ConversationManager: ObservableObject {
                 if selectedConversationId == conversationId {
                     selectedConversationId = nil
                 }
-            case let .failed(_, error):
-                suppressedPersistenceIds.remove(conversationId)
-                if latestManagerDeletionVersionById[conversationId] == deletionReconciliationVersion {
-                    latestManagerDeletionVersionById.removeValue(forKey: conversationId)
+            case .superseded:
+                retainDestructiveBarrierUntilRepairSettles(receipt.repairToken)
+                conversationSummaryRemoveOperation(conversationId)
+                if let index = getConversationIndex(for: conversationId) {
+                    conversations.remove(at: index)
+                    pendingSendConversationIds.removeAll { $0 == conversationId }
+                    metadataOnlyConversationIds.remove(conversationId)
+                    metadataSearchTextById.removeValue(forKey: conversationId)
+                    updateCacheForRemoval(id: conversationId, at: index)
+                }
+                if selectedConversationId == conversationId {
+                    selectedConversationId = nil
+                }
+            case let .failed(restored, error):
+                retainDestructiveBarrierUntilRepairSettles(receipt.repairToken)
+                if restored != nil {
+                    suppressedPersistenceIds.remove(conversationId)
+                    if latestManagerDeletionVersionById[conversationId] == deletionReconciliationVersion {
+                        latestManagerDeletionVersionById.removeValue(forKey: conversationId)
+                    }
+                } else {
+                    conversationSummaryRemoveOperation(conversationId)
+                    if let index = getConversationIndex(for: conversationId) {
+                        conversations.remove(at: index)
+                        pendingSendConversationIds.removeAll { $0 == conversationId }
+                        metadataOnlyConversationIds.remove(conversationId)
+                        metadataSearchTextById.removeValue(forKey: conversationId)
+                        updateCacheForRemoval(id: conversationId, at: index)
+                    }
+                    if selectedConversationId == conversationId {
+                        selectedConversationId = nil
+                    }
                 }
                 logManager(
                     "❌ Failed to delete conversation",
