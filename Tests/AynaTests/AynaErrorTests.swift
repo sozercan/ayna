@@ -254,7 +254,7 @@ struct ErrorPresenterTests {
     @Test("User message sanitizes incorrect API key message")
     func userMessageSanitizesIncorrectAPIKeyMessage() {
         let leakingMessage = "Incorrect API key provided: sk-proj-1234567890ABCDEFGH. You can find your API key at https://platform.openai.com/account/api-keys."
-        let error = AIService.AIError.apiError(leakingMessage)
+        let error = AynaError.apiError(message: leakingMessage)
 
         let message = ErrorPresenter.userMessage(for: error)
 

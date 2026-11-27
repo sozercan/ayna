@@ -317,9 +317,6 @@ class AIService: ObservableObject {
     private var backgroundRequestBuildTasks: [RequestFlightID: Task<Void, Never>] = [:]
     private var currentStreamTask = RequestFlight<Task<Void, Never>>()
     private var backgroundStreamTasks: [RequestFlightID: Task<Void, Never>] = [:]
-    private var currentNonStreamToolTask = RequestFlight<Task<Void, Never>>()
-    private var multiModelNonStreamToolTasks: [String: RequestFlight<Task<Void, Never>>] = [:]
-    private var backgroundNonStreamToolTasks: [RequestFlightID: Task<Void, Never>] = [:]
     private var currentSimulatedTextRequest = RequestFlight<SimulatedTextRequestHandle>()
     private var multiModelSimulatedTextRequests: [String: RequestFlight<SimulatedTextRequestHandle>] = [:]
     private var backgroundSimulatedTextRequests: [RequestFlightID: SimulatedTextRequestHandle] = [:]
@@ -557,10 +554,7 @@ class AIService: ObservableObject {
             #endif
         }
 
-        let isUITesting = ProcessInfo.processInfo.environment["AYNA_UI_TESTING"] == "1" ||
-            ProcessInfo.processInfo.arguments.contains("--ui-testing") ||
-            ProcessInfo.processInfo.arguments.contains("-AYNA_UI_TESTING") ||
-            UserDefaults.standard.bool(forKey: "AYNA_UI_TESTING")
+        let isUITesting = RuntimeEnvironment.isUITesting
 
         let savedProviderValues = AppPreferences.storage.dictionary(forKey: "modelProviders") as? [String: String]
         let savedDefaultProviderValue = AppPreferences.storage.string(forKey: "aiProvider")
@@ -1129,8 +1123,6 @@ class AIService: ObservableObject {
         let backgroundRequestBuildTask = backgroundRequestBuildTasks.removeValue(forKey: flightID)
         let streamTask = currentStreamTask.take(ifOwnedBy: flightID)
         let backgroundStreamTask = backgroundStreamTasks.removeValue(forKey: flightID)
-        let nonStreamToolTask = currentNonStreamToolTask.take(ifOwnedBy: flightID)
-        let backgroundNonStreamToolTask = backgroundNonStreamToolTasks.removeValue(forKey: flightID)
         let simulatedRequest = currentSimulatedTextRequest.take(ifOwnedBy: flightID)
         let backgroundSimulatedRequest = backgroundSimulatedTextRequests.removeValue(forKey: flightID)
         let anthropicProvider = currentAnthropicProvider.take(ifOwnedBy: flightID)
@@ -1155,13 +1147,6 @@ class AIService: ObservableObject {
         }
         let multiStreamTasks = multiStreamTaskModels.compactMap { model -> Task<Void, Never>? in
             var ownedFlight = multiModelStreamTasks.removeValue(forKey: model)
-            return ownedFlight?.take(ifOwnedBy: flightID)
-        }
-        let multiNonStreamToolTaskModels = multiModelNonStreamToolTasks.compactMap { model, flight in
-            flight.owns(flightID) ? model : nil
-        }
-        let multiNonStreamToolTasks = multiNonStreamToolTaskModels.compactMap { model -> Task<Void, Never>? in
-            var ownedFlight = multiModelNonStreamToolTasks.removeValue(forKey: model)
             return ownedFlight?.take(ifOwnedBy: flightID)
         }
         let multiSimulatedRequestModels = multiModelSimulatedTextRequests.compactMap { model, flight in
@@ -1200,9 +1185,6 @@ class AIService: ObservableObject {
         streamTask?.cancel()
         backgroundStreamTask?.cancel()
         multiStreamTasks.forEach { $0.cancel() }
-        nonStreamToolTask?.cancel()
-        backgroundNonStreamToolTask?.cancel()
-        multiNonStreamToolTasks.forEach { $0.cancel() }
         simulatedRequest?.cancel()
         backgroundSimulatedRequest?.cancel()
         multiSimulatedRequests.forEach { $0.cancel() }
@@ -1221,16 +1203,6 @@ class AIService: ObservableObject {
 
         batchTask.cancel()
         cancelTextRequest(flightID)
-    }
-
-    private func cancelForegroundNonStreamToolRequest() {
-        guard currentNonStreamToolTask.isActive else { return }
-        let dataTask = currentTask.take()
-        let requestBuildTask = currentRequestBuildTask.take()
-        let toolTask = currentNonStreamToolTask.take()
-        dataTask?.cancel()
-        requestBuildTask?.cancel()
-        toolTask?.cancel()
     }
 
     func cancelCurrentRequest(includeImageRequests: Bool = true) {
@@ -1254,12 +1226,6 @@ class AIService: ObservableObject {
         }
         multiModelRequestBuildTasks.removeAll()
         let streamTask = currentStreamTask.take()
-        let nonStreamToolTask = currentNonStreamToolTask.take()
-        let multiNonStreamToolTasks = multiModelNonStreamToolTasks.compactMap { _, flight -> Task<Void, Never>? in
-            var flight = flight
-            return flight.take()
-        }
-        multiModelNonStreamToolTasks.removeAll()
         let simulatedRequest = currentSimulatedTextRequest.take()
         let multiSimulatedRequests = multiModelSimulatedTextRequests.compactMap { _, flight -> SimulatedTextRequestHandle? in
             var flight = flight
@@ -1315,8 +1281,6 @@ class AIService: ObservableObject {
             )
         }
         streamTask?.cancel()
-        nonStreamToolTask?.cancel()
-        multiNonStreamToolTasks.forEach { $0.cancel() }
         simulatedRequest?.cancel()
         multiSimulatedRequests.forEach { $0.cancel() }
         for (model, task) in multiStreamTasks {
@@ -1353,7 +1317,7 @@ class AIService: ObservableObject {
         ) -> AIImageRequest? {
             let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !requestModel.isEmpty else {
-                onError(AIError.missingModel)
+                onError(AynaError.noModelSelected)
                 return nil
             }
 
@@ -1445,7 +1409,7 @@ class AIService: ObservableObject {
         ) -> AIImageRequest? {
             let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !requestModel.isEmpty else {
-                onError(AIError.missingModel)
+                onError(AynaError.noModelSelected)
                 return nil
             }
 
@@ -1544,7 +1508,6 @@ class AIService: ObservableObject {
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void,
         onError: @escaping @Sendable (Error) -> Void,
-        onToolCall: (@Sendable (String, String, [String: Any]) async -> String)? = nil,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil,
         requestFlightID: RequestFlightID? = nil
@@ -1552,10 +1515,6 @@ class AIService: ObservableObject {
         let flightID = requestFlightID ?? RequestFlightID()
         let requestHandle = AITextRequest(service: self, flightID: flightID)
         let requestModel = (model ?? selectedModel).trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if requestLane == .foreground, !isMultiModelRequest {
-            cancelForegroundNonStreamToolRequest()
-        }
 
         DiagnosticsLogger.log(
             .aiService,
@@ -1612,7 +1571,7 @@ class AIService: ObservableObject {
                 level: .error,
                 message: "❌ Model is empty"
             )
-            onError(AIError.missingModel)
+            onError(AynaError.noModelSelected)
             return requestHandle
         }
         let effectiveProvider: AIProvider
@@ -1640,8 +1599,8 @@ class AIService: ObservableObject {
         if effectiveProvider == .appleIntelligence,
            messages.contains(where: { $0.attachments?.isEmpty == false })
         {
-            let error = AIError.apiError(
-                "Apple Intelligence does not support attachments. Choose a vision-capable cloud model."
+            let error = AynaError.apiError(
+                message: "Apple Intelligence does not support attachments. Choose a vision-capable cloud model."
             )
             DiagnosticsLogger.log(
                 .aiService,
@@ -1684,13 +1643,13 @@ class AIService: ObservableObject {
                         onError: onError
                     ), flightID: flightID)
                 } else {
-                    onError(AIError.apiError("Apple Intelligence requires macOS 26.0 or iOS 26.0 or later"))
+                    onError(AynaError.apiError(message: "Apple Intelligence requires macOS 26.0 or iOS 26.0 or later"))
                 }
                 return requestHandle
             }
         #else
             if effectiveProvider == .appleIntelligence {
-                onError(AIError.apiError("Apple Intelligence is not available on Apple Watch"))
+                onError(AynaError.apiError(message: "Apple Intelligence is not available on Apple Watch"))
                 return requestHandle
             }
         #endif
@@ -1760,7 +1719,7 @@ class AIService: ObservableObject {
                 message: "❌ Invalid URL",
                 metadata: ["url": apiURL]
             )
-            onError(AIError.invalidURL)
+            onError(AynaError.invalidEndpoint(apiURL))
             return requestHandle
         }
 
@@ -1834,7 +1793,7 @@ class AIService: ObservableObject {
                     level: .error,
                     message: "❌ Failed to create request"
                 )
-                onError(AIError.invalidRequest)
+                onError(AynaError.encodingFailed(detail: "Failed to build API request"))
                 return
             }
 
@@ -1854,7 +1813,6 @@ class AIService: ObservableObject {
                     onChunk: onChunk,
                     onComplete: onComplete,
                     onError: onError,
-                    onToolCall: onToolCall,
                     onToolCallRequested: onToolCallRequested,
                     onReasoning: onReasoning
                 )
@@ -1875,7 +1833,7 @@ class AIService: ObservableObject {
                     onChunk: onChunk,
                     onComplete: onComplete,
                     onError: onError,
-                    onToolCall: onToolCall,
+                    onToolCallRequested: onToolCallRequested,
                     onReasoning: onReasoning,
                     initialFlightID: flightID
                 )
@@ -1908,7 +1866,7 @@ class AIService: ObservableObject {
         let requestHandle = AITextBatchRequest(service: self, flightID: flightID)
 
         guard !models.isEmpty else {
-            onError("", AIError.missingModel)
+            onError("", AynaError.noModelSelected)
             onAllComplete()
             return requestHandle
         }
@@ -1921,13 +1879,13 @@ class AIService: ObservableObject {
         let requestModels = models.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         let modelRequests = Array(zip(models, requestModels))
         guard !requestModels.contains(where: \.isEmpty) else {
-            rejectBatch(AIError.missingModel)
+            rejectBatch(AynaError.noModelSelected)
             return requestHandle
         }
 
         var uniqueModels: Set<String> = []
         if let duplicateModel = requestModels.first(where: { !uniqueModels.insert($0).inserted }) {
-            rejectBatch(AIError.apiError("Duplicate model in multi-model request: \(duplicateModel)"))
+            rejectBatch(AynaError.apiError(message: "Duplicate model in multi-model request: \(duplicateModel)"))
             return requestHandle
         }
 
@@ -1964,11 +1922,6 @@ class AIService: ObservableObject {
             return flight.take()
         }
         multiModelStreamTasks.removeAll()
-        let previousNonStreamToolTasks = multiModelNonStreamToolTasks.compactMap { _, flight -> Task<Void, Never>? in
-            var flight = flight
-            return flight.take()
-        }
-        multiModelNonStreamToolTasks.removeAll()
         let previousSimulatedRequests = multiModelSimulatedTextRequests.compactMap { _, flight -> SimulatedTextRequestHandle? in
             var flight = flight
             return flight.take()
@@ -1991,7 +1944,6 @@ class AIService: ObservableObject {
         previousDataTasks.forEach { $0.cancel() }
         previousRequestBuildTasks.forEach { $0.cancel() }
         previousStreamTasks.forEach { $0.cancel() }
-        previousNonStreamToolTasks.forEach { $0.cancel() }
         previousSimulatedRequests.forEach { $0.cancel() }
         previousAnthropicProviders.forEach { $0.cancelRequest() }
         #if !os(watchOS)
@@ -2083,8 +2035,8 @@ class AIService: ObservableObject {
                             else {
                                 callbackForwarder.enqueue(
                                     .error(
-                                        AIError.apiError(
-                                            "Model configuration changed while the request was queued. Please retry."
+                                        AynaError.apiError(
+                                            message: "Model configuration changed while the request was queued. Please retry."
                                         )
                                     )
                                 )
@@ -2110,7 +2062,6 @@ class AIService: ObservableObject {
                                 onError: { error in
                                     callbackForwarder.enqueue(.error(error))
                                 },
-                                onToolCall: nil,
                                 onToolCallRequested: { toolID, toolName, arguments in
                                     callbackForwarder.enqueue(
                                         .toolRequest(id: toolID, name: toolName, arguments: arguments)
@@ -2505,7 +2456,7 @@ class AIService: ObservableObject {
         let usesAzureEndpoint = endpointInfo.map { isAzureEndpoint($0.endpoint) } ?? false
 
         if effectiveProvider == .appleIntelligence {
-            reportSetupError(AIError.apiError("Apple Intelligence doesn't support the Responses API endpoint"))
+            reportSetupError(AynaError.apiError(message: "Apple Intelligence doesn't support the Responses API endpoint"))
             return
         }
 
@@ -2520,7 +2471,7 @@ class AIService: ObservableObject {
         }
 
         guard let url = URL(string: apiURL) else {
-            reportSetupError(AIError.invalidURL)
+            reportSetupError(AynaError.invalidEndpoint(apiURL))
             return
         }
 
@@ -2578,7 +2529,7 @@ class AIService: ObservableObject {
             }
 
             guard let request else {
-                reportSetupError(AIError.invalidRequest)
+                reportSetupError(AynaError.encodingFailed(detail: "Failed to build API request"))
                 return
             }
 
@@ -2688,7 +2639,7 @@ class AIService: ObservableObject {
                         ) else {
                             return
                         }
-                        onError(AIError.noData)
+                        onError(AynaError.invalidResponse(detail: "No data received from API"))
                         return
                     }
 
@@ -2706,7 +2657,7 @@ class AIService: ObservableObject {
                             ) else {
                                 return
                             }
-                            onError(AIError.apiError(message))
+                            onError(AynaError.apiError(message: message))
                             return
                         }
 
@@ -3090,7 +3041,7 @@ class AIService: ObservableObject {
                             level: .error,
                             message: "❌ Invalid response type"
                         )
-                        throw AIError.invalidResponse
+                        throw AynaError.invalidResponse(detail: nil)
                     }
 
                     DiagnosticsLogger.log(
@@ -3145,35 +3096,6 @@ class AIService: ObservableObject {
                     var buffer = Data()
                     var currentToolCallBuffers: [Int: [String: Any]] = [:]
                     var toolCallIds: [Int: String] = [:]
-
-                    let guardedToolCall: (@Sendable (String, String, [String: Any]) async -> String)? = if let onToolCall = callbacks.onToolCall {
-                        { [weak self] toolCallID, toolName, arguments in
-                            guard let self else { return "" }
-                            let ownsFlight = await MainActor.run {
-                                self.ownsStreamFlight(
-                                    flightID,
-                                    requestLane: requestLane,
-                                    isMultiModelRequest: isMultiModelRequest,
-                                    modelName: modelName
-                                )
-                            }
-                            guard ownsFlight, !Task.isCancelled else { return "" }
-
-                            let result = await onToolCall(toolCallID, toolName, arguments)
-                            let stillOwnsFlight = await MainActor.run {
-                                self.ownsStreamFlight(
-                                    flightID,
-                                    requestLane: requestLane,
-                                    isMultiModelRequest: isMultiModelRequest,
-                                    modelName: modelName
-                                )
-                            }
-                            guard stillOwnsFlight, !Task.isCancelled else { return "" }
-                            return result
-                        }
-                    } else {
-                        nil
-                    }
 
                     let guardedToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = if let onToolCallRequested = callbacks.onToolCallRequested {
                         { [weak self] toolCallID, toolName, arguments in
@@ -3238,7 +3160,6 @@ class AIService: ObservableObject {
                                     line,
                                     toolCallBuffers: currentToolCallBuffers,
                                     toolCallIds: toolCallIds,
-                                    onToolCall: guardedToolCall,
                                     onToolCallRequested: guardedToolCallRequested
                                 )
                                 let ownsAfterParser = await MainActor.run {
@@ -3318,7 +3239,6 @@ class AIService: ObservableObject {
                             line,
                             toolCallBuffers: currentToolCallBuffers,
                             toolCallIds: toolCallIds,
-                            onToolCall: guardedToolCall,
                             onToolCallRequested: guardedToolCallRequested
                         )
                         currentToolCallBuffers = result.toolCallBuffers
@@ -3505,94 +3425,6 @@ class AIService: ObservableObject {
         }
     }
 
-    private func ownsNonStreamToolFlight(
-        _ flightID: RequestFlightID,
-        requestLane: AITextRequestLane,
-        isMultiModelRequest: Bool,
-        modelName: String
-    ) -> Bool {
-        if requestLane == .background {
-            return backgroundNonStreamToolTasks[flightID] != nil
-        }
-        if isMultiModelRequest {
-            return multiModelNonStreamToolTasks[modelName]?.owns(flightID) == true
-        }
-        return currentNonStreamToolTask.owns(flightID)
-    }
-
-    private func ownsNonStreamToolExecution(
-        _ flightID: RequestFlightID,
-        requestLane: AITextRequestLane,
-        isMultiModelRequest: Bool,
-        modelName: String
-    ) -> Bool {
-        ownsDataFlight(
-            flightID,
-            requestLane: requestLane,
-            isMultiModelRequest: isMultiModelRequest,
-            modelName: modelName
-        ) && ownsNonStreamToolFlight(
-            flightID,
-            requestLane: requestLane,
-            isMultiModelRequest: isMultiModelRequest,
-            modelName: modelName
-        )
-    }
-
-    @discardableResult
-    private func clearNonStreamToolFlight(
-        _ flightID: RequestFlightID,
-        requestLane: AITextRequestLane,
-        isMultiModelRequest: Bool,
-        modelName: String
-    ) -> Bool {
-        if requestLane == .background {
-            return backgroundNonStreamToolTasks.removeValue(forKey: flightID) != nil
-        }
-        if isMultiModelRequest {
-            guard var flight = multiModelNonStreamToolTasks[modelName],
-                  flight.clear(ifOwnedBy: flightID)
-            else {
-                return false
-            }
-            multiModelNonStreamToolTasks.removeValue(forKey: modelName)
-            return true
-        }
-        return currentNonStreamToolTask.clear(ifOwnedBy: flightID)
-    }
-
-    @discardableResult
-    private func installNonStreamToolTask(
-        _ task: Task<Void, Never>,
-        flightID: RequestFlightID,
-        requestLane: AITextRequestLane,
-        isMultiModelRequest: Bool,
-        modelName: String
-    ) -> Bool {
-        guard ownsDataFlight(
-            flightID,
-            requestLane: requestLane,
-            isMultiModelRequest: isMultiModelRequest,
-            modelName: modelName
-        ) else {
-            return false
-        }
-
-        if requestLane == .background {
-            backgroundNonStreamToolTasks.updateValue(task, forKey: flightID)?.cancel()
-            return true
-        } else if isMultiModelRequest {
-            var flight = multiModelNonStreamToolTasks[modelName] ?? RequestFlight()
-            let previousTask = flight.install(task, id: flightID)
-            multiModelNonStreamToolTasks[modelName] = flight
-            previousTask?.cancel()
-            return true
-        }
-
-        currentNonStreamToolTask.install(task, id: flightID)?.cancel()
-        return true
-    }
-
     // swiftlint:disable:next function_body_length cyclomatic_complexity
     private func nonStreamResponse(
         request: URLRequest,
@@ -3602,7 +3434,7 @@ class AIService: ObservableObject {
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void,
         onError: @escaping @Sendable (Error) -> Void,
-        onToolCall: (@Sendable (String, String, [String: Any]) async -> String)? = nil,
+        onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil,
         attempt: Int = 0,
         initialFlightID: RequestFlightID? = nil,
@@ -3673,7 +3505,7 @@ class AIService: ObservableObject {
                                 onChunk: onChunk,
                                 onComplete: onComplete,
                                 onError: onError,
-                                onToolCall: onToolCall,
+                                onToolCallRequested: onToolCallRequested,
                                 onReasoning: onReasoning,
                                 attempt: attempt + 1,
                                 existingFlightID: flightID
@@ -3702,7 +3534,7 @@ class AIService: ObservableObject {
                     ) else {
                         return
                     }
-                    onError(AIError.invalidResponse)
+                    onError(AynaError.invalidResponse(detail: nil))
                     return
                 }
 
@@ -3720,7 +3552,7 @@ class AIService: ObservableObject {
                         ) else {
                             return
                         }
-                        onError(AIError.apiError(message))
+                        onError(AynaError.apiError(message: message))
                         return
                     }
 
@@ -3773,94 +3605,28 @@ class AIService: ObservableObject {
                         }
 
                         if let toolCalls = message["tool_calls"] as? [[String: Any]],
-                           let onToolCall
+                           let onToolCallRequested
                         {
-                            let toolTask = Task { @MainActor [weak self] in
-                                guard let self else { return }
-
-                                for toolCall in toolCalls {
-                                    if let id = toolCall["id"] as? String,
-                                       let function = toolCall["function"] as? [String: Any],
-                                       let name = function["name"] as? String,
-                                       let argsString = function["arguments"] as? String,
-                                       let argsData = argsString.data(using: .utf8),
-                                       let arguments = try? JSONSerialization.jsonObject(with: argsData)
-                                       as? [String: Any]
-                                    {
-                                        guard !Task.isCancelled,
-                                              self.ownsNonStreamToolExecution(
-                                                  flightID,
-                                                  requestLane: requestLane,
-                                                  isMultiModelRequest: isMultiModelRequest,
-                                                  modelName: modelName
-                                              )
-                                        else {
-                                            return
-                                        }
-
-                                        let result = await onToolCall(id, name, arguments)
-
-                                        guard !Task.isCancelled,
-                                              self.ownsNonStreamToolExecution(
-                                                  flightID,
-                                                  requestLane: requestLane,
-                                                  isMultiModelRequest: isMultiModelRequest,
-                                                  modelName: modelName
-                                              )
-                                        else {
-                                            return
-                                        }
-
-                                        onChunk("\n\n[Tool: \(name)]\n\(result)\n")
-
-                                        guard self.ownsNonStreamToolExecution(
-                                            flightID,
-                                            requestLane: requestLane,
-                                            isMultiModelRequest: isMultiModelRequest,
-                                            modelName: modelName
-                                        ) else {
-                                            return
-                                        }
-                                    }
-                                }
-
-                                guard !Task.isCancelled,
-                                      self.ownsNonStreamToolExecution(
-                                          flightID,
-                                          requestLane: requestLane,
-                                          isMultiModelRequest: isMultiModelRequest,
-                                          modelName: modelName
-                                      ),
-                                      self.clearNonStreamToolFlight(
-                                          flightID,
-                                          requestLane: requestLane,
-                                          isMultiModelRequest: isMultiModelRequest,
-                                          modelName: modelName
-                                      ),
-                                      self.clearDataFlight(
-                                          flightID,
-                                          requestLane: requestLane,
-                                          isMultiModelRequest: isMultiModelRequest,
-                                          modelName: modelName
-                                      )
-                                else {
+                            for toolCall in toolCalls {
+                                guard self.ownsDataFlight(
+                                    flightID,
+                                    requestLane: requestLane,
+                                    isMultiModelRequest: isMultiModelRequest,
+                                    modelName: modelName
+                                ) else {
                                     return
                                 }
-
-                                onComplete()
+                                if let id = toolCall["id"] as? String,
+                                   let function = toolCall["function"] as? [String: Any],
+                                   let name = function["name"] as? String,
+                                   let argsString = function["arguments"] as? String,
+                                   let argsData = argsString.data(using: .utf8),
+                                   let arguments = try? JSONSerialization.jsonObject(with: argsData)
+                                   as? [String: Any]
+                                {
+                                    onToolCallRequested(id, name, arguments)
+                                }
                             }
-
-                            guard self.installNonStreamToolTask(
-                                toolTask,
-                                flightID: flightID,
-                                requestLane: requestLane,
-                                isMultiModelRequest: isMultiModelRequest,
-                                modelName: modelName
-                            ) else {
-                                toolTask.cancel()
-                                return
-                            }
-                            return
                         }
 
                         guard self.clearDataFlight(
@@ -3881,7 +3647,7 @@ class AIService: ObservableObject {
                         ) else {
                             return
                         }
-                        onError(AIError.invalidResponse)
+                        onError(AynaError.invalidResponse(detail: nil))
                     }
                 } catch {
                     guard self.clearDataFlight(
@@ -4318,7 +4084,7 @@ class AIService: ObservableObject {
                 ) else {
                     return nil
                 }
-                request.onError(AIError.apiError("Apple Intelligence context is too large to continue safely"))
+                request.onError(AynaError.apiError(message: "Apple Intelligence context is too large to continue safely"))
                 return nil
             }
             guard ownsAppleIntelligenceFlight(
@@ -4337,11 +4103,11 @@ class AIService: ObservableObject {
             flightID: RequestFlightID = RequestFlightID()
         ) {
             guard request.service.isAvailable else {
-                request.onError(AIError.apiError(request.service.availabilityDescription()))
+                request.onError(AynaError.apiError(message: request.service.availabilityDescription()))
                 return
             }
             guard let conversationContext = appleConversationContext(messages: request.messages) else {
-                request.onError(AIError.apiError("No user message found"))
+                request.onError(AynaError.apiError(message: "No user message found"))
                 return
             }
 
@@ -4462,7 +4228,7 @@ class AIService: ObservableObject {
                 else {
                     return
                 }
-                request.onError(AIError.apiError("Apple Intelligence request ended without a terminal callback"))
+                request.onError(AynaError.apiError(message: "Apple Intelligence request ended without a terminal callback"))
             }
             let handle = AppleIntelligenceRequestHandle(
                 task: task,
@@ -4681,62 +4447,6 @@ class AIService: ObservableObject {
     private func delay(for attempt: Int, retryAfterDate: Date? = nil) async {
         await retryDelay(attempt, retryAfterDate)
     }
-
-    enum AIError: LocalizedError {
-        case missingAPIKey
-        case missingModel
-        case invalidResponse
-        case invalidRequest
-        case apiError(String)
-        case invalidURL
-        case unsupportedProvider
-        case noData
-        case contentFiltered(String)
-
-        var errorDescription: String? {
-            switch self {
-            case .missingAPIKey:
-                "Please add your API key in Settings"
-            case .missingModel:
-                "Please add or select a model in Settings"
-            case .invalidResponse:
-                "Invalid response from API"
-            case .invalidRequest:
-                "Failed to build API request"
-            case let .apiError(message):
-                message
-            case .invalidURL:
-                "Invalid API endpoint URL"
-            case .unsupportedProvider:
-                "Image generation is only supported for OpenAI-compatible providers"
-            case .noData:
-                "No data received from API"
-            case let .contentFiltered(message):
-                "Content filtered: \(message)"
-            }
-        }
-
-        var recoverySuggestion: String? {
-            switch self {
-            case .missingAPIKey:
-                "Go to Settings → API Keys to add your key"
-            case .missingModel:
-                "Go to Settings → Models to select a model"
-            case .invalidResponse, .noData:
-                "Try again or check your internet connection"
-            case .invalidRequest:
-                "Try sending a shorter message"
-            case .apiError:
-                "Check your API configuration or try again later"
-            case .invalidURL:
-                "Verify the API endpoint URL in Settings"
-            case .unsupportedProvider:
-                "Switch to an OpenAI-compatible model for image generation"
-            case .contentFiltered:
-                "Try rephrasing your message"
-            }
-        }
-    }
 }
 
 extension AIService {
@@ -4842,28 +4552,9 @@ extension AIService {
             return true
         }
 
-        let isUITestMode = ProcessInfo.processInfo.environment["AYNA_UI_TESTING"] == "1" ||
-            ProcessInfo.processInfo.arguments.contains("--ui-testing") ||
-            ProcessInfo.processInfo.arguments.contains("-AYNA_UI_TESTING")
-
         let testModelName = "ui-test-model"
-        if isUITestMode, !models.contains(testModelName) {
+        if RuntimeEnvironment.isUITesting, !models.contains(testModelName) {
             models.insert(testModelName, at: 0)
-            if modelProviders[testModelName] == nil {
-                modelProviders[testModelName] = .openai
-            }
-            if modelEndpointTypes[testModelName] == nil {
-                modelEndpointTypes[testModelName] = .chatCompletions
-            }
-            if modelAPIKeys[testModelName]?.isEmpty ?? true {
-                modelAPIKeys[testModelName] = "ui-test-api-key"
-            }
-            if !customModels.contains(testModelName) {
-                customModels.insert(testModelName, at: 0)
-            }
-            if selectedModel.isEmpty {
-                selectedModel = testModelName
-            }
         }
 
         return models

@@ -102,6 +102,7 @@ final class ConversationManager: ObservableObject {
     private var persistenceSequenceById: [UUID: UInt64] = [:]
     private var persistenceTasksById: [UUID: Task<Void, Never>] = [:]
     private var persistenceRecreationAuthorizationIds: Set<UUID> = []
+    private var suppressedPersistenceIds: Set<UUID> = []
     private var persistenceImmediateSaveIds: Set<UUID> = []
     private var failedSaveIdsAwaitingFlushObservation: Set<UUID> = []
     private var nextPersistenceSequence: UInt64 = 0
@@ -425,15 +426,21 @@ final class ConversationManager: ObservableObject {
         if registersSynchronously {
             let effectiveAllowsRecreation = persistenceRecreationAuthorizationIds.contains(conversation.id)
             let requiresImmediateSave = persistenceImmediateSaveIds.contains(conversation.id)
-            let registeredReceipt: PersistenceReceipt<ConversationSaveResult>? = if requiresImmediateSave {
-                persistenceCoordinator.registerImmediateSave(
-                    conversation,
-                    allowsRecreation: effectiveAllowsRecreation
-                )
+            let registeredReceipt: PersistenceReceipt<ConversationSaveResult>?
+            if suppressedPersistenceIds.contains(conversation.id) {
+                if effectiveAllowsRecreation {
+                    suppressedPersistenceIds.remove(conversation.id)
+                    registeredReceipt = persistenceCoordinator.apply(
+                        conversation,
+                        mode: requiresImmediateSave ? .immediate : .coalesced
+                    )
+                } else {
+                    registeredReceipt = nil
+                }
             } else {
-                persistenceCoordinator.enqueueSave(
+                registeredReceipt = persistenceCoordinator.apply(
                     conversation,
-                    allowsRecreation: effectiveAllowsRecreation
+                    mode: requiresImmediateSave ? .immediate : .coalesced
                 )
             }
 
@@ -443,22 +450,12 @@ final class ConversationManager: ObservableObject {
 
                 if let registeredReceipt {
                     if requiresImmediateSave {
-                        do {
-                            try await persistenceCoordinator.settleImmediateSave(
-                                registeredReceipt,
-                                conversationID: conversation.id
-                            )
+                        if await settleImmediateSaveReceipt(registeredReceipt, conversationID: conversation.id) {
                             await finishSuccessfulImmediateSave(
                                 conversation,
                                 persistenceSequence: persistenceSequence,
                                 allowsRecreation: effectiveAllowsRecreation,
                                 outcome: nil
-                            )
-                        } catch {
-                            logManager(
-                                "❌ Failed to save conversation immediately",
-                                level: .error,
-                                metadata: ["id": conversation.id.uuidString, "error": error.localizedDescription]
                             )
                         }
                         return
@@ -525,25 +522,21 @@ final class ConversationManager: ObservableObject {
 
             let effectiveAllowsRecreation = persistenceRecreationAuthorizationIds.contains(conversation.id)
             let requiresImmediateSave = persistenceImmediateSaveIds.contains(conversation.id)
+            if suppressedPersistenceIds.contains(conversationToSave.id) {
+                if effectiveAllowsRecreation {
+                    suppressedPersistenceIds.remove(conversationToSave.id)
+                } else {
+                    return
+                }
+            }
             if requiresImmediateSave {
-                do {
-                    try await persistenceCoordinator.saveImmediately(
-                        conversationToSave,
-                        allowsRecreation: effectiveAllowsRecreation
-                    )
-                } catch {
-                    logManager(
-                        "❌ Failed to save conversation immediately",
-                        level: .error,
-                        metadata: ["id": conversation.id.uuidString, "error": error.localizedDescription]
-                    )
+                if let receipt = persistenceCoordinator.apply(conversationToSave, mode: .immediate),
+                   await !settleImmediateSaveReceipt(receipt, conversationID: conversationToSave.id)
+                {
                     return
                 }
             } else {
-                persistenceCoordinator.enqueueSave(
-                    conversationToSave,
-                    allowsRecreation: effectiveAllowsRecreation
-                )
+                persistenceCoordinator.apply(conversationToSave, mode: .coalesced)
             }
             if persistenceSequenceById[conversation.id] == persistenceSequence {
                 if effectiveAllowsRecreation {
@@ -589,37 +582,43 @@ final class ConversationManager: ObservableObject {
             && !isMetadataBackedSnapshot
             && (activeClearTask == nil
                 || clearRollbackConversationGenerationById[conversation.id] == nil)
-        let registeredReceipt: PersistenceReceipt<ConversationSaveResult>? = if registersSynchronously {
-            persistenceCoordinator.registerImmediateSave(
-                conversation,
-                allowsRecreation: persistenceRecreationAuthorizationIds.contains(conversation.id)
-            )
+        let registeredReceipt: PersistenceReceipt<ConversationSaveResult>?
+        if registersSynchronously {
+            if suppressedPersistenceIds.contains(conversation.id) {
+                if persistenceRecreationAuthorizationIds.contains(conversation.id) {
+                    suppressedPersistenceIds.remove(conversation.id)
+                    registeredReceipt = persistenceCoordinator.apply(conversation, mode: .immediate)
+                } else {
+                    registeredReceipt = nil
+                }
+            } else {
+                registeredReceipt = persistenceCoordinator.apply(conversation, mode: .immediate)
+            }
         } else {
-            nil
+            registeredReceipt = nil
         }
 
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { finishPersistenceTask(for: conversation.id, sequence: persistenceSequence) }
 
-            if let registeredReceipt {
+            if registersSynchronously {
                 let effectiveAllowsRecreation = persistenceRecreationAuthorizationIds.contains(conversation.id)
-                do {
-                    try await persistenceCoordinator.settleImmediateSave(
-                        registeredReceipt,
-                        conversationID: conversation.id
-                    )
+                if let registeredReceipt {
+                    if await settleImmediateSaveReceipt(registeredReceipt, conversationID: conversation.id) {
+                        await finishSuccessfulImmediateSave(
+                            conversation,
+                            persistenceSequence: persistenceSequence,
+                            allowsRecreation: effectiveAllowsRecreation,
+                            outcome: outcome
+                        )
+                    }
+                } else {
                     await finishSuccessfulImmediateSave(
                         conversation,
                         persistenceSequence: persistenceSequence,
                         allowsRecreation: effectiveAllowsRecreation,
                         outcome: outcome
-                    )
-                } catch {
-                    logManager(
-                        "❌ Failed to save conversation",
-                        level: .error,
-                        metadata: ["id": conversation.id.uuidString, "error": error.localizedDescription]
                     )
                 }
                 return
@@ -657,27 +656,64 @@ final class ConversationManager: ObservableObject {
             }
 
             let effectiveAllowsRecreation = persistenceRecreationAuthorizationIds.contains(conversation.id)
-            do {
-                try await persistenceCoordinator.saveImmediately(
-                    conversationToSave,
-                    allowsRecreation: effectiveAllowsRecreation
-                )
-                await finishSuccessfulImmediateSave(
-                    conversationToSave,
-                    persistenceSequence: persistenceSequence,
-                    allowsRecreation: effectiveAllowsRecreation,
-                    outcome: outcome
-                )
-            } catch {
-                logManager(
-                    "❌ Failed to save conversation",
-                    level: .error,
-                    metadata: ["id": conversation.id.uuidString, "error": error.localizedDescription]
-                )
+            if suppressedPersistenceIds.contains(conversationToSave.id) {
+                if effectiveAllowsRecreation {
+                    suppressedPersistenceIds.remove(conversationToSave.id)
+                } else {
+                    await finishSuccessfulImmediateSave(
+                        conversationToSave,
+                        persistenceSequence: persistenceSequence,
+                        allowsRecreation: effectiveAllowsRecreation,
+                        outcome: outcome
+                    )
+                    return
+                }
             }
+            let receipt = persistenceCoordinator.apply(conversationToSave, mode: .immediate)
+            if let receipt,
+               await !settleImmediateSaveReceipt(receipt, conversationID: conversationToSave.id)
+            {
+                return
+            }
+            await finishSuccessfulImmediateSave(
+                conversationToSave,
+                persistenceSequence: persistenceSequence,
+                allowsRecreation: effectiveAllowsRecreation,
+                outcome: outcome
+            )
         }
         persistenceTasksById[conversation.id] = task
         return task
+    }
+
+    private func settleImmediateSaveReceipt(
+        _ receipt: PersistenceReceipt<ConversationSaveResult>,
+        conversationID: UUID
+    ) async -> Bool {
+        switch await receipt.value {
+        case .saved:
+            return true
+        case .superseded:
+            if await persistenceCoordinator.settleCurrentState(for: conversationID) != .failed {
+                return true
+            }
+            logManager(
+                "❌ Failed to save conversation",
+                level: .error,
+                metadata: [
+                    "id": conversationID.uuidString,
+                    "error": "Failed to settle the latest conversation state"
+                ]
+            )
+            return false
+        case let .failed(error):
+            logManager(
+                "❌ Failed to save conversation",
+                level: .error,
+                metadata: ["id": conversationID.uuidString, "error": error]
+            )
+            return false
+        }
     }
 
     private func finishSuccessfulImmediateSave(
@@ -957,9 +993,9 @@ final class ConversationManager: ObservableObject {
             let persistenceSequenceBeforeCoordinatorFlush = nextPersistenceSequence
             let excludedFailedSaveIds = failedSaveIdsAwaitingFlushObservation
             failedSaveIdsAwaitingFlushObservation.subtract(excludedFailedSaveIds)
-            await persistenceCoordinator.flushPendingSaves(
+            await persistenceCoordinator.flush(
                 excludingUnscheduledConversationIDs: excludedFailedSaveIds
-            )
+            ).value
 
             guard clearConversationsTask == nil,
                   managerDeletionTasks.isEmpty,
@@ -1041,11 +1077,27 @@ final class ConversationManager: ObservableObject {
         let deletionVersion = nextManagerDeletionVersion()
         let deletionReconciliationVersion = nextReconciliationVersion()
         latestManagerDeletionVersionById[conversationId] = deletionReconciliationVersion
+        let rollbackSnapshot: Conversation? = if let conversation = conversationSnapshot(byId: conversationId),
+                                                 !isMetadataBackedSnapshot(conversation)
+        {
+            resolvingInterruptedImageGeneration(in: conversation)
+        } else {
+            nil
+        }
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { finishManagerDeletionTask(for: conversationId, version: deletionVersion) }
-            do {
-                try await persistenceCoordinator.delete(conversationId)
+            suppressedPersistenceIds.insert(conversationId)
+            let receipt: DestructivePersistenceReceipt<ConversationDeleteResult> = if let rollbackSnapshot {
+                persistenceCoordinator.delete(rollbackSnapshot)
+            } else {
+                persistenceCoordinator.delete(id: conversationId)
+            }
+            beginDestructivePersistenceOperation(receipt.repairToken)
+            let result = await receipt.value
+            switch result {
+            case .deleted:
+                finishDestructivePersistenceOperation()
                 conversationSummaryRemoveOperation(conversationId)
                 if let index = getConversationIndex(for: conversationId) {
                     conversations.remove(at: index)
@@ -1057,14 +1109,32 @@ final class ConversationManager: ObservableObject {
                 if selectedConversationId == conversationId {
                     selectedConversationId = nil
                 }
-            } catch {
-                if latestManagerDeletionVersionById[conversationId] == deletionReconciliationVersion {
-                    latestManagerDeletionVersionById.removeValue(forKey: conversationId)
+            case .superseded:
+                retainDestructiveBarrierUntilRepairSettles(receipt.repairToken)
+            case let .failed(restored, error):
+                retainDestructiveBarrierUntilRepairSettles(receipt.repairToken)
+                if restored != nil {
+                    suppressedPersistenceIds.remove(conversationId)
+                    if latestManagerDeletionVersionById[conversationId] == deletionReconciliationVersion {
+                        latestManagerDeletionVersionById.removeValue(forKey: conversationId)
+                    }
+                } else {
+                    conversationSummaryRemoveOperation(conversationId)
+                    if let index = getConversationIndex(for: conversationId) {
+                        conversations.remove(at: index)
+                        pendingSendConversationIds.removeAll { $0 == conversationId }
+                        metadataOnlyConversationIds.remove(conversationId)
+                        metadataSearchTextById.removeValue(forKey: conversationId)
+                        updateCacheForRemoval(id: conversationId, at: index)
+                    }
+                    if selectedConversationId == conversationId {
+                        selectedConversationId = nil
+                    }
                 }
                 logManager(
                     "❌ Failed to delete conversation",
                     level: .error,
-                    metadata: ["id": conversationId.uuidString, "error": error.localizedDescription]
+                    metadata: ["id": conversationId.uuidString, "error": error]
                 )
             }
         }
@@ -1729,8 +1799,11 @@ final class ConversationManager: ObservableObject {
             #if !os(watchOS)
                 indexConversation(mergedConversation)
             #endif
-            if storageConversationWasRepaired || mergedConversationWasRepaired {
-                _ = persistenceCoordinator.enqueueDerivedUpdateIfCurrent(mergedConversation)
+            if storageConversationWasRepaired || mergedConversationWasRepaired,
+               !persistenceCoordinator.pendingConversationIds().contains(mergedConversation.id),
+               !suppressedPersistenceIds.contains(mergedConversation.id)
+            {
+                persistenceCoordinator.apply(mergedConversation, mode: .coalesced)
             }
             return conversationSnapshot(byId: conversationId)
         } catch is CancellationError {
@@ -1896,9 +1969,7 @@ final class ConversationManager: ObservableObject {
                         rollbackGeneration <= generation ? conversationId : nil
                     }
                 ).union(conversationIds)
-                persistenceCoordinator.suppressSavesUntilExplicitRecreation(
-                    for: suppressedConversationIds
-                )
+                suppressedPersistenceIds.formUnion(suppressedConversationIds)
                 finishDestructivePersistenceOperation()
                 isConversationStateAuthoritative = true
                 NotificationCenter.default.post(

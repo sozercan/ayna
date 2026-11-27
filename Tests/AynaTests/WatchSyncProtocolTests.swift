@@ -32,9 +32,7 @@ struct WatchSyncProtocolTests {
 
     @Test
     func `Long model identifiers remain exact through body build Codable and reconcile`() throws {
-        let maximumModelCharacters = 16
         let model = "custom-provider/" + String(repeating: "long-model-segment-", count: 12)
-        #expect(model.count > maximumModelCharacters)
         let message = Message(
             role: .assistant,
             content: "Response",
@@ -45,8 +43,7 @@ struct WatchSyncProtocolTests {
             messages: [message],
             model: model
         )
-        var configuration = WatchSyncPayloadConfiguration.default
-        configuration.maximumModelCharacters = maximumModelCharacters
+        let configuration = WatchSyncPayloadConfiguration.default
 
         let payload = try WatchSyncPayloadBuilder.build(
             conversations: [phone],
@@ -71,9 +68,7 @@ struct WatchSyncProtocolTests {
 
     @Test
     func `Long model identifiers remain exact through compact configuration build Codable and reconcile`() throws {
-        let maximumModelCharacters = 16
         let model = "custom-provider/" + String(repeating: "configuration-segment-", count: 12)
-        #expect(model.count > maximumModelCharacters)
         let phone = Conversation(
             title: "Manifest only",
             model: model,
@@ -81,7 +76,6 @@ struct WatchSyncProtocolTests {
         )
         var configuration = WatchSyncPayloadConfiguration.default
         configuration.maximumConversations = 0
-        configuration.maximumModelCharacters = maximumModelCharacters
 
         let payload = try WatchSyncPayloadBuilder.build(
             conversations: [phone],
@@ -153,7 +147,6 @@ struct WatchSyncProtocolTests {
             conversationConfigurationsAreComplete: false
         )
         var configuration = WatchSyncPayloadConfiguration.default
-        configuration.maximumModelCharacters = 8
         configuration.byteBudget = try WatchSyncPayloadBuilder.encode(deferredSnapshot).count
 
         let payload = try WatchSyncPayloadBuilder.build(
@@ -2729,7 +2722,6 @@ struct WatchSyncProtocolTests {
             maximumContentCharacters: 80
         )
         configuration.maximumTitleCharacters = 40
-        configuration.maximumModelCharacters = 30
         configuration.maximumSystemPromptCharacters = 60
         configuration.maximumToolCallsPerMessage = 1
         configuration.maximumToolMetadataBytes = 180
