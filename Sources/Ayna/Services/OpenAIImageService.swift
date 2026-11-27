@@ -243,7 +243,7 @@ final class OpenAIImageService: @unchecked Sendable {
                 : "Image generation temporarily unavailable. Please try again shortly."
             requestHandle.run { @MainActor in
                 guard requestHandle.isActive else { return }
-                context.onError(AynaError.apiError(message: message))
+                context.onError(AynaError.httpError(statusCode: 503, message: message))
             }
             return
         }
@@ -646,7 +646,7 @@ final class OpenAIImageService: @unchecked Sendable {
                 : "Image editing temporarily unavailable. Please try again shortly."
             requestHandle.run { @MainActor in
                 guard requestHandle.isActive else { return }
-                onError(AynaError.apiError(message: message))
+                onError(AynaError.httpError(statusCode: 503, message: message))
             }
             return
         }

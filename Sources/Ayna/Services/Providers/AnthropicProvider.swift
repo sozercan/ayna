@@ -71,7 +71,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             let message = seconds > 0
                 ? "Anthropic service temporarily unavailable. Please try again in \(seconds)s."
                 : "Anthropic service temporarily unavailable. Please try again shortly."
-            callbacks.onError(AynaError.apiError(message: message))
+            callbacks.onError(AynaError.httpError(statusCode: 503, message: message))
             return
         }
 
@@ -179,7 +179,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         currentStreamTask?.cancel()
 
         if let errorMessage = checkCircuitBreaker(key: circuitKey) {
-            callbacks.onError(AynaError.apiError(message: errorMessage))
+            callbacks.onError(AynaError.httpError(statusCode: 503, message: errorMessage))
             return
         }
 
@@ -373,7 +373,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         attempt: Int = 0
     ) {
         if let errorMessage = checkCircuitBreaker(key: circuitKey) {
-            callbacks.onError(AynaError.apiError(message: errorMessage))
+            callbacks.onError(AynaError.httpError(statusCode: 503, message: errorMessage))
             return
         }
 
