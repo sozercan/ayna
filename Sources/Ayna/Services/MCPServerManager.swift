@@ -363,14 +363,27 @@
             }
 
             let generation = advanceGeneration(for: config.name)
+            var displacedConfigIDs = Set<UUID>()
+            if let existingConnection = connectionTasks[config.name]?.configID, existingConnection != config.id {
+                displacedConfigIDs.insert(existingConnection)
+            }
+            if let existingReconnect = reconnectTasks[config.name]?.configID, existingReconnect != config.id {
+                displacedConfigIDs.insert(existingReconnect)
+            }
+            if let existingDiscovery = discoveryTasks[config.name]?.configID, existingDiscovery != config.id {
+                displacedConfigIDs.insert(existingDiscovery)
+            }
             cancelServerTasks(for: config.name)
 
             if let previous = services.removeValue(forKey: config.name) {
                 previous.service.delegate = nil
                 previous.service.disconnect()
-                if previous.configID != config.id,
-                   let displacedConfig = serverConfigs.first(where: { $0.id == previous.configID })
-                {
+                if previous.configID != config.id {
+                    displacedConfigIDs.insert(previous.configID)
+                }
+            }
+            for displacedID in displacedConfigIDs {
+                if let displacedConfig = serverConfigs.first(where: { $0.id == displacedID }) {
                     setStatus(
                         for: displacedConfig,
                         state: displacedConfig.enabled ? .idle : .disabled,

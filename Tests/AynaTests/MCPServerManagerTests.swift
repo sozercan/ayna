@@ -906,6 +906,41 @@ struct MCPServerManagerTests {
     }
 }
 
+extension MCPServerManagerTests {
+    @Test("Connecting same-named config resets displaced config awaiting reconnect", .timeLimit(.minutes(1)))
+    func connectingSameNamedConfigResetsDisplacedReconnectStatus() async {
+        let first = MCPServerConfig(name: "shared", command: "cmd-a", enabled: true)
+        let second = MCPServerConfig(name: "shared", command: "cmd-b", enabled: true)
+        let firstService = StubMCPService(config: first)
+        let secondService = StubMCPService(config: second)
+        let reconnectSleeperStarted = FlightTestSignal()
+
+        let manager = MCPServerManager(
+            serviceFactory: { config in
+                config.id == first.id ? firstService : secondService
+            },
+            retryDelayProvider: { _ in 0 },
+            reconnectDelayProvider: { 60 },
+            reconnectSleeper: { _ in
+                reconnectSleeperStarted.signal()
+                try await Task.sleep(for: .seconds(60))
+            }
+        )
+        manager.serverConfigs = [first, second]
+
+        await manager.connectToServer(first)
+        firstService.simulateUnexpectedTermination(error: "terminated")
+        #expect(await reconnectSleeperStarted.wait(timeout: .seconds(1)))
+        #expect(manager.getServerStatus(first.id)?.state == .reconnecting)
+
+        await manager.connectToServer(second)
+
+        #expect(manager.getServerStatus(second.id)?.state == .connected)
+        #expect(manager.getServerStatus(first.id)?.state == .idle)
+        #expect(manager.getServerStatus(first.id)?.lastError == nil)
+    }
+}
+
 private func makeMCPTool(name: String, serverName: String) -> MCPTool {
     MCPTool(
         name: name,
