@@ -185,6 +185,12 @@ private extension OSLogType {
 
 enum ErrorPresenter {
     static func userMessage(for error: Error) -> String {
+        if let aynaError = error as? AynaError,
+           let description = aynaError.errorDescription
+        {
+            return sanitizeUserFacingMessage(description)
+        }
+
         if let localizedError = error as? LocalizedError,
            let description = localizedError.errorDescription
         {
@@ -199,6 +205,10 @@ enum ErrorPresenter {
     }
 
     static func recoverySuggestion(for error: Error) -> String? {
+        if let aynaError = error as? AynaError {
+            return aynaError.recoverySuggestion
+        }
+
         if let localizedError = error as? LocalizedError {
             if let suggestion = localizedError.recoverySuggestion {
                 return suggestion
@@ -220,48 +230,34 @@ enum ErrorPresenter {
     }
 
     static func category(for error: Error) -> ErrorCategory {
+        if let aynaError = error as? AynaError {
+            return category(for: aynaError)
+        }
+
+        if let statusError = error as? HTTPStatusError {
+            return category(for: AynaError.fromHTTPResponse(statusCode: statusError.statusCode, data: nil))
+        }
+
         if error is CancellationError {
             return .cancelled
         }
 
-        if error is URLError {
-            return .network
-        }
-
-        let message = userMessage(for: error).lowercased()
-
-        if message.contains("api key") || message.contains("authentication") {
-            return .authentication
-        }
-
-        if message.contains("no model selected") || message.contains("model '") || message.contains("missing configuration") {
-            return .configuration
-        }
-
-        if message.contains("invalid response") || message.contains("content filtered") || message.contains("server error") {
-            return .api
-        }
-
-        if message.contains("tool '") || message.contains("tool chain") {
-            return .tool
-        }
-
-        if message.contains("encode") || message.contains("decode") || message.contains("keychain") || message.contains("file ") {
-            return .data
-        }
-
-        if message.contains("conversation not found") || message.contains("message not found") {
-            return .conversation
-        }
-
-        if message.contains("network") || message.contains("internet") || message.contains("timed out") {
-            return .network
+        if let urlError = error as? URLError {
+            return urlError.code == .cancelled ? .cancelled : .network
         }
 
         return .unknown
     }
 
     static func isRetryable(_ error: Error) -> Bool {
+        if let aynaError = error as? AynaError {
+            return isRetryable(aynaError)
+        }
+
+        if let statusError = error as? HTTPStatusError {
+            return statusError.isRetryable
+        }
+
         if let urlError = error as? URLError {
             switch urlError.code {
             case .timedOut, .networkConnectionLost:
@@ -271,13 +267,19 @@ enum ErrorPresenter {
             }
         }
 
-        let message = userMessage(for: error).lowercased()
-        return message.contains("timed out") || message.contains("try again") || message.contains("network")
+        return false
     }
 
     static func requiresUserAction(_ error: Error) -> Bool {
-        let message = userMessage(for: error).lowercased()
-        return message.contains("api key") || message.contains("missing configuration") || message.contains("no model selected")
+        if let aynaError = error as? AynaError {
+            return requiresUserAction(aynaError)
+        }
+
+        if let statusError = error as? HTTPStatusError {
+            return statusError.statusCode == 401 || statusError.statusCode == 403
+        }
+
+        return false
     }
 
     static func suggestedAction(for error: Error) -> ErrorAction {
@@ -337,6 +339,96 @@ enum ErrorPresenter {
         case retry
         case openSettings
         case dismiss
+    }
+
+    private static func category(for error: AynaError) -> ErrorCategory {
+        switch error {
+        case .networkError, .timeout:
+            .network
+        case .missingAPIKey, .invalidAPIKey, .authenticationFailed:
+            .authentication
+        case .missingConfiguration, .invalidEndpoint, .noModelSelected, .modelNotFound, .unsupportedProvider, .capabilityMismatch:
+            .configuration
+        case .httpError, .rateLimited, .invalidResponse, .contentFiltered, .apiError:
+            .api
+        case .toolNotFound, .toolExecutionFailed, .toolChainDepthExceeded:
+            .tool
+        case .encodingFailed, .decodingFailed, .fileOperationFailed, .keychainError:
+            .data
+        case .conversationNotFound, .messageNotFound:
+            .conversation
+        case .cancelled:
+            .cancelled
+        case .unknown:
+            .unknown
+        }
+    }
+
+    private static func isRetryable(_ error: AynaError) -> Bool {
+        switch error {
+        case .networkError, .timeout, .rateLimited:
+            true
+        case let .httpError(statusCode, _):
+            [408, 409, 429].contains(statusCode) || (500 ... 599).contains(statusCode)
+        case .missingAPIKey,
+             .invalidAPIKey,
+             .missingConfiguration,
+             .authenticationFailed,
+             .invalidEndpoint,
+             .noModelSelected,
+             .modelNotFound,
+             .unsupportedProvider,
+             .capabilityMismatch,
+             .invalidResponse,
+             .contentFiltered,
+             .apiError,
+             .toolNotFound,
+             .toolExecutionFailed,
+             .toolChainDepthExceeded,
+             .encodingFailed,
+             .decodingFailed,
+             .fileOperationFailed,
+             .keychainError,
+             .conversationNotFound,
+             .messageNotFound,
+             .cancelled,
+             .unknown:
+            false
+        }
+    }
+
+    private static func requiresUserAction(_ error: AynaError) -> Bool {
+        switch error {
+        case .missingAPIKey,
+             .invalidAPIKey,
+             .missingConfiguration,
+             .authenticationFailed,
+             .invalidEndpoint,
+             .noModelSelected,
+             .modelNotFound,
+             .unsupportedProvider,
+             .capabilityMismatch:
+            true
+        case .networkError,
+             .httpError,
+             .timeout,
+             .rateLimited,
+             .invalidResponse,
+             .contentFiltered,
+             .apiError,
+             .toolNotFound,
+             .toolExecutionFailed,
+             .toolChainDepthExceeded,
+             .encodingFailed,
+             .decodingFailed,
+             .fileOperationFailed,
+             .keychainError,
+             .conversationNotFound,
+             .messageNotFound,
+             .cancelled,
+             .unknown:
+            false
+        }
     }
 
     private static func userMessage(for urlError: URLError) -> String {

@@ -1273,7 +1273,7 @@ struct AnthropicProviderTests {
     }
 }
 
-private final class AnthropicMockURLProtocol: URLProtocol, @unchecked Sendable {
+final class AnthropicMockURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
     nonisolated(unsafe) static var lastRequest: URLRequest?
 
