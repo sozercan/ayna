@@ -8,7 +8,6 @@ import SwiftUI
 
 extension Notification.Name {
     static let newConversationRequested = Notification.Name("newConversationRequested")
-    static let sendPendingMessage = Notification.Name("sendPendingMessage")
 }
 
 struct MacContentView: View {

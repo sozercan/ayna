@@ -320,23 +320,50 @@
     final class AppContentService {
         static let shared = AppContentService()
 
-        private let extractors: [AppExtractor] = [
-            TerminalExtractor(),
-            CodeEditorExtractor(),
-            BrowserExtractor(),
-            GenericExtractor()
-        ]
+        private let extractors: [AppExtractor]
+        private let checkPermission: () -> Bool
+        private let createApplicationElement: (NSRunningApplication) -> AXUIElement
+        private let frontmostApplicationProvider: () -> NSRunningApplication?
+        private let appBundleIdentifierProvider: (NSRunningApplication) -> String?
+        private let ownBundleIdentifierProvider: () -> String?
 
-        private init() {}
+        init(
+            extractors: [AppExtractor] = [
+                TerminalExtractor(),
+                CodeEditorExtractor(),
+                BrowserExtractor(),
+                GenericExtractor()
+            ],
+            checkPermission: @escaping () -> Bool = {
+                AccessibilityService.shared.checkPermission(prompt: false)
+            },
+            createApplicationElement: @escaping (NSRunningApplication) -> AXUIElement = { app in
+                AccessibilityService.shared.createApplicationElement(for: app)
+            },
+            frontmostApplicationProvider: @escaping () -> NSRunningApplication? = {
+                NSWorkspace.shared.frontmostApplication
+            },
+            appBundleIdentifierProvider: @escaping (NSRunningApplication) -> String? = \.bundleIdentifier,
+            ownBundleIdentifierProvider: @escaping () -> String? = {
+                Bundle.main.bundleIdentifier
+            }
+        ) {
+            self.extractors = extractors
+            self.checkPermission = checkPermission
+            self.createApplicationElement = createApplicationElement
+            self.frontmostApplicationProvider = frontmostApplicationProvider
+            self.appBundleIdentifierProvider = appBundleIdentifierProvider
+            self.ownBundleIdentifierProvider = ownBundleIdentifierProvider
+        }
 
         func extractContent(from app: NSRunningApplication) async -> AppContentResult {
-            guard AccessibilityService.shared.checkPermission(prompt: false) else {
+            guard checkPermission() else {
                 return .permissionDenied
             }
 
-            let bundleId = app.bundleIdentifier ?? ""
+            let bundleId = appBundleIdentifierProvider(app) ?? ""
 
-            let appElement = AccessibilityService.shared.createApplicationElement(for: app)
+            let appElement = createApplicationElement(app)
 
             guard let extractor = extractors.first(where: { $0.canHandle(bundleIdentifier: bundleId) })
                 ?? extractors.last
@@ -390,11 +417,13 @@
         }
 
         func extractFromFrontmostApp() async -> AppContentResult {
-            guard let frontApp = NSWorkspace.shared.frontmostApplication else {
+            guard let frontApp = frontmostApplicationProvider() else {
                 return .noFocusedApp
             }
 
-            if frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+            if let ownBundleId = ownBundleIdentifierProvider(),
+               appBundleIdentifierProvider(frontApp) == ownBundleId
+            {
                 return .noContentAvailable
             }
 

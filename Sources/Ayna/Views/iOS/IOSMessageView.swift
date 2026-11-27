@@ -815,8 +815,8 @@ struct IOSContentBlockView: View {
             }
         case .divider:
             Divider()
-        case .table:
-            Text("[Table]")
+        case let .table(table):
+            IOSMarkdownTableView(table: table)
         case let .tool(name, result):
             VStack(alignment: .leading) {
                 Text("Tool: \(name)").font(Typography.captionBold)

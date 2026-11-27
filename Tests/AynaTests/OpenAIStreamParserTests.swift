@@ -11,7 +11,6 @@ struct OpenAIStreamParserTests {
             line,
             toolCallBuffers: [:],
             toolCallIds: [:],
-            onToolCall: nil,
             onToolCallRequested: nil
         )
         #expect(stringResult.content == "hi")
@@ -20,7 +19,6 @@ struct OpenAIStreamParserTests {
             Data(line.utf8),
             toolCallBuffers: [:],
             toolCallIds: [:],
-            onToolCall: nil,
             onToolCallRequested: nil
         )
         #expect(dataResult.content == "hi")
@@ -40,7 +38,6 @@ struct OpenAIStreamParserTests {
             firstChunk,
             toolCallBuffers: buffers,
             toolCallIds: ids,
-            onToolCall: nil,
             onToolCallRequested: nil
         )
         buffers = result.toolCallBuffers
@@ -50,7 +47,6 @@ struct OpenAIStreamParserTests {
             secondChunk,
             toolCallBuffers: buffers,
             toolCallIds: ids,
-            onToolCall: nil,
             onToolCallRequested: nil
         )
         buffers = result.toolCallBuffers
@@ -60,11 +56,9 @@ struct OpenAIStreamParserTests {
             completionChunk,
             toolCallBuffers: buffers,
             toolCallIds: ids,
-            onToolCall: { id, name, arguments in
+            onToolCallRequested: { id, name, arguments in
                 recorder.record(id: id, name: name, query: arguments["query"] as? String)
-                return "ok"
-            },
-            onToolCallRequested: nil
+            }
         )
 
         let call = recorder.firstCall()
@@ -87,7 +81,6 @@ struct OpenAIStreamParserTests {
             firstChunk,
             toolCallBuffers: buffers,
             toolCallIds: ids,
-            onToolCall: nil,
             onToolCallRequested: nil
         )
         buffers = result.toolCallBuffers
@@ -97,7 +90,6 @@ struct OpenAIStreamParserTests {
             argumentsChunk,
             toolCallBuffers: buffers,
             toolCallIds: ids,
-            onToolCall: nil,
             onToolCallRequested: nil
         )
         buffers = result.toolCallBuffers
@@ -107,7 +99,6 @@ struct OpenAIStreamParserTests {
             completionChunk,
             toolCallBuffers: buffers,
             toolCallIds: ids,
-            onToolCall: nil,
             onToolCallRequested: { id, name, arguments in
                 recorder.record(id: id, name: name, query: arguments["command"] as? String)
             }
@@ -125,7 +116,6 @@ struct OpenAIStreamParserTests {
             "data: [DONE]",
             toolCallBuffers: [:],
             toolCallIds: [:],
-            onToolCall: nil,
             onToolCallRequested: nil
         )
 

@@ -2247,6 +2247,97 @@ struct WatchModelRemovalCompatibilityTests {
         #expect(state.modelAPIKeys[model] == nil)
     }
 
+    @Test
+    func `model thinking budgets sync across updates and removals`() {
+        let model = "claude-sonnet-4-20250514"
+        let modelDigest = WatchModelIdentity.digest(model)
+        var tracker = WatchModelRemovalTracker()
+
+        let initialInventory = WatchModelMetadataInventory(
+            modelIDs: [model],
+            providerModelIDs: [model],
+            endpointModelIDs: [],
+            endpointTypeModelIDs: [],
+            thinkingBudgetModelIDs: [model],
+            apiKeyModelIDs: [],
+            valueDigests: WatchModelMetadataValueDigests.hashing(
+                providers: [model: "anthropic"],
+                endpoints: [:],
+                endpointTypes: [:],
+                thinkingBudgets: [model: 10000],
+                apiKeys: [:]
+            )
+        )
+        #expect(tracker.publication(inventory: initialInventory).isEmpty)
+
+        var state = WatchModelMetadataState(
+            selectedModel: model,
+            availableModels: [model],
+            customModels: [model],
+            defaultProvider: "anthropic",
+            modelProviders: [model: "anthropic"],
+            modelEndpoints: [:],
+            modelEndpointTypes: [:],
+            modelAPIKeys: [:]
+        )
+        state.merge(WatchModelMetadataPage(context: [
+            WatchContextKeys.modelThinkingBudgets: [model: 10000]
+        ]))
+        #expect(state.modelThinkingBudgets[model] == 10000)
+
+        let updatedInventory = WatchModelMetadataInventory(
+            modelIDs: [model],
+            providerModelIDs: [model],
+            endpointModelIDs: [],
+            endpointTypeModelIDs: [],
+            thinkingBudgetModelIDs: [model],
+            apiKeyModelIDs: [],
+            valueDigests: WatchModelMetadataValueDigests.hashing(
+                providers: [model: "anthropic"],
+                endpoints: [:],
+                endpointTypes: [:],
+                thinkingBudgets: [model: 16000],
+                apiKeys: [:]
+            )
+        )
+        let updateInvalidations = tracker.publication(inventory: updatedInventory)
+        #expect(updateInvalidations.removedThinkingBudgetDigests == [modelDigest])
+
+        state.merge(WatchModelMetadataPage(context: [
+            WatchContextKeys.removedModelThinkingBudgetDigests: updateInvalidations.removedThinkingBudgetDigests
+        ]))
+        #expect(state.modelThinkingBudgets[model] == nil)
+
+        state.merge(WatchModelMetadataPage(context: [
+            WatchContextKeys.modelThinkingBudgets: [model: 16000],
+            WatchContextKeys.removedModelThinkingBudgetDigests: updateInvalidations.removedThinkingBudgetDigests
+        ]))
+        #expect(state.modelThinkingBudgets[model] == 16000)
+
+        let clearedInventory = WatchModelMetadataInventory(
+            modelIDs: [model],
+            providerModelIDs: [model],
+            endpointModelIDs: [],
+            endpointTypeModelIDs: [],
+            thinkingBudgetModelIDs: [],
+            apiKeyModelIDs: [],
+            valueDigests: WatchModelMetadataValueDigests.hashing(
+                providers: [model: "anthropic"],
+                endpoints: [:],
+                endpointTypes: [:],
+                thinkingBudgets: [:],
+                apiKeys: [:]
+            )
+        )
+        let clearRemovals = tracker.publication(inventory: clearedInventory)
+        #expect(clearRemovals.removedThinkingBudgetDigests == [modelDigest])
+
+        state.merge(WatchModelMetadataPage(context: [
+            WatchContextKeys.removedModelThinkingBudgetDigests: clearRemovals.removedThinkingBudgetDigests
+        ]))
+        #expect(state.modelThinkingBudgets[model] == nil)
+    }
+
     private func modelInventory(_ models: [String]) -> WatchModelMetadataInventory {
         WatchModelMetadataInventory(
             modelIDs: models,

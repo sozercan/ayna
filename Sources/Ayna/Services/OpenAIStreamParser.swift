@@ -32,14 +32,12 @@ private struct SendableToolArguments: @unchecked Sendable {
 private enum ToolCallBufferKey {
     static let name = "name"
     static let argumentsData = "argumentsData"
-    static let legacyArguments = "arguments"
 }
 
 struct StreamCallbacks {
     let onChunk: @Sendable (String) -> Void
     let onComplete: @Sendable () -> Void
     let onError: @Sendable (Error) -> Void
-    let onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?
     let onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?
     let onReasoning: (@Sendable (String) -> Void)?
 }
@@ -49,7 +47,6 @@ enum OpenAIStreamParser {
         _ line: String,
         toolCallBuffers: [Int: [String: Any]],
         toolCallIds: [Int: String],
-        onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
         onReasoning _: (@Sendable (String) -> Void)? = nil
     ) async -> StreamLineResult {
@@ -73,7 +70,6 @@ enum OpenAIStreamParser {
             Data(payload.utf8),
             toolCallBuffers: toolCallBuffers,
             toolCallIds: toolCallIds,
-            onToolCall: onToolCall,
             onToolCallRequested: onToolCallRequested
         )
     }
@@ -82,7 +78,6 @@ enum OpenAIStreamParser {
         _ lineData: Data,
         toolCallBuffers: [Int: [String: Any]],
         toolCallIds: [Int: String],
-        onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
         onReasoning _: (@Sendable (String) -> Void)? = nil
     ) async -> StreamLineResult {
@@ -100,7 +95,6 @@ enum OpenAIStreamParser {
             jsonData,
             toolCallBuffers: toolCallBuffers,
             toolCallIds: toolCallIds,
-            onToolCall: onToolCall,
             onToolCallRequested: onToolCallRequested
         )
     }
@@ -109,7 +103,6 @@ enum OpenAIStreamParser {
         _ jsonData: Data,
         toolCallBuffers: [Int: [String: Any]],
         toolCallIds: [Int: String],
-        onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?
     ) async -> StreamLineResult {
         var updatedToolCallBuffers = toolCallBuffers
@@ -192,7 +185,6 @@ enum OpenAIStreamParser {
                 toolCallBuffers: updatedToolCallBuffers,
                 toolCallIds: updatedToolCallIds,
                 extractedContent: extractedContent,
-                onToolCall: onToolCall,
                 onToolCallRequested: onToolCallRequested
             )
             updatedToolCallBuffers = toolResult.buffers
@@ -309,7 +301,6 @@ enum OpenAIStreamParser {
         toolCallBuffers: [Int: [String: Any]],
         toolCallIds: [Int: String],
         extractedContent: String?,
-        onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?
     ) async -> ToolCallCompletionResult {
         guard let finishReason = firstChoice["finish_reason"] as? String,
@@ -320,7 +311,7 @@ enum OpenAIStreamParser {
 
         var remainingBuffers = toolCallBuffers
         var remainingIds = toolCallIds
-        var content = extractedContent
+        let content = extractedContent
 
         for index in toolCallBuffers.keys.sorted() {
             guard let toolCallBuffer = toolCallBuffers[index],
@@ -339,10 +330,6 @@ enum OpenAIStreamParser {
                 await MainActor.run {
                     onToolCallRequested(toolCallId, toolName, sendableArguments.value)
                 }
-            } else if let onToolCall {
-                let result = await onToolCall(toolCallId, toolName, arguments)
-                let toolOutput = "\n\n[Tool: \(toolName)]\n\(result)\n"
-                content = (content ?? "") + toolOutput
             }
 
             remainingBuffers.removeValue(forKey: index)
@@ -353,15 +340,7 @@ enum OpenAIStreamParser {
     }
 
     private static func toolArgumentsData(from toolCallBuffer: [String: Any]) -> Data? {
-        if let argumentsData = toolCallBuffer[ToolCallBufferKey.argumentsData] as? Data {
-            return argumentsData
-        }
-
-        if let arguments = toolCallBuffer[ToolCallBufferKey.legacyArguments] as? String {
-            return Data(arguments.utf8)
-        }
-
-        return nil
+        toolCallBuffer[ToolCallBufferKey.argumentsData] as? Data
     }
 
     static func extractTextSegments(

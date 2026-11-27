@@ -109,6 +109,257 @@ struct OpenAIImageServiceTests {
         #expect(!handle.register(task))
         #expect(task.state != .suspended)
     }
+
+    @Test(.timeLimit(.minutes(1)), arguments: [401, 403])
+    func `generation credential failures surface typed AynaError`(statusCode: Int) async throws {
+        ImageServiceMockURLProtocol.reset()
+        defer { ImageServiceMockURLProtocol.reset() }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ImageServiceMockURLProtocol.self]
+        let service = OpenAIImageService(urlSession: URLSession(configuration: configuration))
+        let completionReceived = FlightTestSignal()
+        let capturedError = FlightTestBox<Error?>(nil)
+        ImageServiceMockURLProtocol.requestHandler = { request in
+            let response = try #require(
+                HTTPURLResponse(url: request.url!, statusCode: statusCode, httpVersion: nil, headerFields: nil)
+            )
+            return (response, Data(#"{"error":{"message":"Invalid credentials"}}"#.utf8))
+        }
+
+        service.generateImage(
+            prompt: "a glass sphere",
+            requestConfig: OpenAIImageService.RequestConfig(
+                model: "gpt-image-1",
+                apiKey: "sk-bad-key",
+                provider: .openai,
+                customEndpoint: nil,
+                azureAPIVersion: "2025-04-01-preview"
+            ),
+            requestHandle: OpenAIImageService.RequestHandle(),
+            onComplete: { _ in completionReceived.signal() },
+            onError: { error in
+                capturedError.value = error
+                completionReceived.signal()
+            }
+        )
+
+        await completionReceived.wait()
+        let error = try #require(capturedError.value as? AynaError)
+        if statusCode == 401 {
+            guard case .invalidAPIKey = error else {
+                Issue.record("Expected invalidAPIKey, got \(error)")
+                return
+            }
+        } else {
+            guard case let .authenticationFailed(reason) = error else {
+                Issue.record("Expected authenticationFailed, got \(error)")
+                return
+            }
+            #expect(reason == "Invalid credentials")
+        }
+        #expect(ErrorPresenter.category(for: error) == .authentication)
+        #expect(ErrorPresenter.requiresUserAction(error))
+        #expect(ErrorPresenter.suggestedAction(for: error) == .openSettings)
+    }
+
+    @Test(.timeLimit(.minutes(1)), arguments: [401, 403])
+    func `edit credential failures surface typed AynaError`(statusCode: Int) async throws {
+        ImageServiceMockURLProtocol.reset()
+        defer { ImageServiceMockURLProtocol.reset() }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ImageServiceMockURLProtocol.self]
+        let service = OpenAIImageService(urlSession: URLSession(configuration: configuration))
+        let completionReceived = FlightTestSignal()
+        let capturedError = FlightTestBox<Error?>(nil)
+        ImageServiceMockURLProtocol.requestHandler = { request in
+            let response = try #require(
+                HTTPURLResponse(url: request.url!, statusCode: statusCode, httpVersion: nil, headerFields: nil)
+            )
+            return (response, Data(#"{"error":{"message":"Access denied"}}"#.utf8))
+        }
+
+        service.editImage(
+            prompt: "brighten",
+            sourceImages: [
+                OpenAIImageService.SourceImage(data: Data("PNGDATA".utf8), mimeType: "image/png", fileName: "source.png"),
+            ],
+            requestConfig: OpenAIImageService.RequestConfig(
+                model: "gpt-image-1",
+                apiKey: "sk-bad-key",
+                provider: .openai,
+                customEndpoint: nil,
+                azureAPIVersion: "2025-04-01-preview"
+            ),
+            requestHandle: OpenAIImageService.RequestHandle(),
+            onComplete: { _ in completionReceived.signal() },
+            onError: { error in
+                capturedError.value = error
+                completionReceived.signal()
+            }
+        )
+
+        await completionReceived.wait()
+        let error = try #require(capturedError.value as? AynaError)
+        if statusCode == 401 {
+            guard case .invalidAPIKey = error else {
+                Issue.record("Expected invalidAPIKey, got \(error)")
+                return
+            }
+        } else {
+            guard case let .authenticationFailed(reason) = error else {
+                Issue.record("Expected authenticationFailed, got \(error)")
+                return
+            }
+            #expect(reason == "Access denied")
+        }
+        #expect(ErrorPresenter.category(for: error) == .authentication)
+        #expect(ErrorPresenter.requiresUserAction(error))
+        #expect(ErrorPresenter.suggestedAction(for: error) == .openSettings)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `generation 429 insufficient quota surfaces non-retryable apiError with server message`() async throws {
+        ImageServiceMockURLProtocol.reset()
+        defer { ImageServiceMockURLProtocol.reset() }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ImageServiceMockURLProtocol.self]
+        let service = OpenAIImageService(urlSession: URLSession(configuration: configuration))
+        let completionReceived = FlightTestSignal()
+        let capturedError = FlightTestBox<Error?>(nil)
+        let serverMessage = "You exceeded your current quota, please check your plan and billing details."
+        ImageServiceMockURLProtocol.requestHandler = { request in
+            let response = try #require(
+                HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)
+            )
+            let body = #"{"error":{"message":"\#(serverMessage)","type":"insufficient_quota","code":"insufficient_quota"}}"#
+            return (response, Data(body.utf8))
+        }
+
+        service.generateImage(
+            prompt: "a glass sphere",
+            requestConfig: OpenAIImageService.RequestConfig(
+                model: "gpt-image-1",
+                apiKey: "sk-unit-test",
+                provider: .openai,
+                customEndpoint: nil,
+                azureAPIVersion: "2025-04-01-preview"
+            ),
+            requestHandle: OpenAIImageService.RequestHandle(),
+            onComplete: { _ in completionReceived.signal() },
+            onError: { error in
+                capturedError.value = error
+                completionReceived.signal()
+            }
+        )
+
+        await completionReceived.wait()
+        let error = try #require(capturedError.value as? AynaError)
+        guard case let .apiError(message) = error else {
+            Issue.record("Expected apiError, got \(error)")
+            return
+        }
+        #expect(message == serverMessage)
+        #expect(!ErrorPresenter.isRetryable(error))
+        #expect(ErrorPresenter.suggestedAction(for: error) == .dismiss)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `generation 429 genuine rate limit surfaces retryable rateLimited error`() async throws {
+        ImageServiceMockURLProtocol.reset()
+        defer { ImageServiceMockURLProtocol.reset() }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ImageServiceMockURLProtocol.self]
+        let service = OpenAIImageService(urlSession: URLSession(configuration: configuration))
+        let completionReceived = FlightTestSignal()
+        let capturedError = FlightTestBox<Error?>(nil)
+        ImageServiceMockURLProtocol.requestHandler = { request in
+            let response = try #require(
+                HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)
+            )
+            let body = #"{"error":{"message":"Rate limit reached for images","type":"requests","code":"rate_limit_exceeded"}}"#
+            return (response, Data(body.utf8))
+        }
+
+        service.generateImage(
+            prompt: "a glass sphere",
+            requestConfig: OpenAIImageService.RequestConfig(
+                model: "gpt-image-1",
+                apiKey: "sk-unit-test",
+                provider: .openai,
+                customEndpoint: nil,
+                azureAPIVersion: "2025-04-01-preview"
+            ),
+            requestHandle: OpenAIImageService.RequestHandle(),
+            onComplete: { _ in completionReceived.signal() },
+            onError: { error in
+                capturedError.value = error
+                completionReceived.signal()
+            }
+        )
+
+        await completionReceived.wait()
+        let error = try #require(capturedError.value as? AynaError)
+        guard case .rateLimited = error else {
+            Issue.record("Expected rateLimited, got \(error)")
+            return
+        }
+        #expect(ErrorPresenter.isRetryable(error))
+        #expect(ErrorPresenter.suggestedAction(for: error) == .retry)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `edit 429 billing hard limit surfaces non-retryable apiError with server message`() async throws {
+        ImageServiceMockURLProtocol.reset()
+        defer { ImageServiceMockURLProtocol.reset() }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ImageServiceMockURLProtocol.self]
+        let service = OpenAIImageService(urlSession: URLSession(configuration: configuration))
+        let completionReceived = FlightTestSignal()
+        let capturedError = FlightTestBox<Error?>(nil)
+        let serverMessage = "Billing hard limit has been reached."
+        ImageServiceMockURLProtocol.requestHandler = { request in
+            let response = try #require(
+                HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)
+            )
+            let body = #"{"error":{"message":"\#(serverMessage)","type":"billing_hard_limit_reached","code":"billing_hard_limit_reached"}}"#
+            return (response, Data(body.utf8))
+        }
+
+        service.editImage(
+            prompt: "brighten",
+            sourceImages: [
+                OpenAIImageService.SourceImage(data: Data("PNGDATA".utf8), mimeType: "image/png", fileName: "source.png"),
+            ],
+            requestConfig: OpenAIImageService.RequestConfig(
+                model: "gpt-image-1",
+                apiKey: "sk-unit-test",
+                provider: .openai,
+                customEndpoint: nil,
+                azureAPIVersion: "2025-04-01-preview"
+            ),
+            requestHandle: OpenAIImageService.RequestHandle(),
+            onComplete: { _ in completionReceived.signal() },
+            onError: { error in
+                capturedError.value = error
+                completionReceived.signal()
+            }
+        )
+
+        await completionReceived.wait()
+        let error = try #require(capturedError.value as? AynaError)
+        guard case let .apiError(message) = error else {
+            Issue.record("Expected apiError, got \(error)")
+            return
+        }
+        #expect(message == serverMessage)
+        #expect(!ErrorPresenter.isRetryable(error))
+        #expect(ErrorPresenter.suggestedAction(for: error) == .dismiss)
+    }
 }
 
 private final class ImageServiceMockURLProtocol: URLProtocol, @unchecked Sendable {

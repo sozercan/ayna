@@ -9,13 +9,6 @@ import os.log
 import PhotosUI
 import SwiftUI
 
-private struct UncheckedSendable<T>: @unchecked Sendable {
-    nonisolated(unsafe) let value: T
-    nonisolated init(_ value: T) {
-        self.value = value
-    }
-}
-
 typealias IOSBuiltInToolExecutor = @MainActor (
     _ name: String,
     _ arguments: [String: Any]
@@ -159,13 +152,6 @@ typealias IOSBuiltInToolExecutor = @MainActor (
     @Published var selectedModels: Set<String> = []
 
     var onConversationCreated: ((UUID) -> Void)?
-
-    static func placeholder() -> IOSChatViewModel {
-        IOSChatViewModel(
-            conversationManager: ConversationManager(),
-            aiService: nil
-        )
-    }
 
     init(
         conversationId: UUID,
@@ -316,12 +302,9 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         let autoSendID = UUID()
         pendingAutoSendID = autoSendID
         let task = Task { @MainActor [weak self] in
-            do {
-                try await Task.sleep(for: .milliseconds(100))
-            } catch {
-                return
-            }
+            await Task.yield()
             guard let self,
+                  !Task.isCancelled,
                   self.pendingAutoSendID == autoSendID,
                   self.conversationId == convId,
                   self.messageText == prompt
@@ -904,7 +887,9 @@ private extension IOSChatViewModel {
         tools: [[String: Any]]?,
         operationID existingOperationID: ToolChainCoordinator.OperationID? = nil
     ) {
-        let toolsWrapper = UncheckedSendable(tools)
+        let encodedTools: [[String: AnyCodable]]? = tools?.map { tool in
+            tool.mapValues { AnyCodable($0) }
+        }
         let coordinator = toolChainCoordinator
         let roundCoordinator = toolCallRequestRoundCoordinator
         let operationID = existingOperationID ?? coordinator.beginOperation(conversationID: conversationId)
@@ -1004,7 +989,7 @@ private extension IOSChatViewModel {
                         assistantMessageId: assistantMessageId,
                         model: model,
                         conversationId: conversationId,
-                        tools: toolsWrapper.value
+                        tools: encodedTools?.map { $0.mapValues(\.value) }
                     )
                 }
             },
@@ -1020,7 +1005,9 @@ private extension IOSChatViewModel {
                 }
             },
             onToolCallRequested: toolCallAdmissionGate.admittedCallback { [weak self] toolCallId, toolName, arguments in
-                let argumentsWrapper = UncheckedSendable(arguments)
+                let anyCodableArguments = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
+                    result[pair.key] = AnyCodable(pair.value)
+                }
                 coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in
                     guard let self,
                           coordinator.owns(operationID, conversationID: conversationId),
@@ -1053,10 +1040,6 @@ private extension IOSChatViewModel {
                     }
 
                     self.currentToolName = toolName
-                    let arguments = argumentsWrapper.value
-                    let anyCodableArguments = arguments.reduce(into: [String: AnyCodable]()) { result, pair in
-                        result[pair.key] = AnyCodable(pair.value)
-                    }
                     let toolCall = MCPToolCall(
                         id: toolCallId,
                         toolName: toolName,
@@ -1097,13 +1080,12 @@ private extension IOSChatViewModel {
                         token: toolToken,
                         callID: toolCallId,
                         toolName: toolName,
-                        arguments: argumentsWrapper,
                         anyCodableArguments: anyCodableArguments,
                         operationID: operationID,
                         assistantMessageId: assistantMessageId,
                         model: model,
                         conversationId: conversationId,
-                        tools: toolsWrapper
+                        tools: encodedTools
                     )
                 }
             }
@@ -1118,13 +1100,12 @@ private extension IOSChatViewModel {
         token: ToolCallRequestRoundCoordinator<ToolExecutionResult>.ToolToken,
         callID: String,
         toolName: String,
-        arguments: UncheckedSendable<[String: Any]>,
         anyCodableArguments: [String: AnyCodable],
         operationID: ToolChainCoordinator.OperationID,
         assistantMessageId: UUID,
         model: String,
         conversationId: UUID,
-        tools: UncheckedSendable<[[String: Any]]?>
+        tools: [[String: AnyCodable]]?
     ) {
         let coordinator = toolChainCoordinator
         let roundCoordinator = toolCallRequestRoundCoordinator
@@ -1143,7 +1124,7 @@ private extension IOSChatViewModel {
             )
             let (output, citations) = await self.executeBuiltInTool(
                 toolName,
-                arguments.value
+                anyCodableArguments.mapValues(\.value)
             )
             guard coordinator.owns(operationID, conversationID: conversationId),
                   self.activeAssistantMessageId == assistantMessageId,
@@ -1176,7 +1157,7 @@ private extension IOSChatViewModel {
                 assistantMessageId: assistantMessageId,
                 model: model,
                 conversationId: conversationId,
-                tools: tools.value
+                tools: tools?.map { $0.mapValues(\.value) }
             )
         }
     }

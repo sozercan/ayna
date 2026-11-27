@@ -7,8 +7,21 @@
     @Suite("WatchConversationStore Native Tests")
     @MainActor
     struct WatchConversationStoreNativeTests {
+        private final class MutableClock {
+            var now: Date
+
+            init(now: Date = Date(timeIntervalSinceReferenceDate: 1_000)) {
+                self.now = now
+            }
+
+            func advance(by interval: TimeInterval) {
+                now = now.addingTimeInterval(interval)
+            }
+        }
+
         private let userDefaults: UserDefaults
         private let persistenceKey: String
+        private let clock: MutableClock
         private let store: WatchConversationStore
 
         init() {
@@ -19,11 +32,14 @@
             userDefaults.removePersistentDomain(forName: suiteName)
 
             let persistenceKey = "state"
+            let clock = MutableClock()
             self.userDefaults = userDefaults
             self.persistenceKey = persistenceKey
+            self.clock = clock
             store = WatchConversationStore(
                 userDefaults: userDefaults,
                 persistenceKey: persistenceKey,
+                now: { clock.now },
                 mutationEnqueuer: { _ in }
             )
         }
@@ -47,10 +63,10 @@
         }
 
         @Test
-        func `new conversation appears first`() async throws {
+        func `new conversation appears first`() throws {
             let first = try #require(store.createConversation(model: "gpt-4o"))
 
-            try? await Task.sleep(for: .milliseconds(100))
+            clock.advance(by: 1)
 
             let second = try #require(store.createConversation(model: "gpt-4"))
 
@@ -269,17 +285,18 @@
         }
 
         @Test
-        func `update conversations sorts by recent`() async throws {
+        func `update conversations sorts by recent`() throws {
             let older = try #require(store.createConversation(title: "Older", model: "gpt-4o"))
-            try? await Task.sleep(for: .milliseconds(100))
+            clock.advance(by: 1)
             let newer = try #require(store.createConversation(title: "Newer", model: "gpt-4o"))
 
             #expect(store.conversations.first?.id == newer.id)
 
+            clock.advance(by: 1)
             var updatedOlder = WatchConversation(
                 from: Conversation(id: older.id, title: "Older Updated", model: "gpt-4o")
             )
-            updatedOlder.updatedAt = Date()
+            updatedOlder.updatedAt = clock.now
 
             store.updateConversations([updatedOlder])
 

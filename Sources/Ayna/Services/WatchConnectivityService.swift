@@ -387,6 +387,9 @@
                 let endpointTypes = AIService.shared.modelEndpointTypes
                     .filter { configured.contains($0.key) }
                     .mapValues(\.rawValue)
+                let thinkingBudgets = AIService.shared.modelThinkingBudgets.filter {
+                    configured.contains($0.key) && $0.value >= AnthropicThinkingBudget.minimumBudgetTokens
+                }
                 let apiKeys = AIService.shared.modelAPIKeys.filter {
                     configured.contains($0.key) && !$0.value.isEmpty
                 }
@@ -395,11 +398,13 @@
                     providerModelIDs: providers.keys.sorted(),
                     endpointModelIDs: endpoints.keys.sorted(),
                     endpointTypeModelIDs: endpointTypes.keys.sorted(),
+                    thinkingBudgetModelIDs: thinkingBudgets.keys.sorted(),
                     apiKeyModelIDs: apiKeys.keys.sorted(),
                     valueDigests: WatchModelMetadataValueDigests.hashing(
                         providers: providers,
                         endpoints: endpoints,
                         endpointTypes: endpointTypes,
+                        thinkingBudgets: thinkingBudgets,
                         apiKeys: apiKeys
                     )
                 )
@@ -455,6 +460,10 @@
                         from: AIService.shared.modelEndpointTypes
                     )
                     .mapValues(\.rawValue),
+                    WatchContextKeys.modelThinkingBudgets: modelPublication.metadataValues(
+                        from: AIService.shared.modelThinkingBudgets
+                    )
+                    .filter { $0.value >= AnthropicThinkingBudget.minimumBudgetTokens },
                     WatchContextKeys.modelAPIKeys: modelPublication.metadataValues(
                         from: AIService.shared.modelAPIKeys
                     ),
@@ -462,6 +471,7 @@
                     WatchContextKeys.removedModelProviderDigests: options.modelRemovalPublication.removedProviderDigests,
                     WatchContextKeys.removedModelEndpointDigests: options.modelRemovalPublication.removedEndpointDigests,
                     WatchContextKeys.removedModelEndpointTypeDigests: options.modelRemovalPublication.removedEndpointTypeDigests,
+                    WatchContextKeys.removedModelThinkingBudgetDigests: options.modelRemovalPublication.removedThinkingBudgetDigests,
                     WatchContextKeys.removedModelAPIKeyDigests: options.modelRemovalPublication.removedAPIKeyDigests,
                     WatchContextKeys.modelMetadataEpoch: options.modelMetadataEpoch.uuidString,
                     WatchContextKeys.modelMetadataComplete: modelMetadataComplete,
@@ -1385,10 +1395,23 @@
                 .flatMap(UUID.init(uuidString:))
             private var pageCycleHandshakeTracker = WatchPageCycleHandshakeTracker()
             private var syncRequestPending = false
+            private var isUITestingSeeded = false
 
             override private init() {
                 super.init()
+                guard !UITestEnvironment.isEnabled else { return }
                 setupSession()
+            }
+
+            func configureForUITesting(
+                availableModels: [String],
+                selectedModel: String
+            ) {
+                isUITestingSeeded = true
+                isReachable = true
+                self.availableModels = availableModels
+                self.selectedModel = selectedModel
+                lastSyncDate = Date()
             }
 
             private func setupSession() {
@@ -1538,6 +1561,7 @@
             }
 
             func requestSync() {
+                guard !isUITestingSeeded else { return }
                 let request = pageCycleCoordinator.pendingRequest.map {
                     WatchSyncRequestIdentity.pageCycle($0)
                 } ?? .freshCycle
@@ -2160,6 +2184,7 @@
                     modelProviders: AIService.shared.modelProviders.mapValues(\.rawValue),
                     modelEndpoints: AIService.shared.modelEndpoints,
                     modelEndpointTypes: AIService.shared.modelEndpointTypes.mapValues(\.rawValue),
+                    modelThinkingBudgets: AIService.shared.modelThinkingBudgets,
                     modelAPIKeys: AIService.shared.modelAPIKeys
                 )
             }
@@ -2182,6 +2207,9 @@
                     if let endpointType = APIEndpointType(rawValue: pair.value) {
                         result[pair.key] = endpointType
                     }
+                }
+                AIService.shared.modelThinkingBudgets = state.modelThinkingBudgets.filter {
+                    $0.value >= AnthropicThinkingBudget.minimumBudgetTokens
                 }
                 AIService.shared.modelAPIKeys = state.modelAPIKeys
             }

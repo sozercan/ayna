@@ -207,10 +207,10 @@ struct DeepLinkManagerTests {
 
         await manager.handle(url: url)
 
-        #expect(manager.pendingChat != nil)
-        #expect(manager.pendingChat?.model == "gpt-4o")
-        #expect(manager.pendingChat?.prompt == "Hello world")
-        #expect(manager.pendingChat?.systemPrompt == "You are helpful")
+        let chat = try consumeExactlyOne(from: manager)
+        #expect(chat.model == "gpt-4o")
+        #expect(chat.prompt == "Hello world")
+        #expect(chat.systemPrompt == "You are helpful")
         #expect(manager.errorMessage == nil)
     }
 
@@ -222,10 +222,10 @@ struct DeepLinkManagerTests {
 
         await manager.handle(url: url)
 
-        #expect(manager.pendingChat != nil)
-        #expect(manager.pendingChat?.model == "claude-3")
-        #expect(manager.pendingChat?.prompt == nil)
-        #expect(manager.pendingChat?.systemPrompt == nil)
+        let chat = try consumeExactlyOne(from: manager)
+        #expect(chat.model == "claude-3")
+        #expect(chat.prompt == nil)
+        #expect(chat.systemPrompt == nil)
     }
 
     @Test("Parse chat with prompt only")
@@ -235,10 +235,10 @@ struct DeepLinkManagerTests {
 
         await manager.handle(url: url)
 
-        #expect(manager.pendingChat != nil)
-        #expect(manager.pendingChat?.model == nil)
-        #expect(manager.pendingChat?.prompt == "What is the weather")
-        #expect(manager.pendingChat?.systemPrompt == nil)
+        let chat = try consumeExactlyOne(from: manager)
+        #expect(chat.model == nil)
+        #expect(chat.prompt == "What is the weather")
+        #expect(chat.systemPrompt == nil)
     }
 
     @Test("Parse chat with no parameters")
@@ -248,10 +248,10 @@ struct DeepLinkManagerTests {
 
         await manager.handle(url: url)
 
-        #expect(manager.pendingChat != nil)
-        #expect(manager.pendingChat?.model == nil)
-        #expect(manager.pendingChat?.prompt == nil)
-        #expect(manager.pendingChat?.systemPrompt == nil)
+        let chat = try consumeExactlyOne(from: manager)
+        #expect(chat.model == nil)
+        #expect(chat.prompt == nil)
+        #expect(chat.systemPrompt == nil)
         #expect(manager.errorMessage == nil)
     }
 
@@ -266,8 +266,6 @@ struct DeepLinkManagerTests {
 
         #expect(consumedChats.isEmpty)
         #expect(manager.pendingAddModel?.name == "new-model")
-        #expect(manager.pendingChat?.model == "new-model")
-        #expect(manager.pendingChat?.prompt == "Hello")
     }
 
     @Test("Unified chat becomes available after add-model confirmation")
@@ -296,7 +294,7 @@ struct DeepLinkManagerTests {
         let secondConsumption = drainReadyChats(from: manager)
 
         #expect(firstConsumption.first?.prompt == "Hello")
-        #expect(manager.pendingChat == nil)
+        #expect(manager.consumeNextReadyChat() == nil)
         #expect(secondConsumption.isEmpty)
     }
 
@@ -331,8 +329,6 @@ struct DeepLinkManagerTests {
         #expect(ordinaryChat.model == "gpt-4o")
         #expect(ordinaryChat.prompt == "Ready")
         #expect(manager.pendingAddModel?.name == "deferred-model")
-        #expect(manager.pendingChat?.model == "deferred-model")
-        #expect(manager.pendingChat?.prompt == "Deferred")
         #expect(drainReadyChats(from: manager).isEmpty)
 
         try confirmPendingModel(in: manager)
@@ -359,8 +355,6 @@ struct DeepLinkManagerTests {
         #expect(ordinaryChat.model == "gpt-4o")
         #expect(ordinaryChat.prompt == "Ready")
         #expect(manager.pendingAddModel?.name == "deferred-model")
-        #expect(manager.pendingChat?.model == "deferred-model")
-        #expect(manager.pendingChat?.prompt == "Deferred")
         #expect(drainReadyChats(from: manager).isEmpty)
 
         try confirmPendingModel(in: manager)
@@ -384,7 +378,6 @@ struct DeepLinkManagerTests {
         try cancelPendingModel(in: manager)
 
         #expect(manager.pendingAddModel == nil)
-        #expect(manager.pendingChat?.prompt == "Ready")
         #expect(!service.customModels.contains("cancelled-model"))
 
         let ordinaryChat = try consumeExactlyOne(from: manager)
@@ -406,7 +399,7 @@ struct DeepLinkManagerTests {
 
         #expect(ordinaryChat.prompt == "Ready")
         #expect(manager.pendingAddModel?.name == "standalone-model")
-        #expect(manager.pendingChat == nil)
+        #expect(drainReadyChats(from: manager).isEmpty)
     }
 
     @Test("Ready chats are drained in URL arrival order")
@@ -462,7 +455,7 @@ struct DeepLinkManagerTests {
 
         #expect(manager.errorMessage == "Another model confirmation is already in progress")
         #expect(manager.pendingAddModel?.id == firstRequestID)
-        #expect(manager.pendingChat?.prompt == "First")
+        #expect(drainReadyChats(from: manager).isEmpty)
 
         manager.confirmAddModel(expectedRequestID: firstRequestID)
 
@@ -484,7 +477,11 @@ struct DeepLinkManagerTests {
 
         #expect(manager.errorMessage == "Another model confirmation is already in progress")
         #expect(manager.pendingAddModel?.id == firstRequestID)
-        #expect(manager.pendingChat?.prompt == "First")
+        #expect(drainReadyChats(from: manager).isEmpty)
+
+        manager.confirmAddModel(expectedRequestID: firstRequestID)
+        let chat = try consumeExactlyOne(from: manager)
+        #expect(chat.prompt == "First")
     }
 
     @Test(
@@ -506,7 +503,7 @@ struct DeepLinkManagerTests {
         #expect(manager.errorMessage == "Another model confirmation is already in progress")
         #expect(manager.pendingAddModel?.id == firstRequestID)
         #expect(manager.pendingAddModel?.name == "first-model")
-        #expect(manager.pendingChat == nil)
+        #expect(drainReadyChats(from: manager).isEmpty)
     }
 
     @Test("Stale cancellation cannot cancel a newer confirmation")
@@ -553,7 +550,6 @@ struct DeepLinkManagerTests {
         await manager.handle(url: url)
 
         #expect(drainReadyChats(from: manager).isEmpty)
-        #expect(manager.pendingChat == nil)
         #expect(manager.errorMessage == "Model 'missing-model' not found")
     }
 
@@ -565,7 +561,7 @@ struct DeepLinkManagerTests {
         await manager.handle(url: url)
 
         #expect(manager.pendingAddModel == nil)
-        #expect(manager.pendingChat == nil)
+        #expect(drainReadyChats(from: manager).isEmpty)
         #expect(manager.errorMessage?.contains("model") == true)
     }
 
@@ -577,7 +573,7 @@ struct DeepLinkManagerTests {
         await manager.handle(url: url)
 
         #expect(manager.pendingAddModel == nil)
-        #expect(manager.pendingChat == nil)
+        #expect(drainReadyChats(from: manager).isEmpty)
         #expect(manager.errorMessage?.contains("model") == true)
     }
 
@@ -591,7 +587,6 @@ struct DeepLinkManagerTests {
         service.customModels.removeAll()
 
         #expect(drainReadyChats(from: manager).isEmpty)
-        #expect(manager.pendingChat == nil)
         #expect(manager.errorMessage == "Model 'temporary-model' not found")
     }
 
@@ -606,7 +601,7 @@ struct DeepLinkManagerTests {
             .dropFirst()
             .sink { request in
                 if request == nil {
-                    chatVisibleWhenCancellationPublished = manager.pendingChat
+                    chatVisibleWhenCancellationPublished = manager.consumeNextReadyChat()
                 }
             }
 
@@ -624,7 +619,7 @@ struct DeepLinkManagerTests {
         await manager.handle(url: url)
 
         #expect(manager.pendingAddModel == nil)
-        #expect(manager.pendingChat == nil)
+        #expect(drainReadyChats(from: manager).isEmpty)
         #expect(manager.errorMessage != nil)
     }
 
@@ -636,7 +631,7 @@ struct DeepLinkManagerTests {
         await manager.handle(url: url)
 
         #expect(manager.pendingAddModel == nil)
-        #expect(manager.pendingChat == nil)
+        #expect(drainReadyChats(from: manager).isEmpty)
         #expect(manager.errorMessage != nil)
         #expect(manager.errorMessage?.contains("Unknown action") ?? false)
     }
@@ -732,9 +727,9 @@ struct DeepLinkManagerTests {
 
         await manager.handle(url: url)
 
-        #expect(manager.pendingChat != nil)
-        #expect(manager.pendingChat?.model == nil)
-        #expect(manager.pendingChat?.prompt == nil)
+        let chat = try consumeExactlyOne(from: manager)
+        #expect(chat.model == nil)
+        #expect(chat.prompt == nil)
         #expect(manager.errorMessage == nil)
     }
 
@@ -770,7 +765,8 @@ struct DeepLinkManagerTests {
 
         await manager.handle(url: url)
 
-        #expect(manager.pendingChat?.prompt == "Hello World! How are you?")
+        let chat = try consumeExactlyOne(from: manager)
+        #expect(chat.prompt == "Hello World! How are you?")
     }
 
     @Test("Special characters in model name")
@@ -791,12 +787,15 @@ struct DeepLinkManagerTests {
         await manager.handle(url: url)
 
         #expect(manager.pendingAddModel != nil)
-        #expect(manager.pendingChat != nil)
+        #expect(drainReadyChats(from: manager).isEmpty)
         #expect(manager.pendingAddModel?.name == "new-model")
         #expect(manager.pendingAddModel?.provider == .openai)
         #expect(manager.pendingAddModel?.endpoint == "https://api.test.com")
-        #expect(manager.pendingChat?.prompt == "Hello")
         #expect(manager.errorMessage == nil)
+
+        try confirmPendingModel(in: manager)
+        let chat = try consumeExactlyOne(from: manager)
+        #expect(chat.prompt == "Hello")
     }
 
     @Test("Unified flow confirm adds model and preserves chat")
@@ -806,7 +805,7 @@ struct DeepLinkManagerTests {
         await manager.handle(url: url)
 
         #expect(manager.pendingAddModel != nil)
-        #expect(manager.pendingChat != nil)
+        #expect(drainReadyChats(from: manager).isEmpty)
 
         try confirmPendingModel(in: manager)
 
@@ -827,12 +826,12 @@ struct DeepLinkManagerTests {
         await manager.handle(url: url)
 
         #expect(manager.pendingAddModel != nil)
-        #expect(manager.pendingChat != nil)
+        #expect(drainReadyChats(from: manager).isEmpty)
 
         try cancelPendingModel(in: manager)
 
         #expect(manager.pendingAddModel == nil)
-        #expect(manager.pendingChat == nil)
+        #expect(drainReadyChats(from: manager).isEmpty)
         #expect(!service.customModels.contains("cancel-model"))
     }
 
@@ -845,9 +844,9 @@ struct DeepLinkManagerTests {
         await manager.handle(url: url)
 
         #expect(manager.pendingAddModel == nil)
-        #expect(manager.pendingChat != nil)
-        #expect(manager.pendingChat?.model == "existing-model")
-        #expect(manager.pendingChat?.prompt == "Hello")
+        let chat = try consumeExactlyOne(from: manager)
+        #expect(chat.model == "existing-model")
+        #expect(chat.prompt == "Hello")
     }
 
     @Test("Unified flow with all config params")
@@ -863,11 +862,13 @@ struct DeepLinkManagerTests {
         #expect(manager.pendingAddModel?.endpoint == "https://api.openai.com")
         #expect(manager.pendingAddModel?.apiKey == "test-key")
         #expect(manager.pendingAddModel?.endpointType == .responses)
+        #expect(drainReadyChats(from: manager).isEmpty)
 
-        #expect(manager.pendingChat != nil)
-        #expect(manager.pendingChat?.model == "full-config")
-        #expect(manager.pendingChat?.prompt == "Test")
-        #expect(manager.pendingChat?.systemPrompt == "Be helpful")
+        try confirmPendingModel(in: manager)
+        let chat = try consumeExactlyOne(from: manager)
+        #expect(chat.model == "full-config")
+        #expect(chat.prompt == "Test")
+        #expect(chat.systemPrompt == "Be helpful")
     }
 
     @Test("Unified flow model config is stored")
@@ -876,10 +877,12 @@ struct DeepLinkManagerTests {
         let url = try #require(URL(string: "ayna://chat?model=config-test&provider=anthropic&prompt=Hello"))
 
         await manager.handle(url: url)
+        try confirmPendingModel(in: manager)
 
-        #expect(manager.pendingChat?.modelConfig != nil)
-        #expect(manager.pendingChat?.modelConfig?.name == "config-test")
-        #expect(manager.pendingChat?.modelConfig?.provider == .anthropic)
+        let chat = try consumeExactlyOne(from: manager)
+        #expect(chat.modelConfig != nil)
+        #expect(chat.modelConfig?.name == "config-test")
+        #expect(chat.modelConfig?.provider == .anthropic)
     }
 
     @Test("Unified flow invalid provider shows error")
@@ -890,7 +893,7 @@ struct DeepLinkManagerTests {
         await manager.handle(url: url)
 
         #expect(manager.pendingAddModel == nil)
-        #expect(manager.pendingChat == nil)
+        #expect(drainReadyChats(from: manager).isEmpty)
         #expect(manager.errorMessage != nil)
         #expect(manager.errorMessage?.contains("provider") ?? false)
     }
@@ -903,7 +906,7 @@ struct DeepLinkManagerTests {
         await manager.handle(url: url)
 
         #expect(manager.pendingAddModel == nil)
-        #expect(manager.pendingChat == nil)
+        #expect(drainReadyChats(from: manager).isEmpty)
         #expect(manager.errorMessage != nil)
         #expect(manager.errorMessage?.contains("type") ?? false)
     }
@@ -917,8 +920,8 @@ struct DeepLinkManagerTests {
         await manager.handle(url: url)
 
         #expect(manager.pendingAddModel == nil)
-        #expect(manager.pendingChat != nil)
-        #expect(manager.pendingChat?.modelConfig == nil)
-        #expect(manager.pendingChat?.model == "simple-model")
+        let chat = try consumeExactlyOne(from: manager)
+        #expect(chat.modelConfig == nil)
+        #expect(chat.model == "simple-model")
     }
 }

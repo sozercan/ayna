@@ -309,10 +309,6 @@ enum AIRetryPolicy {
             return isRetryableAynaError(aynaError)
         }
 
-        if let openAIError = error as? AIService.AIError {
-            return isRetryableAPIError(openAIError)
-        }
-
         return false
     }
 
@@ -365,16 +361,6 @@ enum AIRetryPolicy {
             true
         default:
             false
-        }
-    }
-
-    private static func isRetryableAPIError(_ error: AIService.AIError) -> Bool {
-        switch error {
-        case let .apiError(message):
-            let retryableStatusCodes = ["429", "500", "502", "503", "504"]
-            return retryableStatusCodes.contains { message.contains($0) }
-        default:
-            return false
         }
     }
 
