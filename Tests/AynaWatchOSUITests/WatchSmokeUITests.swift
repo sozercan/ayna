@@ -80,6 +80,11 @@ final class WatchSmokeUITests: WatchUITestCase {
 
         let textField = app.textFields["watch.newChat.composerTextField"].firstMatch
         guard textField.waitForExistence(timeout: UITestTimeout.async), textField.isHittable else {
+            let destinationMarker = app.descendants(matching: .any)["watch.newChat.view"].firstMatch
+            XCTAssertTrue(
+                textField.exists || destinationMarker.waitForExistence(timeout: UITestTimeout.normal),
+                "New chat view should appear after tapping the new chat button"
+            )
             throw XCTSkip("watchOS simulator does not support interactive text entry in WatchNewChatView")
         }
 
