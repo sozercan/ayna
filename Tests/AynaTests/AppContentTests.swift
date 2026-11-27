@@ -3,6 +3,7 @@
     import Testing
 
     @Suite("AppContent Tests")
+    @MainActor
     struct AppContentTests {
         @Test("Truncation of short content")
         func truncationShortContent() {

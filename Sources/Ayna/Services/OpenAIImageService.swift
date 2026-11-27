@@ -243,7 +243,7 @@ final class OpenAIImageService: @unchecked Sendable {
                 : "Image generation temporarily unavailable. Please try again shortly."
             requestHandle.run { @MainActor in
                 guard requestHandle.isActive else { return }
-                context.onError(AynaError.apiError(message: message))
+                context.onError(AynaError.httpError(statusCode: 503, message: message))
             }
             return
         }
@@ -290,19 +290,11 @@ final class OpenAIImageService: @unchecked Sendable {
                     NetworkCircuitBreaker.recordFailure(key: circuitKey)
                 }
 
-                let message: String = {
-                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let errorDict = json["error"] as? [String: Any],
-                       let errorMessage = errorDict["message"] as? String
-                    {
-                        return errorMessage
-                    }
-                    return "HTTP \(httpResponse.statusCode)"
-                }()
+                let error = Self.httpResponseError(statusCode: httpResponse.statusCode, data: data)
 
                 requestHandle.run { @MainActor in
                     guard requestHandle.isActive else { return }
-                    context.onError(AynaError.apiError(message: message))
+                    context.onError(error)
                 }
                 return
             }
@@ -654,7 +646,7 @@ final class OpenAIImageService: @unchecked Sendable {
                 : "Image editing temporarily unavailable. Please try again shortly."
             requestHandle.run { @MainActor in
                 guard requestHandle.isActive else { return }
-                onError(AynaError.apiError(message: message))
+                onError(AynaError.httpError(statusCode: 503, message: message))
             }
             return
         }
@@ -713,19 +705,11 @@ final class OpenAIImageService: @unchecked Sendable {
                     NetworkCircuitBreaker.recordFailure(key: circuitKey)
                 }
 
-                let message: String = {
-                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let errorDict = json["error"] as? [String: Any],
-                       let errorMessage = errorDict["message"] as? String
-                    {
-                        return errorMessage
-                    }
-                    return "HTTP \(httpResponse.statusCode)"
-                }()
+                let error = Self.httpResponseError(statusCode: httpResponse.statusCode, data: data)
 
                 requestHandle.run { @MainActor in
                     guard requestHandle.isActive else { return }
-                    onError(AynaError.apiError(message: message))
+                    onError(error)
                 }
                 return
             }
@@ -740,6 +724,30 @@ final class OpenAIImageService: @unchecked Sendable {
             self?.parseResponse(data, context: context)
         }
         requestHandle.resume(task)
+    }
+
+    private static let nonRetryableRateLimitCodes: Set<String> = [
+        "insufficient_quota",
+        "billing_hard_limit_reached",
+        "billing_not_active",
+    ]
+
+    private static func httpResponseError(statusCode: Int, data: Data) -> AynaError {
+        if statusCode == 429,
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let errorObject = json["error"] as? [String: Any]
+        {
+            let code = (errorObject["code"] as? String)?.lowercased()
+            let type = (errorObject["type"] as? String)?.lowercased()
+            if code.map(nonRetryableRateLimitCodes.contains) == true
+                || type.map(nonRetryableRateLimitCodes.contains) == true
+            {
+                let message = (errorObject["message"] as? String)
+                    ?? "Quota exceeded. Check your plan and billing details."
+                return .apiError(message: message)
+            }
+        }
+        return AynaError.fromHTTPResponse(statusCode: statusCode, data: data)
     }
 }
 

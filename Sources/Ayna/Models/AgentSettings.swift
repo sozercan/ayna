@@ -80,34 +80,79 @@ struct AgentSettings: Codable, Sendable {
     final class AgentSettingsStore {
         static let shared = AgentSettingsStore()
 
+        private var builtinToolService: BuiltinToolService?
+        private var permissionService: PermissionService?
+        private var webFetchService: WebFetchService
+        private let saveSettings: (AgentSettings) -> Void
+
         var settings: AgentSettings {
             didSet {
-                settings.save()
+                saveSettings(settings)
                 applyToServices()
             }
         }
 
-        private init() {
-            settings = AgentSettings.load()
-            Task { @MainActor in
-                self.applyToServices()
+        convenience init() {
+            self.init(
+                initialSettings: AgentSettings.load(),
+                webFetchService: WebFetchService.shared,
+                saveSettings: { $0.save() }
+            )
+        }
+
+        init(
+            initialSettings: AgentSettings,
+            builtinToolService: BuiltinToolService? = nil,
+            permissionService: PermissionService? = nil,
+            webFetchService: WebFetchService = WebFetchService.shared,
+            saveSettings: @escaping (AgentSettings) -> Void = { _ in }
+        ) {
+            settings = initialSettings
+            self.builtinToolService = builtinToolService
+            self.permissionService = permissionService
+            self.webFetchService = webFetchService
+            self.saveSettings = saveSettings
+            applyToServices()
+        }
+
+        func attach(
+            builtinToolService: BuiltinToolService,
+            permissionService: PermissionService,
+            webFetchService: WebFetchService? = nil
+        ) {
+            self.builtinToolService = builtinToolService
+            self.permissionService = permissionService
+            if let webFetchService {
+                self.webFetchService = webFetchService
             }
+            applyToServices()
         }
 
         func applyToServices() {
-            guard let builtinService = AIService.shared.builtinToolService,
-                  let permissionService = AIService.shared.permissionService
-            else {
-                return
+            Self.apply(
+                settings,
+                builtinToolService: builtinToolService,
+                permissionService: permissionService,
+                webFetchService: webFetchService
+            )
+        }
+
+        static func apply(
+            _ settings: AgentSettings,
+            builtinToolService: BuiltinToolService?,
+            permissionService: PermissionService?,
+            webFetchService: WebFetchService? = WebFetchService.shared
+        ) {
+            builtinToolService?.apply(settings)
+            if let permissionService {
+                permissionService.approvalTimeoutSeconds = settings.approvalTimeoutSeconds
+                permissionService.persistApprovalsAcrossSessions = settings.persistApprovals
             }
 
-            builtinService.apply(settings)
-            permissionService.approvalTimeoutSeconds = settings.approvalTimeoutSeconds
-            permissionService.persistApprovalsAcrossSessions = settings.persistApprovals
-
-            WebFetchService.shared.isEnabled = settings.isEnabled
-                && settings.permissionLevel(for: WebFetchService.toolName) != .denied
-            WebFetchService.shared.timeoutSeconds = settings.commandTimeoutSeconds
+            if let webFetchService {
+                webFetchService.permissionService = permissionService
+                webFetchService.apply(settings)
+            }
         }
 
         func resetToDefaults() {

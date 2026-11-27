@@ -3,38 +3,8 @@ import UniformTypeIdentifiers
 import XCTest
 
 final class IOSSmokeUITests: IOSUITestCase {
-    private nonisolated(unsafe) static var navigationWorks: Bool?
-
-    override func setUpWithError() throws {
-        try super.setUpWithError()
-
-        if IOSSmokeUITests.navigationWorks == nil {
-            IOSSmokeUITests.navigationWorks = checkNavigationWorks()
-        }
-    }
-
-    private func checkNavigationWorks() -> Bool {
-        let sidebarEmptyButton = app.buttons["sidebar.emptyState.newConversationButton"]
-        let newButton = app.buttons["sidebar.newConversationButton"]
-
-        if sidebarEmptyButton.waitForExistence(timeout: UITestTimeout.immediate), sidebarEmptyButton.isHittable {
-            sidebarEmptyButton.tap()
-        } else if newButton.waitForExistence(timeout: UITestTimeout.immediate), newButton.isHittable {
-            newButton.tap()
-        }
-
-        let composer = app.waitForTextInput(identifier: "newchat.composer.textEditor", timeout: UITestTimeout.normal)
-        return composer != nil
-    }
-
-    private func skipIfNavigationBroken() throws {
-        guard IOSSmokeUITests.navigationWorks == true else {
-            throw XCTSkip("iOS 26 NavigationSplitView: columnVisibility = .detailOnly doesn't navigate to detail view on compact size class.")
-        }
-    }
-
     func testComposerPastesImagesPlainTextAndMixedContent() throws {
-        try skipIfNavigationBroken()
+        tapNewConversationButton()
 
         let pasteboard = UIPasteboard.general
         pasteboard.items = []
@@ -96,9 +66,7 @@ final class IOSSmokeUITests: IOSUITestCase {
         )
     }
 
-    func testNewConversationCreationAndSidebarListing() throws {
-        try skipIfNavigationBroken()
-
+    func testNewConversationCreationAndSidebarListing() {
         let messageText = "Hello from iOS UI test"
 
         sendNewChatMessage(messageText)
@@ -120,9 +88,61 @@ final class IOSSmokeUITests: IOSUITestCase {
         XCTAssertTrue(conversationTitle.waitForExistence(timeout: UITestTimeout.async), "Conversation should appear in sidebar")
     }
 
-    func testSearchConversations() throws {
-        try skipIfNavigationBroken()
+    func testSelectAndReopenSavedConversation() {
+        let messageText = "Reopen saved conversation test"
 
+        sendNewChatMessage(messageText)
+
+        let initialComposer = app.waitForTextInput(identifier: "chat.composer.textEditor", timeout: UITestTimeout.normal)
+            ?? app.textInput(identifier: "chat.composer.textEditor")
+        XCTAssertTrue(initialComposer.waitForExistence(timeout: UITestTimeout.normal), "Chat composer should appear after sending message")
+
+        let responsePredicate = NSPredicate(format: "label CONTAINS %@", "UI Test Response")
+        let messagePredicate = NSPredicate(format: "label CONTAINS %@", messageText)
+        let initialResponse = app.staticTexts.matching(responsePredicate).firstMatch
+        XCTAssertTrue(initialResponse.waitForExistence(timeout: UITestTimeout.async), "Mock response should appear")
+
+        let conversationList = app.collectionViews["sidebar.conversationList"]
+
+        for attempt in 1 ... 2 {
+            ensureSidebarVisible()
+
+            XCTAssertTrue(
+                conversationList.waitForExistence(timeout: UITestTimeout.normal),
+                "Conversation list should exist on sidebar return (attempt \(attempt))"
+            )
+
+            let savedConversationRow = conversationList.staticTexts[messageText].firstMatch
+            XCTAssertTrue(
+                savedConversationRow.waitForExistence(timeout: UITestTimeout.async),
+                "Saved conversation row should exist in sidebar (attempt \(attempt))"
+            )
+            savedConversationRow.tap()
+
+            let chatComposer = app.waitForTextInput(identifier: "chat.composer.textEditor", timeout: UITestTimeout.normal)
+                ?? app.textInput(identifier: "chat.composer.textEditor")
+            XCTAssertTrue(
+                chatComposer.waitForExistence(timeout: UITestTimeout.normal),
+                "Chat composer should appear after selecting saved conversation (attempt \(attempt))"
+            )
+
+            let messagesList = app.descendants(matching: .any)["chat.messagesList"].firstMatch
+            XCTAssertTrue(
+                messagesList.waitForExistence(timeout: UITestTimeout.normal),
+                "Chat messages list should appear after selecting saved conversation (attempt \(attempt))"
+            )
+            XCTAssertTrue(
+                messagesList.staticTexts.matching(messagePredicate).firstMatch.waitForExistence(timeout: UITestTimeout.async),
+                "Saved user message should appear when opening conversation (attempt \(attempt))"
+            )
+            XCTAssertTrue(
+                messagesList.staticTexts.matching(responsePredicate).firstMatch.waitForExistence(timeout: UITestTimeout.async),
+                "Saved assistant response should appear when opening conversation (attempt \(attempt))"
+            )
+        }
+    }
+
+    func testSearchConversations() {
         sendNewChatMessage("Alpha conversation")
         ensureSidebarVisible()
         XCTAssertTrue(app.staticTexts["Alpha conversation"].waitForExistence(timeout: UITestTimeout.async))
@@ -141,9 +161,7 @@ final class IOSSmokeUITests: IOSUITestCase {
         XCTAssertFalse(app.staticTexts["Beta conversation"].exists, "Beta should be filtered out")
     }
 
-    func testSwipeToDeleteConversation() throws {
-        try skipIfNavigationBroken()
-
+    func testSwipeToDeleteConversation() {
         let messageText = "Delete me"
         sendNewChatMessage(messageText)
         ensureSidebarVisible()
@@ -174,9 +192,7 @@ final class IOSSmokeUITests: IOSUITestCase {
         XCTAssertTrue(autoGenerateToggle.waitForExistence(timeout: UITestTimeout.normal), "Settings sheet should open with auto-generate toggle")
     }
 
-    func testModelSelectorOpens() throws {
-        try skipIfNavigationBroken()
-
+    func testModelSelectorOpens() {
         sendNewChatMessage("Model selector test")
 
         let modelSelector = app.buttons["chat.modelSelector"]
@@ -187,8 +203,8 @@ final class IOSSmokeUITests: IOSUITestCase {
         XCTAssertTrue(doneButton.waitForExistence(timeout: UITestTimeout.normal), "Model selector sheet should open")
     }
 
-    func testEmptyStateShowsWelcome() throws {
-        try skipIfNavigationBroken()
+    func testEmptyStateShowsWelcome() {
+        tapNewConversationButton()
 
         let noModelsText = app.staticTexts["No Models Available"]
         XCTAssertFalse(noModelsText.exists, "Onboarding view is showing - UI test model was not configured")

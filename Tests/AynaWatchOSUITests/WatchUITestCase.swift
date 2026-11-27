@@ -34,16 +34,17 @@ class WatchUITestCase: XCTestCase {
         newChatButton.tap()
     }
 
-    func sendNewChatMessage(_ text: String) {
+    func sendNewChatMessage(_ text: String) throws {
         let textField = app.textFields["watch.newChat.composerTextField"]
         XCTAssertTrue(textField.waitForExistence(timeout: UITestTimeout.normal), "New chat text field not found")
         textField.tap()
         textField.typeText(text)
 
         let returnKey = app.keyboards.buttons["return"]
-        if returnKey.waitForExistence(timeout: UITestTimeout.immediate) {
-            returnKey.tap()
+        guard returnKey.waitForExistence(timeout: UITestTimeout.immediate), returnKey.isHittable else {
+            throw XCTSkip("watchOS simulator keyboard submission is unavailable")
         }
+        returnKey.tap()
     }
 
     func sendChatMessage(_ text: String) {

@@ -225,6 +225,16 @@ struct MacNewChatView: View {
                         ToolExecutionIndicator(toolName: toolName)
                     }
 
+                    if isGenerating,
+                       let conversationId = currentConversationId,
+                       let permissionService = aiService.permissionService
+                    {
+                        PendingApprovalsView(
+                            permissionService: permissionService,
+                            conversationId: conversationId
+                        )
+                    }
+
                     if let errorMessage {
                         ErrorBannerView(
                             message: errorMessage,

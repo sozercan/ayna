@@ -6,12 +6,6 @@
     @Suite("AccessibilityService Tests")
     @MainActor
     struct AccessibilityServiceTests {
-        var service: AccessibilityService
-
-        init() {
-            service = AccessibilityService.shared
-        }
-
         @Test("Window identity preserves PID and index at signed PID edges")
         func windowIdentityPreservesPIDAndIndexAtSignedPIDEdges() {
             let maximumPID: pid_t = .max
@@ -92,53 +86,157 @@
             #expect(Set([first, equivalent, distinct]).count == 2)
         }
 
-        @Test("Check permission does not prompt when false")
-        func checkPermissionDoesNotPromptWhenFalse() {
-            let result = service.checkPermission(prompt: false)
-            #expect(result == true || result == false)
+        @Test("Check permission forwards prompt flag and updates isEnabled")
+        func checkPermissionForwardsPromptAndUpdatesIsEnabled() {
+            var receivedPrompts: [Bool] = []
+            var trusted = false
+
+            let service = AccessibilityService(
+                isProcessTrusted: { prompt in
+                    receivedPrompts.append(prompt)
+                    return trusted
+                }
+            )
+
+            #expect(receivedPrompts == [false])
+            #expect(!service.isEnabled)
+
+            trusted = true
+            let promptedResult = service.checkPermission(prompt: true)
+            #expect(promptedResult)
+            #expect(service.isEnabled)
+            #expect(receivedPrompts == [false, true])
+
+            trusted = false
+            let silentResult = service.checkPermission(prompt: false)
+            #expect(!silentResult)
+            #expect(!service.isEnabled)
+            #expect(receivedPrompts == [false, true, false])
         }
 
-        @Test("isEnabled matches checkPermission")
-        func isEnabledMatchesCheckPermission() {
-            let checkResult = service.checkPermission(prompt: false)
-            #expect(service.isEnabled == checkResult)
-        }
+        @Test("Start and stop monitoring manage polling task and post permission change notification")
+        func monitoringPostsNotificationWhenPermissionChanges() async {
+            let notificationCenter = NotificationCenter()
+            var trusted = false
+            var observedEnabledValues: [Bool] = []
 
-        @Test("Start monitoring creates task")
-        func startMonitoringCreatesTask() {
+            let observer = notificationCenter.addObserver(
+                forName: .accessibilityPermissionChanged,
+                object: nil,
+                queue: nil
+            ) { notification in
+                if let enabled = notification.userInfo?["enabled"] as? Bool {
+                    MainActor.assumeIsolated {
+                        observedEnabledValues.append(enabled)
+                    }
+                }
+            }
+            defer { notificationCenter.removeObserver(observer) }
+
+            let service = AccessibilityService(
+                pollingInterval: .milliseconds(10),
+                notificationCenter: notificationCenter,
+                isProcessTrusted: { _ in trusted }
+            )
+
+            #expect(!service.isMonitoring)
+
+            trusted = true
             service.startMonitoring()
-            service.stopMonitoring()
-        }
+            #expect(service.isMonitoring)
 
-        @Test("Stop monitoring cancels task")
-        func stopMonitoringCancelsTask() {
             service.startMonitoring()
-            service.stopMonitoring()
-        }
+            #expect(service.isMonitoring)
 
-        @Test("Multiple start monitoring calls")
-        func multipleStartMonitoringCalls() {
-            service.startMonitoring()
-            service.startMonitoring()
-            service.stopMonitoring()
-        }
-
-        @Test("Create application element returns valid element")
-        func createApplicationElementReturnsValidElement() {
-            guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName != nil }) else {
-                Issue.record("No running applications found - skipping test")
-                return
+            for _ in 0 ..< 50 where observedEnabledValues.isEmpty {
+                try? await Task.sleep(for: .milliseconds(10))
             }
 
-            let element = service.createApplicationElement(for: app)
-            #expect(element != nil)
+            service.stopMonitoring()
+            #expect(!service.isMonitoring)
+            #expect(service.isEnabled)
+            #expect(observedEnabledValues == [true])
         }
 
-        @Test("Get role returns nil for invalid element")
-        func getRoleReturnsNilForInvalidElement() {
-            let element = AXUIElementCreateApplication(0)
-            let role = service.getRole(element)
-            _ = role
+        @Test("Open accessibility preferences targets Accessibility privacy pane")
+        func openAccessibilityPreferencesTargetsPrivacyPane() {
+            var openedURL: URL?
+
+            let service = AccessibilityService(
+                isProcessTrusted: { _ in true },
+                openPreferencesURL: { url in
+                    openedURL = url
+                    return true
+                }
+            )
+
+            service.openAccessibilityPreferences()
+
+            #expect(openedURL?.absoluteString == "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        }
+
+        @Test("Create application element forwards process identifier of running application")
+        func createApplicationElementMatchesCurrentProcessIdentifier() {
+            var capturedPID: pid_t?
+            let stubElement = AXUIElementCreateApplication(0)
+            let service = AccessibilityService(
+                isProcessTrusted: { _ in true },
+                applicationElementFactory: { pid in
+                    capturedPID = pid
+                    return stubElement
+                }
+            )
+            let currentApp = NSRunningApplication.current
+            let element = service.createApplicationElement(for: currentApp)
+
+            #expect(capturedPID == currentApp.processIdentifier)
+            #expect(CFEqual(element, stubElement))
+        }
+
+        @Test("Get role returns role string on success and nil on AX failure or non-string value")
+        func getRoleReturnsExpectedValueForAXOutcomes() {
+            let element = AXUIElementCreateApplication(42)
+
+            let successService = AccessibilityService(
+                isProcessTrusted: { _ in true },
+                copyAttributeValue: { _, attribute in
+                    #expect(attribute as String == kAXRoleAttribute as String)
+                    return (.success, "AXTextArea" as CFString)
+                }
+            )
+            #expect(successService.getRole(element) == "AXTextArea")
+
+            let failureService = AccessibilityService(
+                isProcessTrusted: { _ in true },
+                copyAttributeValue: { _, _ in (.apiDisabled, nil) }
+            )
+            #expect(failureService.getRole(element) == nil)
+
+            let nonStringService = AccessibilityService(
+                isProcessTrusted: { _ in true },
+                copyAttributeValue: { _, _ in (.success, NSNumber(value: 7)) }
+            )
+            #expect(nonStringService.getRole(element) == nil)
+        }
+
+        @Test("Get URL handles URL and String attribute values")
+        func getURLHandlesURLAndStringAttributes() {
+            let element = AXUIElementCreateApplication(42)
+
+            let urlService = AccessibilityService(
+                isProcessTrusted: { _ in true },
+                copyAttributeValue: { _, attribute in
+                    #expect(attribute as String == kAXURLAttribute as String)
+                    return (.success, NSURL(string: "https://example.com/docs"))
+                }
+            )
+            #expect(urlService.getURL(element) == "https://example.com/docs")
+
+            let stringService = AccessibilityService(
+                isProcessTrusted: { _ in true },
+                copyAttributeValue: { _, _ in (.success, "https://example.org" as CFString) }
+            )
+            #expect(stringService.getURL(element) == "https://example.org")
         }
     }
 #endif

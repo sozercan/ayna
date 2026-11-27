@@ -52,7 +52,7 @@
                     .padding(.horizontal, 4)
                 }
                 .defaultScrollAnchor(.bottom)
-                .accessibilityIdentifier(TestIdentifiers.Watch.newChatView)
+                .accessibilityIdentifier(TestIdentifiers.Watch.NewChatView.view)
             }
 
             private var composerBar: some View {
@@ -63,7 +63,7 @@
                     .onSubmit {
                         sendFirstMessage()
                     }
-                    .accessibilityIdentifier(TestIdentifiers.Watch.newChatComposerTextField)
+                    .accessibilityIdentifier(TestIdentifiers.Watch.NewChatView.composerTextField)
             }
 
             private func sendFirstMessage() {

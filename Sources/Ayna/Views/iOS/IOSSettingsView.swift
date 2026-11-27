@@ -229,6 +229,7 @@ struct IOSSettingsView: View {
             aiService.modelEndpoints.removeValue(forKey: model)
             aiService.modelAPIKeys.removeValue(forKey: model)
             aiService.modelEndpointTypes.removeValue(forKey: model)
+            aiService.modelThinkingBudgets.removeValue(forKey: model)
 
             if aiService.selectedModel == model, let first = aiService.customModels.first {
                 aiService.selectedModel = first
@@ -264,6 +265,9 @@ struct IOSSettingsView: View {
         }
         if let endpointType = aiService.modelEndpointTypes[model] {
             aiService.modelEndpointTypes[newName] = endpointType
+        }
+        if let thinkingBudget = aiService.modelThinkingBudgets[model] {
+            aiService.modelThinkingBudgets[newName] = thinkingBudget
         }
     }
 }
@@ -349,6 +353,7 @@ struct IOSModelEditView: View {
     @State private var apiKey = ""
     @State private var endpoint = ""
     @State private var endpointType: APIEndpointType = .chatCompletions
+    @State private var thinkingBudget: AnthropicThinkingBudget = .off
 
     init(modelName: String, isNew: Bool) {
         _modelName = State(initialValue: modelName)
@@ -411,6 +416,13 @@ struct IOSModelEditView: View {
                         .autocorrectionDisabled()
                         .accessibilityLabel("Endpoint URL")
                         .accessibilityIdentifier("settings.addModel.anthropicEndpoint")
+
+                    Picker("Thinking Budget", selection: $thinkingBudget) {
+                        ForEach(AnthropicThinkingBudget.allCases) { preset in
+                            Text(preset.displayName).tag(preset)
+                        }
+                    }
+                    .accessibilityIdentifier("settings.addModel.anthropicThinkingBudget")
                 }
 
                 Section {
@@ -469,6 +481,7 @@ struct IOSModelEditView: View {
         if let savedType = aiService.modelEndpointTypes[modelName] {
             endpointType = savedType
         }
+        thinkingBudget = AnthropicThinkingBudget.preset(for: aiService.thinkingBudget(for: modelName))
     }
 
     private func saveModel() {
@@ -517,6 +530,7 @@ struct IOSModelEditView: View {
             aiService.modelAPIKeys.removeValue(forKey: originalModelName)
             aiService.modelEndpoints.removeValue(forKey: originalModelName)
             aiService.modelEndpointTypes.removeValue(forKey: originalModelName)
+            aiService.modelThinkingBudgets.removeValue(forKey: originalModelName)
 
             if aiService.selectedModel == originalModelName {
                 aiService.selectedModel = trimmedName
@@ -533,13 +547,23 @@ struct IOSModelEditView: View {
                 aiService.modelEndpoints[trimmedName] = endpoint
             }
             aiService.modelEndpointTypes[trimmedName] = endpointType
+            aiService.modelThinkingBudgets.removeValue(forKey: trimmedName)
         } else if provider == .anthropic {
             if !apiKey.isEmpty {
                 aiService.modelAPIKeys[trimmedName] = apiKey
             }
             if !endpoint.isEmpty {
                 aiService.modelEndpoints[trimmedName] = endpoint
+            } else {
+                aiService.modelEndpoints.removeValue(forKey: trimmedName)
             }
+            if let budgetTokens = thinkingBudget.budgetTokens {
+                aiService.modelThinkingBudgets[trimmedName] = budgetTokens
+            } else {
+                aiService.modelThinkingBudgets.removeValue(forKey: trimmedName)
+            }
+        } else {
+            aiService.modelThinkingBudgets.removeValue(forKey: trimmedName)
         }
 
         if aiService.customModels.count == 1 {
