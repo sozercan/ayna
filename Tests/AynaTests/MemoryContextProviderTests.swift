@@ -2,23 +2,57 @@
 import Foundation
 import Testing
 
-@Suite("MemoryContextProvider Tests")
+@Suite("MemoryContextProvider Tests", .serialized)
 @MainActor
 struct MemoryContextProviderTests {
-    @Test
-    func `build context returns empty when memory disabled`() {
-        let memoryService = UserMemoryService()
-        let metadataService = SessionMetadataService.shared
-        let summaryService = ConversationSummaryService()
+    private let suiteName: String
+    private let defaults: UserDefaults
 
+    init() {
+        suiteName = "MemoryContextProviderTests-\(UUID().uuidString)"
+        guard let suite = UserDefaults(suiteName: suiteName) else {
+            fatalError("Failed to create UserDefaults suite for MemoryContextProviderTests")
+        }
+        defaults = suite
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    private struct ProviderFixture {
+        let provider: MemoryContextProvider
+        let memoryService: UserMemoryService
+        let summaryService: ConversationSummaryService
+    }
+
+    private func makeProvider() throws -> ProviderFixture {
+        let directory = try TestHelpers.makeTemporaryDirectory()
+        let store = EncryptedMemoryStore(
+            directoryURL: directory,
+            keyIdentifier: UUID().uuidString,
+            keychain: InMemoryKeychainStorage()
+        )
+        let memoryService = UserMemoryService(store: store)
+        let metadataService = SessionMetadataService.shared
+        let summaryService = ConversationSummaryService(store: store)
+        let storage = defaults
         let provider = MemoryContextProvider(
             memoryService: memoryService,
             metadataService: metadataService,
+            summaryService: summaryService,
+            preferencesStorageProvider: { storage }
+        )
+        return ProviderFixture(
+            provider: provider,
+            memoryService: memoryService,
             summaryService: summaryService
         )
+    }
 
-        provider.setMemoryEnabled(false)
-        let context = provider.buildContext()
+    @Test
+    func `build context returns empty when memory disabled`() throws {
+        let fixture = try makeProvider()
+
+        fixture.provider.setMemoryEnabled(false)
+        let context = fixture.provider.buildContext()
 
         #expect(!context.hasContent)
         #expect(context.sessionMetadata == nil)
@@ -27,21 +61,13 @@ struct MemoryContextProviderTests {
     }
 
     @Test
-    func `build context includes user memory when enabled`() {
-        let memoryService = UserMemoryService()
-        let metadataService = SessionMetadataService.shared
-        let summaryService = ConversationSummaryService()
+    func `build context includes user memory when enabled`() throws {
+        let fixture = try makeProvider()
 
-        let provider = MemoryContextProvider(
-            memoryService: memoryService,
-            metadataService: metadataService,
-            summaryService: summaryService
-        )
+        fixture.provider.setMemoryEnabled(true)
+        fixture.memoryService.addFact("Prefers Swift")
 
-        provider.setMemoryEnabled(true)
-        memoryService.addFact("Prefers Swift")
-
-        let context = provider.buildContext()
+        let context = fixture.provider.buildContext()
 
         #expect(context.hasContent)
         #expect(context.userMemory != nil)
@@ -49,70 +75,45 @@ struct MemoryContextProviderTests {
     }
 
     @Test
-    func `build context excludes current conversation from summaries`() {
-        let memoryService = UserMemoryService()
-        let metadataService = SessionMetadataService.shared
-        let summaryService = ConversationSummaryService()
+    func `build context excludes current conversation from summaries`() throws {
+        let fixture = try makeProvider()
 
-        let provider = MemoryContextProvider(
-            memoryService: memoryService,
-            metadataService: metadataService,
-            summaryService: summaryService
-        )
-
-        provider.setMemoryEnabled(true)
+        fixture.provider.setMemoryEnabled(true)
 
         let conversation1 = TestHelpers.sampleConversation(title: "First Chat")
         let conversation2 = TestHelpers.sampleConversation(title: "Second Chat")
 
-        summaryService.updateSummary(for: conversation1)
-        summaryService.updateSummary(for: conversation2)
+        fixture.summaryService.updateSummary(for: conversation1)
+        fixture.summaryService.updateSummary(for: conversation2)
 
-        let context = provider.buildContext(currentConversationId: conversation1.id)
+        let context = fixture.provider.buildContext(currentConversationId: conversation1.id)
 
-        if let summaries = context.conversationSummaries {
-            #expect(!summaries.contains("First Chat"))
-            #expect(summaries.contains("Second Chat"))
-        }
+        let summaries = try #require(context.conversationSummaries)
+        #expect(!summaries.contains("First Chat"))
+        #expect(summaries.contains("Second Chat"))
     }
 
     @Test
-    func `process memory command returns nil when disabled`() {
-        let memoryService = UserMemoryService()
-        let metadataService = SessionMetadataService.shared
-        let summaryService = ConversationSummaryService()
+    func `process memory command returns nil when disabled`() throws {
+        let fixture = try makeProvider()
 
-        let provider = MemoryContextProvider(
-            memoryService: memoryService,
-            metadataService: metadataService,
-            summaryService: summaryService
-        )
-
-        provider.setMemoryEnabled(false)
-        let response = provider.processMemoryCommand(in: "Remember that I like Swift")
+        fixture.provider.setMemoryEnabled(false)
+        let response = fixture.provider.processMemoryCommand(in: "Remember that I like Swift")
 
         #expect(response == nil)
-        #expect(memoryService.activeFacts().isEmpty)
+        #expect(fixture.memoryService.activeFacts().isEmpty)
     }
 
     @Test
-    func `process memory command stores fact when enabled`() {
-        let memoryService = UserMemoryService()
-        let metadataService = SessionMetadataService.shared
-        let summaryService = ConversationSummaryService()
+    func `process memory command stores fact when enabled`() throws {
+        let fixture = try makeProvider()
 
-        let provider = MemoryContextProvider(
-            memoryService: memoryService,
-            metadataService: metadataService,
-            summaryService: summaryService
-        )
+        fixture.provider.setMemoryEnabled(true)
 
-        provider.setMemoryEnabled(true)
-
-        let response = provider.processMemoryCommand(in: "Remember that I prefer dark mode")
+        let response = fixture.provider.processMemoryCommand(in: "Remember that I prefer dark mode")
 
         #expect(response != nil)
-        #expect(memoryService.activeFacts().count == 1)
+        #expect(fixture.memoryService.activeFacts().count == 1)
     }
 
     @Test
@@ -149,22 +150,14 @@ struct MemoryContextProviderTests {
     }
 
     @Test
-    func `memory fact count reflects service state`() {
-        let memoryService = UserMemoryService()
-        let metadataService = SessionMetadataService.shared
-        let summaryService = ConversationSummaryService()
+    func `memory fact count reflects service state`() throws {
+        let fixture = try makeProvider()
 
-        let provider = MemoryContextProvider(
-            memoryService: memoryService,
-            metadataService: metadataService,
-            summaryService: summaryService
-        )
+        #expect(fixture.provider.memoryFactCount == 0)
 
-        #expect(provider.memoryFactCount == 0)
+        fixture.memoryService.addFact("Fact 1")
+        fixture.memoryService.addFact("Fact 2")
 
-        memoryService.addFact("Fact 1")
-        memoryService.addFact("Fact 2")
-
-        #expect(provider.memoryFactCount == 2)
+        #expect(fixture.provider.memoryFactCount == 2)
     }
 }

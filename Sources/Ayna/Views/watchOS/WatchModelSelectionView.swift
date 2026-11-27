@@ -62,9 +62,11 @@
                                     }
                                 }
                             }
+                            .accessibilityIdentifier(TestIdentifiers.Watch.modelRow(for: model))
                         }
                     }
                 }
+                .accessibilityIdentifier(TestIdentifiers.Watch.modelList)
                 .navigationTitle("Models")
                 .onAppear {
                     if WatchModelSelectionCoordinator.shouldAutoSelect(

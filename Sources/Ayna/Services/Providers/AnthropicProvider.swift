@@ -22,15 +22,18 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     }
 
     private let retryDelay: @Sendable (Int, Date?) async -> Void
+    private let onNonStreamHandled: (@MainActor () -> Void)?
 
     init(
         urlSession: URLSession,
         retryDelay: @escaping @Sendable (Int, Date?) async -> Void = { attempt, retryAfter in
             await AIRetryPolicy.wait(for: attempt, retryAfterDate: retryAfter)
-        }
+        },
+        onNonStreamHandled: (@MainActor () -> Void)? = nil
     ) {
         self.urlSession = urlSession
         self.retryDelay = retryDelay
+        self.onNonStreamHandled = onNonStreamHandled
     }
 
     deinit {
@@ -68,12 +71,23 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             let message = seconds > 0
                 ? "Anthropic service temporarily unavailable. Please try again in \(seconds)s."
                 : "Anthropic service temporarily unavailable. Please try again shortly."
-            callbacks.onError(AynaError.apiError(message: message))
+            callbacks.onError(AynaError.httpError(statusCode: 503, message: message))
             return
         }
 
+        let allowThinking = !AnthropicRequestBuilder.hasAssistantToolUseHistory(messages)
+        let resolvedLimits = AnthropicOutputLimits.resolvedLimits(
+            model: config.model,
+            stream: stream,
+            requestedMaxTokens: config.maxTokens,
+            requestedBudgetTokens: config.thinkingBudget,
+            allowThinking: allowThinking
+        )
+
         var betaHeaders: [String] = []
-        if let thinkingBudget = config.thinkingBudget, thinkingBudget >= 1024 {
+        if let thinkingBudget = resolvedLimits.budgetTokens,
+           thinkingBudget >= AnthropicThinkingBudget.minimumBudgetTokens
+        {
             let model = config.model.lowercased()
             if model.contains("claude-4") || model.contains("claude-opus-4") || model.contains("claude-sonnet-4") {
                 betaHeaders.append("interleaved-thinking-2025-05-14")
@@ -84,9 +98,8 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             model: config.model,
             apiKey: config.apiKey,
             customEndpoint: config.customEndpoint,
-            maxTokens: config.maxTokens
-                ?? AnthropicOutputLimits.defaultMaxTokens(model: config.model, stream: stream),
-            budgetTokens: config.thinkingBudget,
+            maxTokens: resolvedLimits.maxTokens,
+            budgetTokens: resolvedLimits.budgetTokens,
             betaHeaders: betaHeaders
         )
 
@@ -166,7 +179,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         currentStreamTask?.cancel()
 
         if let errorMessage = checkCircuitBreaker(key: circuitKey) {
-            callbacks.onError(AynaError.apiError(message: errorMessage))
+            callbacks.onError(AynaError.httpError(statusCode: 503, message: errorMessage))
             return
         }
 
@@ -360,7 +373,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         attempt: Int = 0
     ) {
         if let errorMessage = checkCircuitBreaker(key: circuitKey) {
-            callbacks.onError(AynaError.apiError(message: errorMessage))
+            callbacks.onError(AynaError.httpError(statusCode: 503, message: errorMessage))
             return
         }
 
@@ -392,7 +405,11 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         circuitKey: String,
         attempt: Int
     ) async {
+        defer { onNonStreamHandled?() }
         if let error {
+            if let urlError = error as? URLError, urlError.code == .cancelled {
+                return
+            }
             DiagnosticsLogger.log(
                 .aiService,
                 level: .error,
@@ -600,11 +617,9 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             await MainActor.run {
                 self.currentStreamTask = nil
                 if let urlError = error as? URLError, urlError.code == .timedOut {
-                    callbacks.onError(AynaError.apiError(message:
-                        "Anthropic request timed out. The model may be slow or overloaded. Please try again."))
+                    callbacks.onError(AynaError.timeout)
                 } else if let urlError = error as? URLError, urlError.code == .networkConnectionLost {
-                    callbacks.onError(AynaError.apiError(message:
-                        "Network connection was lost. The Anthropic server may have rejected the request."))
+                    callbacks.onError(AynaError.networkError(underlying: urlError))
                 } else if error is CancellationError {
                 } else {
                     callbacks.onError(error)

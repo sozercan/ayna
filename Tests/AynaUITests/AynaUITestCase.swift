@@ -55,4 +55,8 @@ enum TestIdentifiers {
         static let textEditor = "newchat.composer.textEditor"
         static let sendButton = "newchat.composer.sendButton"
     }
+
+    enum ChatView {
+        static let messagesList = "chat.messagesList"
+    }
 }

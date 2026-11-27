@@ -1717,7 +1717,6 @@
             onChunk: @escaping @Sendable (String) -> Void,
             onComplete: @escaping @Sendable () -> Void,
             onError: @escaping @Sendable (Error) -> Void,
-            onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?,
             onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
             onReasoning: (@Sendable (String) -> Void)?,
             requestFlightID: RequestFlightID?
@@ -1746,7 +1745,6 @@
                 onChunk: onChunk,
                 onComplete: onComplete,
                 onError: onError,
-                onToolCall: onToolCall,
                 onToolCallRequested: onToolCallRequested,
                 onReasoning: onReasoning,
                 requestFlightID: requestFlightID

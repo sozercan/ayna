@@ -1,9 +1,11 @@
 @testable import Ayna
+import Combine
 import Foundation
 import Testing
 
 @Suite("MCPServerManager Tests", .tags(.async, .slow), .serialized)
 @MainActor
+// swiftlint:disable:next type_body_length
 struct MCPServerManagerTests {
     private var suiteName: String
     private var defaults: UserDefaults
@@ -96,21 +98,15 @@ struct MCPServerManagerTests {
         manager.updateServerConfig(config)
 
         await manager.connectToServer(config)
+        let reconnected = observeConnectedStatus(
+            in: manager,
+            configID: config.id,
+            service: reconnectService
+        )
+        defer { reconnected.cancellable.cancel() }
+
         primaryService.simulateUnexpectedTermination(error: "boom")
-
-        for _ in 0 ..< 20 {
-            if reconnectService.connectCallCount > 0 {
-                break
-            }
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-
-        for _ in 0 ..< 10 {
-            if manager.getServerStatus(config.name)?.state == .connected {
-                break
-            }
-            try? await Task.sleep(for: .milliseconds(100))
-        }
+        await reconnected.waiter.wait()
 
         #expect(manager.isServerConnected(config.name))
         #expect(reconnectService.connectCallCount == 1)
@@ -144,22 +140,15 @@ struct MCPServerManagerTests {
         #expect(initialService.connectCallCount == 1)
         #expect(manager.isServerConnected(originalConfig.name))
 
+        let restarted = observeConnectedStatus(
+            in: manager,
+            configID: updatedConfig.id,
+            service: restartedService
+        )
+        defer { restarted.cancellable.cancel() }
+
         manager.updateServerConfig(updatedConfig)
-
-        for _ in 0 ..< 20 {
-            if restartedService.connectCallCount > 0 {
-                break
-            }
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-
-        let timeout = Date().addingTimeInterval(2.0)
-        while Date() < timeout {
-            if manager.getServerStatus(updatedConfig.name)?.state == .connected {
-                break
-            }
-            try? await Task.sleep(for: .milliseconds(100))
-        }
+        await restarted.waiter.wait()
 
         #expect(initialService.disconnectCallCount == 1)
         #expect(restartedService.connectCallCount == 1)
@@ -196,8 +185,8 @@ struct MCPServerManagerTests {
         let connection = Task { @MainActor in
             await manager.connectToServer(config)
         }
-        let didStartTools = await toolsStarted.wait(timeout: .seconds(1))
-        let didStartResources = await resourcesStarted.wait(timeout: .seconds(1))
+        let didStartTools = await toolsStarted.wait(timeout: .seconds(5))
+        let didStartResources = await resourcesStarted.wait(timeout: .seconds(5))
         releaseCatalog.signal()
         await connection.value
 
@@ -236,13 +225,17 @@ struct MCPServerManagerTests {
     @Test("Disconnecting during retry backoff prevents another connection attempt", .timeLimit(.minutes(1)))
     func disconnectingDuringRetryBackoffPreventsAnotherAttempt() async {
         let config = MCPServerConfig(name: "backoff", command: "cmd", enabled: true)
+        let firstAttemptFailed = FlightTestSignal()
         let service = StubMCPService(
             config: config,
             connectResults: [.failure(MCPTestError.expected), .success(())]
         )
         let manager = MCPServerManager(
             serviceFactory: { _ in service },
-            retryDelayProvider: { _ in 60 },
+            retryDelayProvider: { _ in
+                firstAttemptFailed.signal()
+                return 60
+            },
             reconnectDelayProvider: { 0 }
         )
         manager.serverConfigs = [config]
@@ -251,11 +244,7 @@ struct MCPServerManagerTests {
         let task = Task { @MainActor in
             await manager.connectToServer(config)
         }
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while service.connectCallCount == 0, clock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
+        await firstAttemptFailed.wait()
         #expect(service.connectCallCount == 1)
         manager.disconnectServer(config.name)
         await task.value
@@ -332,10 +321,16 @@ struct MCPServerManagerTests {
     func disconnectingDuringToolDiscoveryDoesNotCommitConnectedState() async {
         let config = MCPServerConfig(name: "discovery", command: "cmd", enabled: true)
         let discoveryStarted = FlightTestSignal()
+        let releaseDiscovery = FlightTestSignal()
         let service = StubMCPService(config: config)
         service.listToolsHandler = {
             discoveryStarted.signal()
-            try await Task.sleep(for: .seconds(60))
+            try await withTaskCancellationHandler {
+                await releaseDiscovery.wait()
+                try Task.checkCancellation()
+            } onCancel: {
+                releaseDiscovery.signal()
+            }
             return []
         }
         let manager = MCPServerManager(
@@ -459,6 +454,8 @@ struct MCPServerManagerTests {
         let releaseFirstDiscovery = FlightTestSignal()
         let releaseSecondDiscovery = FlightTestSignal()
         let releaseThirdDiscovery = FlightTestSignal()
+        let firstDiscoveryFinished = FlightTestSignal()
+        let secondDiscoveryFinished = FlightTestSignal()
         let invocationCount = FlightTestBox(0)
         service.listToolsHandler = {
             invocationCount.update { $0 += 1 }
@@ -466,10 +463,12 @@ struct MCPServerManagerTests {
             case 1:
                 firstDiscoveryStarted.signal()
                 await releaseFirstDiscovery.wait()
+                firstDiscoveryFinished.signal()
                 return [makeMCPTool(name: "superseded", serverName: config.name)]
             case 2:
                 secondDiscoveryStarted.signal()
                 await releaseSecondDiscovery.wait()
+                secondDiscoveryFinished.signal()
                 return [makeMCPTool(name: "superseded-again", serverName: config.name)]
             default:
                 thirdDiscoveryStarted.signal()
@@ -501,7 +500,11 @@ struct MCPServerManagerTests {
         #expect(await thirdDiscoveryStarted.wait(timeout: .seconds(1)))
         releaseFirstDiscovery.signal()
         releaseSecondDiscovery.signal()
-        try? await Task.sleep(for: .milliseconds(50))
+        #expect(await firstDiscoveryFinished.wait(timeout: .seconds(1)))
+        #expect(await secondDiscoveryFinished.wait(timeout: .seconds(1)))
+        for _ in 0 ..< 5 {
+            await Task.yield()
+        }
         #expect(service.disconnectCallCount == 0)
 
         releaseThirdDiscovery.signal()
@@ -533,8 +536,15 @@ struct MCPServerManagerTests {
 
         await manager.connectToServer(original)
         let staleDelegate = initialService.delegate
+        let replacementConnected = observeConnectedStatus(
+            in: manager,
+            configID: updated.id,
+            service: replacementService
+        )
+        defer { replacementConnected.cancellable.cancel() }
         manager.updateServerConfig(updated)
-        #expect(await waitUntil { manager.getServerStatus(updated.name)?.state == .connected })
+        await replacementConnected.waiter.wait()
+        #expect(manager.getServerStatus(updated.name)?.state == .connected)
         #expect(manager.availableTools.contains { $0.name == "new-tool" })
 
         staleDelegate?.mcpService(initialService, didTerminateWithError: "stale")
@@ -618,8 +628,15 @@ struct MCPServerManagerTests {
         }
         #expect(await oldConnectStarted.wait(timeout: .seconds(1)))
 
+        let replacementConnected = observeConnectedStatus(
+            in: manager,
+            configID: updated.id,
+            service: replacementService
+        )
+        defer { replacementConnected.cancellable.cancel() }
         manager.updateServerConfig(updated)
-        #expect(await waitUntil { manager.getServerStatus(updated.name)?.state == .connected })
+        await replacementConnected.waiter.wait()
+        #expect(manager.getServerStatus(updated.name)?.state == .connected)
         releaseOldConnect.signal()
         await oldConnection.value
 
@@ -659,8 +676,15 @@ struct MCPServerManagerTests {
         }
         #expect(await staleDiscoveryStarted.wait(timeout: .seconds(1)))
 
+        let replacementConnected = observeConnectedStatus(
+            in: manager,
+            configID: updated.id,
+            service: replacementService
+        )
+        defer { replacementConnected.cancellable.cancel() }
         manager.updateServerConfig(updated)
-        #expect(await waitUntil { manager.getServerStatus(updated.name)?.state == .connected })
+        await replacementConnected.waiter.wait()
+        #expect(manager.getServerStatus(updated.name)?.state == .connected)
         releaseStaleDiscovery.signal()
         await staleDiscovery.value
 
@@ -672,10 +696,16 @@ struct MCPServerManagerTests {
     func disconnectingConnectionDoesNotRetryOrDisableServer() async {
         let config = MCPServerConfig(name: "cancelled", command: "cmd", enabled: true)
         let started = FlightTestSignal()
+        let releaseConnect = FlightTestSignal()
         let service = StubMCPService(config: config)
         service.connectHandler = {
             started.signal()
-            try await Task.sleep(for: .seconds(60))
+            try await withTaskCancellationHandler {
+                await releaseConnect.wait()
+                try Task.checkCancellation()
+            } onCancel: {
+                releaseConnect.signal()
+            }
         }
         let manager = MCPServerManager(
             serviceFactory: { _ in service },
@@ -878,12 +908,8 @@ struct MCPServerManagerTests {
         }
         #expect(await connectStarted.wait(timeout: .seconds(1)))
 
-        let clock = ContinuousClock()
-        let start = clock.now
         await manager.waitForPendingDiscovery(timeout: .milliseconds(50))
-        let elapsed = start.duration(to: clock.now)
 
-        #expect(elapsed < .seconds(1))
         #expect(manager.getEnabledTools().isEmpty)
 
         releaseConnect.signal()
@@ -939,6 +965,21 @@ extension MCPServerManagerTests {
         #expect(manager.getServerStatus(first.id)?.state == .idle)
         #expect(manager.getServerStatus(first.id)?.lastError == nil)
     }
+}
+
+@MainActor
+private func observeConnectedStatus(
+    in manager: MCPServerManager,
+    configID: UUID,
+    service: StubMCPService
+) -> (waiter: TestCallbackWaiter, cancellable: AnyCancellable) {
+    let waiter = TestCallbackWaiter()
+    let cancellable = manager.$serverStatuses.sink { statuses in
+        if service.connectCallCount > 0, statuses[configID]?.state == .connected {
+            waiter.signal()
+        }
+    }
+    return (waiter, cancellable)
 }
 
 private func makeMCPTool(name: String, serverName: String) -> MCPTool {

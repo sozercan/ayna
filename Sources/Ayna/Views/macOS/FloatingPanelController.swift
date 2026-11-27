@@ -24,6 +24,7 @@ final class FloatingPanelController: NSObject, ObservableObject {
     private var hostingView: NSHostingView<AnyView>?
 
     @Published private(set) var isVisible: Bool = false
+    @Published private(set) var focusRequestID = UUID()
 
     var onSubmit: ((String, AppContentResult?) -> Void)?
 
@@ -63,6 +64,7 @@ final class FloatingPanelController: NSObject, ObservableObject {
         }
 
         isVisible = true
+        focusRequestID = UUID()
 
         DiagnosticsLogger.log(
             .attachFromApp,
@@ -135,6 +137,7 @@ final class FloatingPanelController: NSObject, ObservableObject {
         guard let panel else { return }
 
         let spotlightView = SpotlightInputView(
+            panelController: self,
             onSubmit: { [weak self] question, contentResult in
                 self?.handleSubmit(question: question, contentResult: contentResult)
             },
@@ -172,6 +175,11 @@ final class FloatingPanelController: NSObject, ObservableObject {
 }
 
 extension FloatingPanelController: NSWindowDelegate {
+    func windowDidBecomeKey(_: Notification) {
+        guard isVisible else { return }
+        focusRequestID = UUID()
+    }
+
     func windowDidResignKey(_: Notification) {
         hide()
     }

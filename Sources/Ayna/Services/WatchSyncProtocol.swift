@@ -1261,7 +1261,6 @@ struct WatchSyncPayloadConfiguration: Equatable, Sendable {
     var maximumMessagesPerConversation = 20
     var maximumContentCharacters = 4000
     var maximumTitleCharacters = 160
-    var maximumModelCharacters = 160
     var maximumSystemPromptCharacters = 4000
     var maximumToolCallsPerMessage = 4
     var maximumToolMetadataBytes = 2048
