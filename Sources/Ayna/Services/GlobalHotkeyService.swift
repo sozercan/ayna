@@ -110,6 +110,10 @@
             }
         }
 
+        isolated deinit {
+            unregister()
+        }
+
         func unregister() {
             if let hotkey = hotkeyRef {
                 UnregisterEventHotKey(hotkey)

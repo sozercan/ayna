@@ -269,7 +269,8 @@
                 mutationEnqueuer: { _ in }
             )
             let created = try #require(store.createConversation(title: "New Chat", model: "gpt-4o"))
-            #expect(store.addMessage(WatchMessage(from: Message(role: .user, content: "What's the weather?")), to: created.id))
+            let userMessage = WatchMessage(from: Message(role: .user, content: "What's the weather?"))
+            #expect(store.addMessage(userMessage, to: created.id))
             #expect(store.renameConversation(created.id, newTitle: "Weather Discussion"))
 
             var draft = try #require(store.conversation(for: created.id))
@@ -280,7 +281,7 @@
             let remoteConversation = WatchConversation(
                 id: created.id,
                 title: "New Chat",
-                messages: [WatchMessage(from: Message(role: .user, content: "What's the weather?"))],
+                messages: [userMessage],
                 model: "gpt-4o",
                 updatedAt: now,
                 createdAt: now

@@ -126,7 +126,9 @@
                 queue: nil
             ) { notification in
                 if let enabled = notification.userInfo?["enabled"] as? Bool {
-                    observedEnabledValues.append(enabled)
+                    MainActor.assumeIsolated {
+                        observedEnabledValues.append(enabled)
+                    }
                 }
             }
             defer { notificationCenter.removeObserver(observer) }
