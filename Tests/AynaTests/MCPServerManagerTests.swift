@@ -836,14 +836,21 @@ struct MCPServerManagerTests {
         #expect(await discoveryStarted.wait(timeout: .seconds(1)))
         #expect(manager.getEnabledTools().isEmpty)
 
+        let waitStarted = FlightTestSignal()
+        let waitFinished = FlightTestSignal()
         let waitTask = Task { @MainActor in
+            waitStarted.signal()
             await manager.waitForPendingDiscovery(timeout: .seconds(2))
+            waitFinished.signal()
         }
+        #expect(await waitStarted.wait(timeout: .seconds(1)))
+        #expect(await !waitFinished.wait(timeout: .milliseconds(50)))
+        #expect(manager.getEnabledTools().isEmpty)
+
         releaseDiscovery.signal()
         await waitTask.value
-        await startupTask.value
-
         #expect(manager.getEnabledTools().map(\.name) == ["ready-tool"])
+        await startupTask.value
     }
 
     @Test("Wait for pending discovery respects timeout without cancelling connection", .timeLimit(.minutes(1)))

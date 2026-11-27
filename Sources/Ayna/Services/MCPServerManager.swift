@@ -35,17 +35,20 @@
 
     private struct ManagedMCPTask: Sendable {
         let operationID: UUID
+        let configID: UUID?
         let generation: UInt64
         let task: Task<Void, Never>
         let completion: ManagedMCPTaskCompletion
 
         init(
             operationID: UUID = UUID(),
+            configID: UUID? = nil,
             generation: UInt64,
             operation: @escaping @MainActor @Sendable () async -> Void
         ) {
             let completion = ManagedMCPTaskCompletion()
             self.operationID = operationID
+            self.configID = configID
             self.generation = generation
             self.completion = completion
             task = Task { @MainActor in
@@ -219,7 +222,10 @@
             let hasOtherConfigWithSameName = serverConfigs.contains {
                 $0.id != config.id && $0.name == config.name
             }
-            if !hasOtherConfigWithSameName || services[config.name]?.configID == config.id {
+            let ownsActiveOrPendingState = services[config.name]?.configID == config.id
+                || connectionTasks[config.name]?.configID == config.id
+                || reconnectTasks[config.name]?.configID == config.id
+            if !hasOtherConfigWithSameName || ownsActiveOrPendingState {
                 disconnectServer(config.name)
             }
             serverConfigs.removeAll { $0.id == config.id }
@@ -350,7 +356,8 @@
             autoDisableOnFailure: Bool
         ) -> ManagedMCPTask? {
             if let existing = connectionTasks[config.name],
-               existing.generation == serverGenerations[config.name]
+               existing.generation == serverGenerations[config.name],
+               existing.configID == config.id
             {
                 return existing
             }
@@ -388,7 +395,7 @@
             )
             setStatus(for: config, state: .connecting, clearExistingError: true)
 
-            let operation = ManagedMCPTask(generation: generation) { [weak self, service] in
+            let operation = ManagedMCPTask(configID: config.id, generation: generation) { [weak self, service] in
                 guard let self else { return }
                 await self.runConnection(
                     config: config,
@@ -608,7 +615,7 @@
 
             setStatus(for: config, state: .reconnecting)
             let delaySeconds = max(TimeInterval.zero, reconnectDelayProvider())
-            reconnectTasks[config.name] = ManagedMCPTask(generation: generation) { [weak self] in
+            reconnectTasks[config.name] = ManagedMCPTask(configID: config.id, generation: generation) { [weak self] in
                 guard let self else { return }
                 do {
                     if delaySeconds > 0 {
@@ -619,16 +626,20 @@
                     self.clearReconnectTask(serverName: config.name, generation: generation)
                     return
                 }
-                self.performScheduledReconnect(serverName: config.name, generation: generation)
+                self.performScheduledReconnect(
+                    configID: config.id,
+                    serverName: config.name,
+                    generation: generation
+                )
             }
         }
 
-        private func performScheduledReconnect(serverName: String, generation: UInt64) {
+        private func performScheduledReconnect(configID: UUID, serverName: String, generation: UInt64) {
             guard reconnectTasks[serverName]?.generation == generation else { return }
             reconnectTasks.removeValue(forKey: serverName)
 
             guard serverGenerations[serverName] == generation,
-                  let config = serverConfigs.first(where: { $0.name == serverName }),
+                  let config = serverConfigs.first(where: { $0.id == configID && $0.name == serverName }),
                   config.enabled
             else {
                 return
