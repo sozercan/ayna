@@ -79,6 +79,22 @@ struct ConversationManagerTests {
         return condition()
     }
 
+    @MainActor
+    private func waitUntilAuthoritative(
+        _ manager: ConversationManager,
+        timeout: Duration = .seconds(5)
+    ) async -> Bool {
+        if manager.isConversationStateAuthoritative {
+            return true
+        }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !manager.isConversationStateAuthoritative, clock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return manager.isConversationStateAuthoritative
+    }
+
     @Test
     @MainActor
     func `create new conversation uses selected model`() throws {
@@ -309,9 +325,7 @@ struct ConversationManagerTests {
         manager.renameConversation(placeholder, newTitle: "Saved During Flush")
         await flushGate.release()
 
-        for _ in 0 ..< 5 {
-            await Task.yield()
-        }
+        await flushGate.waitUntilPassedFirstFlush()
         #expect(await !(completion.isComplete()))
 
         await metadataGate.release()
@@ -406,7 +420,7 @@ struct ConversationManagerTests {
         _ = await manager.loadingTask?.value
 
         #expect(manager.conversations.first?.messages.isEmpty == true)
-        let hydrated = TestCallbackWaiter()
+        let hydrated = FlightTestSignal()
         let cancellable = manager.$conversations.sink { conversations in
             if conversations.first?.messages.count == conversation.messages.count {
                 hydrated.signal()
@@ -414,7 +428,7 @@ struct ConversationManagerTests {
         }
         defer { cancellable.cancel() }
         manager.selectedConversationId = conversation.id
-        await hydrated.wait()
+        #expect(await hydrated.wait(timeout: .seconds(5)))
 
         #expect(manager.conversations.first?.messages.count == conversation.messages.count)
     }
@@ -906,14 +920,33 @@ struct ConversationManagerTests {
         let conversation = TestHelpers.sampleConversation(title: "Original Debounced")
         try await store.save(conversation)
 
-        let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
+        let firstSaveRegistered = FlightTestSignal()
+        let allowFirstSaveRegistration = FlightTestSignal()
+        let persistedRevision = FlightTestBox(0)
+        let saveCompleted = FlightTestSignal()
+        let manager = ConversationManager(
+            store: store,
+            saveDebounceDuration: .milliseconds(50),
+            conversationLoader: { conversationId in
+                firstSaveRegistered.signal()
+                _ = await allowFirstSaveRegistration.wait(timeout: .seconds(5))
+                return try await store.loadConversation(id: conversationId)
+            },
+            saveOperation: { saved in
+                try await store.save(saved)
+                persistedRevision.update { $0 += 1 }
+                if saved.title == "Second Pending Title" {
+                    saveCompleted.signal()
+                }
+            }
+        )
         _ = await manager.loadingTask?.value
 
         var firstEdit = try #require(manager.conversations.first)
         firstEdit.title = "First Pending Title"
         firstEdit.updatedAt = Date().addingTimeInterval(10)
         manager.save(firstEdit)
-        await Task.yield()
+        #expect(await firstSaveRegistered.wait(timeout: .seconds(5)))
 
         var secondEdit = firstEdit
         secondEdit.title = "Second Pending Title"
@@ -921,12 +954,15 @@ struct ConversationManagerTests {
         secondEdit.updatedAt = Date().addingTimeInterval(20)
         manager.conversations = [secondEdit]
         manager.save(secondEdit)
-        await manager.flushPendingSaves()
+        allowFirstSaveRegistration.signal()
+
+        #expect(await saveCompleted.wait(timeout: .seconds(5)))
 
         let persisted = try #require(try await store.loadConversation(id: conversation.id))
         #expect(persisted.title == "Second Pending Title")
         #expect(persisted.temperature == 0.42)
         #expect(persisted.messages.count == conversation.messages.count)
+        #expect(persistedRevision.value == 1)
     }
 
     @Test
@@ -1170,7 +1206,7 @@ struct ConversationManagerTests {
         #expect(manager.appendToMessage(conversationId: conversation.id, messageId: reply.id, chunk: "Partial answer"))
 
         await manager.reloadConversations()
-        #expect(await manager.waitUntilConversationStateIsAuthoritative())
+        #expect(await waitUntilAuthoritative(manager))
 
         #expect(await loads.calls >= 3)
         #expect(manager.conversation(byId: conversation.id)?.messages.last?.content == "Partial answer")
@@ -1492,7 +1528,7 @@ private actor ConversationStaleLoadGate {
     private var started = false
     private var released = false
     private var startedContinuations: [CheckedContinuation<Void, Never>] = []
-    private var releaseContinuation: CheckedContinuation<Void, Never>?
+    private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
 
     init(store: EncryptedConversationStore) {
         self.store = store
@@ -1508,7 +1544,7 @@ private actor ConversationStaleLoadGate {
 
         if !released {
             await withCheckedContinuation { continuation in
-                releaseContinuation = continuation
+                releaseContinuations.append(continuation)
             }
         }
         return staleConversation
@@ -1523,8 +1559,11 @@ private actor ConversationStaleLoadGate {
 
     func release() {
         released = true
-        releaseContinuation?.resume()
-        releaseContinuation = nil
+        let continuations = releaseContinuations
+        releaseContinuations.removeAll()
+        for continuation in continuations {
+            continuation.resume()
+        }
     }
 }
 
@@ -1532,8 +1571,10 @@ private actor PersistenceFlushGate {
     private var callCount = 0
     private var firstCallStarted = false
     private var firstCallReleased = false
+    private var firstCallCompleted = false
     private var startedContinuations: [CheckedContinuation<Void, Never>] = []
-    private var releaseContinuation: CheckedContinuation<Void, Never>?
+    private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
+    private var passedContinuations: [CheckedContinuation<Void, Never>] = []
 
     func waitBeforeFlush() async {
         callCount += 1
@@ -1547,9 +1588,14 @@ private actor PersistenceFlushGate {
 
         if !firstCallReleased {
             await withCheckedContinuation { continuation in
-                releaseContinuation = continuation
+                releaseContinuations.append(continuation)
             }
         }
+        firstCallCompleted = true
+        for continuation in passedContinuations {
+            continuation.resume()
+        }
+        passedContinuations.removeAll()
     }
 
     func waitUntilStarted() async {
@@ -1559,10 +1605,20 @@ private actor PersistenceFlushGate {
         }
     }
 
+    func waitUntilPassedFirstFlush() async {
+        guard !firstCallCompleted else { return }
+        await withCheckedContinuation { continuation in
+            passedContinuations.append(continuation)
+        }
+    }
+
     func release() {
         firstCallReleased = true
-        releaseContinuation?.resume()
-        releaseContinuation = nil
+        let continuations = releaseContinuations
+        releaseContinuations.removeAll()
+        for continuation in continuations {
+            continuation.resume()
+        }
     }
 }
 
@@ -1729,7 +1785,7 @@ extension ConversationManagerTests {
         )
 
         _ = await manager.loadingTask?.value
-        #expect(await manager.waitUntilConversationStateIsAuthoritative())
+        #expect(await waitUntilAuthoritative(manager))
 
         #expect(manager.isConversationStateAuthoritative)
         #expect(manager.conversations.map(\.id) == [stored.id])
@@ -1896,7 +1952,7 @@ extension ConversationManagerTests {
         await manager.clearAllConversations().value
 
         #expect(!manager.isConversationStateAuthoritative)
-        #expect(await manager.waitUntilConversationStateIsAuthoritative())
+        #expect(await waitUntilAuthoritative(manager))
 
         #expect(manager.isConversationStateAuthoritative)
         #expect(manager.conversations.map(\.id) == [stored.id])
