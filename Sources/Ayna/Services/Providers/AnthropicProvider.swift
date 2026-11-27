@@ -22,15 +22,18 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     }
 
     private let retryDelay: @Sendable (Int, Date?) async -> Void
+    private let onNonStreamHandled: (@MainActor () -> Void)?
 
     init(
         urlSession: URLSession,
         retryDelay: @escaping @Sendable (Int, Date?) async -> Void = { attempt, retryAfter in
             await AIRetryPolicy.wait(for: attempt, retryAfterDate: retryAfter)
-        }
+        },
+        onNonStreamHandled: (@MainActor () -> Void)? = nil
     ) {
         self.urlSession = urlSession
         self.retryDelay = retryDelay
+        self.onNonStreamHandled = onNonStreamHandled
     }
 
     deinit {
@@ -402,7 +405,11 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         circuitKey: String,
         attempt: Int
     ) async {
+        defer { onNonStreamHandled?() }
         if let error {
+            if let urlError = error as? URLError, urlError.code == .cancelled {
+                return
+            }
             DiagnosticsLogger.log(
                 .aiService,
                 level: .error,

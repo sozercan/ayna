@@ -83,32 +83,42 @@
         @Suite("Detection")
         @MainActor
         struct DetectionTests {
-            @Test("Detect current project")
-            func detectCurrentProject() async {
+            @Test("Detect Swift package project from nested directory")
+            func detectSwiftPackageProjectFromNestedDirectory() async throws {
+                let root = try TestHelpers.makeTemporaryDirectory()
+                defer { try? FileManager.default.removeItem(at: root) }
+
+                let packageFile = root.appendingPathComponent("Package.swift")
+                let sourcesDir = root.appendingPathComponent("Sources/FixtureApp", isDirectory: true)
+                try "// swift-tools-version: 6.0".write(to: packageFile, atomically: true, encoding: .utf8)
+                try FileManager.default.createDirectory(at: sourcesDir, withIntermediateDirectories: true)
+
                 let sut = ProjectContextService()
-                let currentDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                await sut.detectProject(from: sourcesDir)
 
-                await sut.detectProject(from: currentDir)
-
-                if sut.projectRoot != nil {
-                    #expect(sut.projectType != .unknown)
-                }
+                #expect(sut.projectRoot?.standardized == root.standardized)
+                #expect(sut.projectType == .swiftPackage)
+                #expect(sut.briefSummary()?.contains(root.lastPathComponent) == true)
             }
 
-            @Test("Detect project finds context files in ayna repo")
-            func detectProjectFindsContextFiles() async {
+            @Test("Detect project finds and loads context files")
+            func detectProjectFindsContextFiles() async throws {
+                let root = try TestHelpers.makeTemporaryDirectory()
+                defer { try? FileManager.default.removeItem(at: root) }
+
+                let packageFile = root.appendingPathComponent("Package.swift")
+                let agentsFile = root.appendingPathComponent("AGENTS.md")
+                try "// swift-tools-version: 6.0".write(to: packageFile, atomically: true, encoding: .utf8)
+                try "Project fixture instructions".write(to: agentsFile, atomically: true, encoding: .utf8)
+
                 let sut = ProjectContextService()
-                let currentDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                await sut.detectProject(from: root)
 
-                await sut.detectProject(from: currentDir)
-
-                if sut.projectRoot != nil {
-                    let filenames = sut.contextFiles.map(\.lastPathComponent)
-                    let hasContextFile = filenames.contains("CLAUDE.md") ||
-                        filenames.contains("AGENTS.md") ||
-                        filenames.contains("COPILOT.md")
-                    #expect(hasContextFile || sut.contextFiles.isEmpty)
-                }
+                #expect(sut.projectRoot?.standardized == root.standardized)
+                #expect(sut.projectType == .swift)
+                #expect(sut.contextFiles.map(\.lastPathComponent) == ["AGENTS.md"])
+                #expect(sut.contextContent?.contains("Project fixture instructions") == true)
+                #expect(sut.systemPromptContext()?.contains("Project fixture instructions") == true)
             }
 
             @Test("Non-existent path results in unknown project")

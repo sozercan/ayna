@@ -90,14 +90,16 @@
         }
 
         @Test
-        func `Dismiss error clears state`() async throws {
+        func `Dismiss error clears state`() throws {
             let conversation = try #require(store.createConversation(model: "gpt-4o"))
             viewModel.setConversation(conversation.id)
             aiService.modelAPIKeys = [:]
 
-            viewModel.sendMessage("Hello")
+            let result = viewModel.sendMessage("Hello")
 
-            try? await Task.sleep(for: .milliseconds(100))
+            #expect(result == .consumed)
+            #expect(viewModel.errorMessage != nil)
+            #expect(viewModel.failedMessage == "Hello")
 
             viewModel.dismissError()
 
