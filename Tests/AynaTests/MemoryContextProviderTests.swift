@@ -15,7 +15,6 @@ struct MemoryContextProviderTests {
         }
         defaults = suite
         defaults.removePersistentDomain(forName: suiteName)
-        AppPreferences.use(defaults)
     }
 
     private struct ProviderFixture {
@@ -34,10 +33,12 @@ struct MemoryContextProviderTests {
         let memoryService = UserMemoryService(store: store)
         let metadataService = SessionMetadataService.shared
         let summaryService = ConversationSummaryService(store: store)
+        let storage = defaults
         let provider = MemoryContextProvider(
             memoryService: memoryService,
             metadataService: metadataService,
-            summaryService: summaryService
+            summaryService: summaryService,
+            preferencesStorageProvider: { storage }
         )
         return ProviderFixture(
             provider: provider,

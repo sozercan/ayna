@@ -704,7 +704,7 @@ struct AnthropicProviderTests {
     func `cancelling during Retry-After backoff sends no retry`() async {
         let backoffStarted = FlightTestSignal()
         let releaseBackoff = FlightTestSignal()
-        let backoffResumed = FlightTestSignal()
+        let responseHandled = FlightTestSignal()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [AnthropicMockURLProtocol.self]
         let provider = AnthropicProvider(
@@ -712,7 +712,9 @@ struct AnthropicProviderTests {
             retryDelay: { _, _ in
                 backoffStarted.signal()
                 await releaseBackoff.wait()
-                backoffResumed.signal()
+            },
+            onNonStreamHandled: {
+                responseHandled.signal()
             }
         )
         let attempts = FlightTestBox(0)
@@ -737,10 +739,7 @@ struct AnthropicProviderTests {
         #expect(await backoffStarted.wait(timeout: .seconds(5)))
         provider.cancelRequest()
         releaseBackoff.signal()
-        #expect(await backoffResumed.wait(timeout: .seconds(5)))
-        for _ in 0 ..< 5 {
-            await Task.yield()
-        }
+        #expect(await responseHandled.wait(timeout: .seconds(5)))
 
         #expect(attempts.value == 1)
     }
@@ -860,11 +859,16 @@ struct AnthropicProviderTests {
     @Test(.timeLimit(.minutes(1)))
     func `cancel request stops current task`() async {
         let server = FlightTestURLProtocolServer()
-        FlightTestURLProtocol.install(server: server)
-        defer { FlightTestURLProtocol.reset() }
-        let sessionConfig = URLSessionConfiguration.ephemeral
-        sessionConfig.protocolClasses = [FlightTestURLProtocol.self]
-        let provider = AnthropicProvider(urlSession: URLSession(configuration: sessionConfig), retryDelay: { _, _ in })
+        let (session, token) = FlightTestURLProtocol.makeSession(for: server)
+        defer { FlightTestURLProtocol.unregister(token: token) }
+        let cancellationHandled = FlightTestSignal()
+        let provider = AnthropicProvider(
+            urlSession: session,
+            retryDelay: { _, _ in },
+            onNonStreamHandled: {
+                cancellationHandled.signal()
+            }
+        )
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Hello")]
 
@@ -887,11 +891,10 @@ struct AnthropicProviderTests {
         provider.cancelRequest()
 
         let stopped = await exchange.waitUntilStopped()
-        for _ in 0 ..< 5 {
-            await Task.yield()
-        }
+        let handled = await cancellationHandled.wait(timeout: .seconds(5))
 
         #expect(stopped)
+        #expect(handled)
         #expect(!errorCalled.value)
         #expect(!completedCalled.value)
     }

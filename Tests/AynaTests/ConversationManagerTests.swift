@@ -261,9 +261,15 @@ struct ConversationManagerTests {
         manager.conversations = [conversation]
         manager.save(conversation)
         await immediateTask.value
-        await manager.flushPendingSaves()
 
-        #expect(try await store.loadConversation(id: conversation.id)?.title == "Latest snapshot")
+        let deadline = ContinuousClock().now.advanced(by: .seconds(2))
+        var persistedTitle = try await store.loadConversation(id: conversation.id)?.title
+        while persistedTitle != "Latest snapshot", ContinuousClock().now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+            persistedTitle = try await store.loadConversation(id: conversation.id)?.title
+        }
+
+        #expect(persistedTitle == "Latest snapshot")
         manager.clearAllConversations()
     }
 
@@ -432,7 +438,9 @@ struct ConversationManagerTests {
         _ = await manager.loadingTask?.value
         let placeholder = try #require(manager.conversations.first)
 
-        _ = manager.conversation(byId: conversation.id)
+        let hydrationTask = Task { @MainActor in
+            await manager.ensureConversationLoaded(conversation.id)
+        }
         await loadGate.waitUntilStarted()
         let deleteTask = try #require(manager.deleteConversation(placeholder))
         _ = await deleteTask.value
@@ -440,7 +448,7 @@ struct ConversationManagerTests {
         #expect(try await store.loadConversation(id: conversation.id) == nil)
 
         await loadGate.release()
-        _ = await manager.ensureConversationLoaded(conversation.id)
+        _ = await hydrationTask.value
         await manager.flushPendingSaves()
 
         #expect(try await store.loadConversation(id: conversation.id) == nil)
@@ -735,7 +743,9 @@ struct ConversationManagerTests {
         )
         _ = await manager.loadingTask?.value
 
-        _ = manager.conversation(byId: conversation.id)
+        let hydrationTask = Task { @MainActor in
+            await manager.ensureConversationLoaded(conversation.id)
+        }
         await loadGate.waitUntilStarted()
         let clearTask = manager.clearAllConversations()
         await clearTask.value
@@ -743,7 +753,7 @@ struct ConversationManagerTests {
         #expect(try await store.loadConversation(id: conversation.id) == nil)
 
         await loadGate.release()
-        _ = await manager.ensureConversationLoaded(conversation.id)
+        _ = await hydrationTask.value
         await manager.flushPendingSaves()
 
         #expect(try await store.loadConversation(id: conversation.id) == nil)
@@ -768,7 +778,9 @@ struct ConversationManagerTests {
         )
         _ = await manager.loadingTask?.value
 
-        _ = manager.conversation(byId: original.id)
+        let staleHydrationTask = Task { @MainActor in
+            await manager.ensureConversationLoaded(original.id)
+        }
         await loadGate.waitUntilStarted()
 
         var updated = original
@@ -778,9 +790,7 @@ struct ConversationManagerTests {
         try await store.save(updated)
         await manager.reloadConversations()
         await loadGate.release()
-        for _ in 0 ..< 5 {
-            await Task.yield()
-        }
+        _ = await staleHydrationTask.value
 
         #expect(manager.isMetadataOnlyConversation(original.id))
         let hydrated = try #require(await manager.ensureConversationLoaded(original.id))
@@ -808,13 +818,18 @@ struct ConversationManagerTests {
 
         _ = manager.conversation(byId: conversation.id)
         await loadGate.waitUntilStarted()
+        let firstEntered = FlightTestSignal()
+        let secondEntered = FlightTestSignal()
         let firstTask = Task { @MainActor in
-            await manager.ensureConversationLoaded(conversation.id)
+            firstEntered.signal()
+            return await manager.ensureConversationLoaded(conversation.id)
         }
         let secondTask = Task { @MainActor in
-            await manager.ensureConversationLoaded(conversation.id)
+            secondEntered.signal()
+            return await manager.ensureConversationLoaded(conversation.id)
         }
-        await Task.yield()
+        #expect(await firstEntered.wait(timeout: .seconds(5)))
+        #expect(await secondEntered.wait(timeout: .seconds(5)))
         await loadGate.release()
         let loaded = await [firstTask.value, secondTask.value]
 

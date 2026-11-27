@@ -30,6 +30,20 @@ final class FlightTestSignal: @unchecked Sendable {
 
     func wait() async {
         let waiterID = UUID()
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if signaled {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                waiters[waiterID] = continuation
+                lock.unlock()
+            }
+        }
+    }
+
+    private func waitCancellable() async {
+        let waiterID = UUID()
         await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 lock.lock()
@@ -58,7 +72,7 @@ final class FlightTestSignal: @unchecked Sendable {
         }
         return await withTaskGroup(of: Bool.self) { group in
             group.addTask { [self] in
-                await self.wait()
+                await self.waitCancellable()
                 return self.isSignaled
             }
             group.addTask {
@@ -239,6 +253,8 @@ final class FlightTestURLProtocolExchange: @unchecked Sendable {
 final class FlightTestURLProtocol: URLProtocol, @unchecked Sendable {
     private static let serverLock = NSLock()
     private nonisolated(unsafe) static var server: FlightTestURLProtocolServer?
+    private nonisolated(unsafe) static var scopedServers: [String: FlightTestURLProtocolServer] = [:]
+    static let sessionHeaderName = "X-Ayna-FlightTest-Session"
 
     private let exchangeLock = NSLock()
     private var exchange: FlightTestURLProtocolExchange?
@@ -255,6 +271,23 @@ final class FlightTestURLProtocol: URLProtocol, @unchecked Sendable {
         serverLock.unlock()
     }
 
+    static func makeSession(for server: FlightTestURLProtocolServer) -> (session: URLSession, token: String) {
+        let token = UUID().uuidString
+        serverLock.lock()
+        scopedServers[token] = server
+        serverLock.unlock()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        config.httpAdditionalHeaders = [sessionHeaderName: token]
+        return (URLSession(configuration: config), token)
+    }
+
+    static func unregister(token: String) {
+        serverLock.lock()
+        scopedServers.removeValue(forKey: token)
+        serverLock.unlock()
+    }
+
     override static func canInit(with _: URLRequest) -> Bool {
         true
     }
@@ -264,8 +297,13 @@ final class FlightTestURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func startLoading() {
+        let token = request.value(forHTTPHeaderField: Self.sessionHeaderName)
         Self.serverLock.lock()
-        let server = Self.server
+        let server: FlightTestURLProtocolServer? = if let token {
+            Self.scopedServers[token]
+        } else {
+            Self.server
+        }
         Self.serverLock.unlock()
         guard let server else {
             client?.urlProtocol(

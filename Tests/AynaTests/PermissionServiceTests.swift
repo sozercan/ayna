@@ -92,36 +92,33 @@ struct PermissionServiceTests {
         #expect(sut.pendingCount(forConversation: conversationId) == 0)
     }
 
-    private func waitForPendingApprovals(count: Int, in service: PermissionService? = nil) async {
+    private func waitForPendingApprovals(
+        count: Int,
+        in service: PermissionService? = nil,
+        timeout: Duration = .seconds(5)
+    ) async -> Bool {
         let target = service ?? sut
         if target.pendingApprovals.count >= count {
-            return
+            return true
         }
-        await withCheckedContinuation { continuation in
-            nonisolated(unsafe) var observer: NSObjectProtocol?
-            nonisolated(unsafe) var resumed = false
-            observer = NotificationCenter.default.addObserver(
-                forName: .pendingApprovalsChanged,
-                object: nil,
-                queue: .main
-            ) { _ in
-                MainActor.assumeIsolated {
-                    guard !resumed, target.pendingApprovals.count >= count else { return }
-                    resumed = true
-                    if let observer {
-                        NotificationCenter.default.removeObserver(observer)
-                    }
-                    continuation.resume()
+        let observed = FlightTestSignal()
+        let observer = NotificationCenter.default.addObserver(
+            forName: .pendingApprovalsChanged,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                if target.pendingApprovals.count >= count {
+                    observed.signal()
                 }
             }
-            if target.pendingApprovals.count >= count, !resumed {
-                resumed = true
-                if let observer {
-                    NotificationCenter.default.removeObserver(observer)
-                }
-                continuation.resume()
-            }
         }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        if target.pendingApprovals.count >= count {
+            return true
+        }
+        let signaled = await observed.wait(timeout: timeout)
+        return signaled && target.pendingApprovals.count >= count
     }
 
     @Test("Approve removes from pending and resumes")
@@ -136,8 +133,12 @@ struct PermissionServiceTests {
                 conversationId: conversationId
             )
         }
+        defer { task.cancel() }
 
-        await waitForPendingApprovals(count: 1)
+        guard await waitForPendingApprovals(count: 1) else {
+            Issue.record("Timed out waiting for pending approval")
+            return
+        }
 
         #expect(sut.pendingApprovals.count == 1)
 
@@ -162,8 +163,12 @@ struct PermissionServiceTests {
                 conversationId: conversationId
             )
         }
+        defer { task.cancel() }
 
-        await waitForPendingApprovals(count: 1)
+        guard await waitForPendingApprovals(count: 1) else {
+            Issue.record("Timed out waiting for pending approval")
+            return
+        }
 
         if let approvalId = sut.pendingApprovals.first?.id {
             sut.deny(approvalId)
@@ -186,8 +191,12 @@ struct PermissionServiceTests {
                 conversationId: conversationId
             )
         }
+        defer { task.cancel() }
 
-        await waitForPendingApprovals(count: 1)
+        guard await waitForPendingApprovals(count: 1) else {
+            Issue.record("Timed out waiting for pending approval")
+            return
+        }
 
         if let approvalId = sut.pendingApprovals.first?.id {
             sut.approve(approvalId, rememberForSession: true)
@@ -214,8 +223,12 @@ struct PermissionServiceTests {
                 conversationId: conversationId
             )
         }
+        defer { task.cancel() }
 
-        await waitForPendingApprovals(count: 1)
+        guard await waitForPendingApprovals(count: 1) else {
+            Issue.record("Timed out waiting for pending approval")
+            return
+        }
         #expect(sut.pendingApprovals.count == 1)
 
         task.cancel()
@@ -235,8 +248,12 @@ struct PermissionServiceTests {
                 conversationId: conversationId
             )
         }
+        defer { task.cancel() }
 
-        await waitForPendingApprovals(count: 1)
+        guard await waitForPendingApprovals(count: 1) else {
+            Issue.record("Timed out waiting for pending approval")
+            return
+        }
         guard let approvalID = sut.pendingApprovals.first?.id else {
             Issue.record("Approval did not become pending")
             return
@@ -260,8 +277,12 @@ struct PermissionServiceTests {
                 conversationId: conversationId
             )
         }
+        defer { task.cancel() }
 
-        await waitForPendingApprovals(count: 1)
+        guard await waitForPendingApprovals(count: 1) else {
+            Issue.record("Timed out waiting for pending approval")
+            return
+        }
         let approvalID = sut.pendingApprovals.first?.id
         #expect(approvalID != nil)
         guard let approvalID else { return }
@@ -293,8 +314,15 @@ struct PermissionServiceTests {
                 conversationId: conversationId
             )
         }
+        defer {
+            first.cancel()
+            second.cancel()
+        }
 
-        await waitForPendingApprovals(count: 2)
+        guard await waitForPendingApprovals(count: 2) else {
+            Issue.record("Timed out waiting for pending approvals")
+            return
+        }
         #expect(sut.pendingApprovals.count == 2)
         guard let firstID = sut.pendingApprovals.first?.id else { return }
 
@@ -317,8 +345,12 @@ struct PermissionServiceTests {
                 conversationId: conversationId
             )
         }
+        defer { task.cancel() }
 
-        await waitForPendingApprovals(count: 1)
+        guard await waitForPendingApprovals(count: 1) else {
+            Issue.record("Timed out waiting for pending approval")
+            return
+        }
         let approvalID = sut.pendingApprovals.first?.id
         #expect(approvalID != nil)
         guard let approvalID else { return }
@@ -348,8 +380,15 @@ struct PermissionServiceTests {
                 conversationId: conversationId
             )
         }
+        defer {
+            staleTask.cancel()
+            replacementTask.cancel()
+        }
 
-        await waitForPendingApprovals(count: 2)
+        guard await waitForPendingApprovals(count: 2) else {
+            Issue.record("Timed out waiting for pending approvals")
+            return
+        }
         #expect(sut.pendingApprovals.count == 2)
 
         staleTask.cancel()
@@ -394,8 +433,16 @@ struct PermissionServiceTests {
                 conversationId: otherConversationId
             )
         }
+        defer {
+            task1.cancel()
+            task2.cancel()
+            task3.cancel()
+        }
 
-        await waitForPendingApprovals(count: 3)
+        guard await waitForPendingApprovals(count: 3) else {
+            Issue.record("Timed out waiting for pending approvals")
+            return
+        }
 
         sut.denyAllPending(forConversation: conversationId, reason: "Conversation closed")
 
@@ -433,8 +480,12 @@ struct PermissionServiceTests {
                 conversationId: UUID()
             )
         }
+        defer { task.cancel() }
 
-        await waitForPendingApprovals(count: 1, in: service)
+        guard await waitForPendingApprovals(count: 1, in: service) else {
+            Issue.record("Timed out waiting for pending approval")
+            return
+        }
         for _ in 0 ..< 5 {
             await Task.yield()
         }
