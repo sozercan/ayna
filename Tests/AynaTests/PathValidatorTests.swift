@@ -180,10 +180,10 @@ struct PathValidatorTests {
         }
     }
 
-    @Test("Handles empty path")
+    @Test("Denies empty and whitespace-only paths")
     func handlesEmptyPath() {
-        let result = sut.validate("", operation: .read)
-        #expect(result.isAllowed || !result.isAllowed)
+        #expect(sut.validate("", operation: .read) == .denied(reason: "Path cannot be empty"))
+        #expect(sut.validate("   ", operation: .write) == .denied(reason: "Path cannot be empty"))
     }
 
     @Test("Handles path with special characters")

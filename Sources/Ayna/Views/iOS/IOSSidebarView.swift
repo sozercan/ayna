@@ -6,6 +6,8 @@
     struct IOSSidebarView: View {
         @EnvironmentObject var conversationManager: ConversationManager
         @ObservedObject var aiService = AIService.shared
+        @Binding var selectedRoute: IOSSidebarRoute?
+        @Binding var preferredCompactColumn: NavigationSplitViewColumn
         @Binding var columnVisibility: NavigationSplitViewVisibility
         @State private var searchText = ""
         @State private var showSettings = false
@@ -123,7 +125,7 @@
         }
 
         private var conversationListView: some View {
-            List(selection: $conversationManager.selectedConversationId) {
+            List(selection: $selectedRoute) {
                 ForEach(conversationSections) { section in
                     Section {
                         ForEach(section.conversations) { conversation in
@@ -155,13 +157,6 @@
                             .textCase(nil)
                     }
                 }
-
-                Color.clear
-                    .frame(height: 0)
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .tag(ConversationManager.newConversationId)
-                    .accessibilityHidden(true)
             }
             .listStyle(.plain)
             .refreshable {
@@ -195,7 +190,7 @@
                             toggleSelection(for: conversation)
                         }
                 } else {
-                    NavigationLink(value: conversation.id) {
+                    NavigationLink(value: IOSSidebarRoute.conversation(conversation.id)) {
                         ConversationRow(conversation: conversation)
                     }
                 }
@@ -336,8 +331,8 @@
 
             HapticEngine.newConversation()
 
-            conversationManager.selectedConversationId = ConversationManager.newConversationId
-
+            selectedRoute = .newChat
+            preferredCompactColumn = .detail
             withAnimation {
                 columnVisibility = .detailOnly
             }

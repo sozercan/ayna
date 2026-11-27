@@ -9,7 +9,9 @@ struct WatchDurableSyncTests {
     private func makeLoadedManager(with stored: [Conversation]) async throws -> ConversationManager {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let store = TestHelpers.makeTestStore(directory: directory)
-        try await store.save(stored)
+        for conversation in stored {
+            try await store.save(conversation)
+        }
         let manager = ConversationManager(
             store: store,
             saveDebounceDuration: .milliseconds(0),
@@ -81,7 +83,7 @@ struct WatchDurableSyncTests {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let store = TestHelpers.makeTestStore(directory: directory)
         let stored = TestHelpers.sampleConversation(title: "Deleted mid-load")
-        try await store.save([stored])
+        try await store.save(stored)
         let loadStarted = FlightTestSignal()
         let releaseLoad = FlightTestSignal()
         let manager = ConversationManager(

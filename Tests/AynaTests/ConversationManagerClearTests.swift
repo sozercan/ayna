@@ -103,8 +103,9 @@ struct ConversationManagerClearTests {
 
         let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
         _ = await manager.loadingTask?.value
-        manager.conversations = [TestHelpers.sampleConversation()]
-        try await store.save(manager.conversations)
+        let conversation = TestHelpers.sampleConversation()
+        manager.conversations = [conversation]
+        try await store.save(conversation)
 
         manager.clearAllConversations()
         await manager.flushPendingSaves()
@@ -469,8 +470,9 @@ struct ConversationManagerClearTests {
             }
         )
         _ = await manager.loadingTask?.value
-        manager.conversations = [TestHelpers.sampleConversation(title: "Spotlight Clear")]
-        try await store.save(manager.conversations)
+        let conversation = TestHelpers.sampleConversation(title: "Spotlight Clear")
+        manager.conversations = [conversation]
+        try await store.save(conversation)
 
         manager.clearAllConversations()
         await cleanupGate.waitUntilStarted()

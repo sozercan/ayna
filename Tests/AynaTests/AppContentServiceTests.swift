@@ -6,10 +6,25 @@
     @Suite("AppContentService Tests")
     @MainActor
     struct AppContentServiceTests {
-        var service: AppContentService
+        private final class StubExtractor: AppExtractor {
+            let handledBundleID: String?
+            let result: AppContentResult
+            private(set) var extractCallCount = 0
 
-        init() {
-            service = AppContentService.shared
+            init(handledBundleID: String?, result: AppContentResult) {
+                self.handledBundleID = handledBundleID
+                self.result = result
+            }
+
+            func canHandle(bundleIdentifier: String) -> Bool {
+                guard let handledBundleID else { return true }
+                return bundleIdentifier == handledBundleID
+            }
+
+            func extract(from _: NSRunningApplication, element _: AXUIElement) async -> AppContentResult {
+                extractCallCount += 1
+                return result
+            }
         }
 
         @Test("Terminal extractor handles Terminal app")
@@ -52,30 +67,107 @@
             #expect(extractor.canHandle(bundleIdentifier: ""))
         }
 
-        @Test("Extract content returns valid result")
-        func extractContentReturnsValidResult() async {
-            guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == "Finder" }) else {
-                Issue.record("Finder not running - skipping test")
-                return
-            }
+        @Test("Extract content returns permissionDenied when accessibility permission is missing")
+        func extractContentReturnsPermissionDeniedWithoutPermission() async {
+            let extractor = StubExtractor(handledBundleID: nil, result: .noContentAvailable)
+            let service = AppContentService(
+                extractors: [extractor],
+                checkPermission: { false }
+            )
 
-            let result = await service.extractContent(from: app)
+            let result = await service.extractContent(from: NSRunningApplication.current)
 
-            switch result {
-            case .success, .permissionDenied, .noContentAvailable, .extractionFailed:
-                break
-            case .noFocusedApp:
-                Issue.record("Should not return noFocusedApp when app is provided")
+            if case .permissionDenied = result {
+                #expect(extractor.extractCallCount == 0)
+            } else {
+                Issue.record("Expected .permissionDenied, got \(result)")
             }
         }
 
-        @Test("Extract from frontmost app does not crash")
-        func extractFromFrontmostAppDoesNotCrash() async {
+        @Test("Extract content dispatches to matching extractor and returns its content")
+        func extractContentDispatchesToMatchingExtractor() async {
+            let currentApp = NSRunningApplication.current
+            let expectedContent = AppContent(
+                appName: "TestApp",
+                appIcon: nil,
+                bundleIdentifier: currentApp.bundleIdentifier,
+                windowTitle: "Main",
+                content: "Captured output",
+                contentType: .documentContent,
+                isTruncated: false,
+                originalLength: 15
+            )
+            let specific = StubExtractor(
+                handledBundleID: currentApp.bundleIdentifier ?? "",
+                result: .success(expectedContent)
+            )
+            let fallback = StubExtractor(handledBundleID: nil, result: .noContentAvailable)
+            let service = AppContentService(
+                extractors: [specific, fallback],
+                checkPermission: { true }
+            )
+
+            let result = await service.extractContent(from: currentApp)
+
+            #expect(specific.extractCallCount == 1)
+            #expect(fallback.extractCallCount == 0)
+            #expect(AppContent.hasSamePayload(result.content, expectedContent))
+        }
+
+        @Test("Extract content falls back to last extractor when none match")
+        func extractContentFallsBackToLastExtractor() async {
+            let nonMatching = StubExtractor(handledBundleID: "com.nonexistent.app", result: .noContentAvailable)
+            let fallback = StubExtractor(handledBundleID: "com.other.app", result: .extractionFailed(reason: "fallback used"))
+            let service = AppContentService(
+                extractors: [nonMatching, fallback],
+                checkPermission: { true }
+            )
+
+            let result = await service.extractContent(from: NSRunningApplication.current)
+
+            #expect(nonMatching.extractCallCount == 0)
+            #expect(fallback.extractCallCount == 1)
+            if case let .extractionFailed(reason) = result {
+                #expect(reason == "fallback used")
+            } else {
+                Issue.record("Expected fallback extractionFailed result, got \(result)")
+            }
+        }
+
+        @Test("Extract from frontmost app returns noFocusedApp when workspace has no frontmost app")
+        func extractFromFrontmostAppReturnsNoFocusedAppWhenNil() async {
+            let service = AppContentService(
+                extractors: [],
+                checkPermission: { true },
+                frontmostApplicationProvider: { nil }
+            )
+
             let result = await service.extractFromFrontmostApp()
 
-            switch result {
-            case .success, .permissionDenied, .noFocusedApp, .noContentAvailable, .extractionFailed:
-                break
+            if case .noFocusedApp = result {
+            } else {
+                Issue.record("Expected .noFocusedApp, got \(result)")
+            }
+        }
+
+        @Test("Extract from frontmost app returns noContentAvailable when frontmost app is Ayna itself")
+        func extractFromFrontmostAppIgnoresOwnApp() async {
+            let currentApp = NSRunningApplication.current
+            let extractor = StubExtractor(handledBundleID: nil, result: .noFocusedApp)
+            let service = AppContentService(
+                extractors: [extractor],
+                checkPermission: { true },
+                frontmostApplicationProvider: { currentApp },
+                appBundleIdentifierProvider: { _ in "com.sertacozercan.ayna" },
+                ownBundleIdentifierProvider: { "com.sertacozercan.ayna" }
+            )
+
+            let result = await service.extractFromFrontmostApp()
+
+            if case .noContentAvailable = result {
+                #expect(extractor.extractCallCount == 0)
+            } else {
+                Issue.record("Expected .noContentAvailable for own app, got \(result)")
             }
         }
     }

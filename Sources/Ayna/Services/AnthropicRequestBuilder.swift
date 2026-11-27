@@ -1,15 +1,93 @@
 import Foundation
 import os
 
+enum AnthropicThinkingBudget: Int, CaseIterable, Identifiable, Sendable {
+    case off = 0
+    case low = 4096
+    case medium = 10000
+    case high = 16000
+    case max = 32000
+
+    static let minimumBudgetTokens = 1024
+
+    var id: Int {
+        rawValue
+    }
+
+    var budgetTokens: Int? {
+        self == .off ? nil : rawValue
+    }
+
+    var displayName: String {
+        switch self {
+        case .off:
+            "Off"
+        case .low:
+            "Low (4,096 tokens)"
+        case .medium:
+            "Medium (10,000 tokens)"
+        case .high:
+            "High (16,000 tokens)"
+        case .max:
+            "Max (32,000 tokens)"
+        }
+    }
+
+    static func preset(for budgetTokens: Int?) -> Self {
+        guard let budgetTokens, budgetTokens >= minimumBudgetTokens else {
+            return .off
+        }
+        if let exact = Self(rawValue: budgetTokens) {
+            return exact
+        }
+        let presets: [Self] = [.low, .medium, .high, .max]
+        return presets.min { abs($0.rawValue - budgetTokens) < abs($1.rawValue - budgetTokens) } ?? .low
+    }
+}
+
 enum AnthropicOutputLimits {
     static let streamingDefault = 64000
     static let nonStreamingDefault = 16000
+    static let minimumResponseTokensWithThinking = 4096
 
     static let cutoffNotice = "\n\n*[Response cut off: the model reached its output limit.]*"
 
     static func defaultMaxTokens(model: String, stream: Bool) -> Int {
         let requested = stream ? streamingDefault : nonStreamingDefault
         return min(requested, outputCap(for: model) ?? requested)
+    }
+
+    static func resolvedLimits(
+        model: String,
+        stream: Bool,
+        requestedMaxTokens: Int?,
+        requestedBudgetTokens: Int?,
+        allowThinking: Bool = true
+    ) -> (maxTokens: Int, budgetTokens: Int?) {
+        let cap = outputCap(for: model)
+        var maxTokens = requestedMaxTokens ?? defaultMaxTokens(model: model, stream: stream)
+        if let cap {
+            maxTokens = min(maxTokens, cap)
+        }
+
+        guard allowThinking,
+              let requestedBudgetTokens,
+              requestedBudgetTokens >= AnthropicThinkingBudget.minimumBudgetTokens
+        else {
+            return (maxTokens: maxTokens, budgetTokens: nil)
+        }
+
+        if requestedMaxTokens == nil, requestedBudgetTokens >= maxTokens {
+            let expanded = requestedBudgetTokens + minimumResponseTokensWithThinking
+            maxTokens = cap.map { min(expanded, $0) } ?? expanded
+        }
+
+        let maxAllowedBudget = maxTokens - 1
+        guard maxAllowedBudget >= AnthropicThinkingBudget.minimumBudgetTokens else {
+            return (maxTokens: maxTokens, budgetTokens: nil)
+        }
+
+        return (maxTokens: maxTokens, budgetTokens: min(requestedBudgetTokens, maxAllowedBudget))
     }
 
     private static func outputCap(for model: String) -> Int? {
@@ -136,6 +214,30 @@ enum AnthropicRequestBuilder {
         }
     }
 
+    static func hasAssistantToolUseHistory(_ messages: [Message]) -> Bool {
+        let sanitizedMessages = ToolTranscriptSanitizer.sanitize(messages)
+        let currentTurnMessages: ArraySlice<Message> = if let lastUserIndex = sanitizedMessages.lastIndex(where: { $0.role == .user }) {
+            sanitizedMessages[sanitizedMessages.index(after: lastUserIndex)...]
+        } else {
+            sanitizedMessages[...]
+        }
+        var toolResponseIds = Set<String>()
+        for message in currentTurnMessages where message.role == .tool {
+            if let toolCallId = message.toolCalls?.first?.id {
+                toolResponseIds.insert(toolCallId)
+            }
+        }
+        return currentTurnMessages.contains { message in
+            guard message.role == .assistant,
+                  let toolCalls = message.toolCalls,
+                  !toolCalls.isEmpty
+            else {
+                return false
+            }
+            return toolCalls.contains { toolResponseIds.contains($0.id) }
+        }
+    }
+
     static func buildMessagesBody(
         messages: [Message],
         config: AnthropicRequestConfig,
@@ -145,9 +247,18 @@ enum AnthropicRequestBuilder {
         try Task.checkCancellation()
         let (systemPrompt, anthropicMessages) = try extractSystemAndConvertMessages(messages)
 
+        let allowThinking = !hasAssistantToolUseHistory(messages)
+        let resolvedLimits = AnthropicOutputLimits.resolvedLimits(
+            model: config.model,
+            stream: stream,
+            requestedMaxTokens: config.maxTokens,
+            requestedBudgetTokens: config.budgetTokens,
+            allowThinking: allowThinking
+        )
+
         var body: [String: Any] = [
             "model": config.model,
-            "max_tokens": config.maxTokens,
+            "max_tokens": resolvedLimits.maxTokens,
             "messages": anthropicMessages,
             "stream": stream
         ]
@@ -156,7 +267,7 @@ enum AnthropicRequestBuilder {
             body["system"] = system
         }
 
-        if let budgetTokens = config.budgetTokens, budgetTokens >= 1024 {
+        if let budgetTokens = resolvedLimits.budgetTokens {
             body["thinking"] = [
                 "type": "enabled",
                 "budget_tokens": budgetTokens

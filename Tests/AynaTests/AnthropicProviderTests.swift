@@ -138,6 +138,232 @@ struct AnthropicProviderTests {
         #expect(receivedReasoning.joined() == "Let me consider this carefully...")
     }
 
+    private nonisolated static func readRequestBody(_ request: URLRequest) -> Data? {
+        if let body = request.httpBody {
+            return body
+        }
+        guard let stream = request.httpBodyStream else {
+            return nil
+        }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: buffer.count)
+            if read > 0 {
+                data.append(buffer, count: read)
+            } else {
+                break
+            }
+        }
+        return data
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `non-streaming Claude 3.7 Sonnet with High and Max thinking budgets sends valid max_tokens`() async throws {
+        let provider = makeProvider()
+        let model = "claude-3-7-sonnet-20250219"
+        let messages = [Message(role: .user, content: "Think deeply")]
+        let responseBody = """
+        {
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "Done"}
+            ],
+            "stop_reason": "end_turn"
+        }
+        """
+
+        for preset in [AnthropicThinkingBudget.high, AnthropicThinkingBudget.max] {
+            nonisolated(unsafe) var capturedBody: [String: Any]?
+            AnthropicMockURLProtocol.requestHandler = { request in
+                if let bodyData = Self.readRequestBody(request) {
+                    capturedBody = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any]
+                }
+                let response = HTTPURLResponse(
+                    url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+                return (response, Data(responseBody.utf8))
+            }
+
+            let config = makeConfig(model: model, maxTokens: nil, thinkingBudget: preset.budgetTokens)
+            let callbackWaiter = TestCallbackWaiter()
+
+            await confirmation("Response completes") { completed in
+                provider.sendMessage(
+                    messages: messages,
+                    config: config,
+                    stream: false,
+                    tools: nil,
+                    callbacks: AIProviderStreamCallbacks(
+                        onChunk: { _ in },
+                        onComplete: { completed(); callbackWaiter.signal() },
+                        onError: { error in Issue.record("Unexpected error: \(error)"); callbackWaiter.signal() }
+                    )
+                )
+                await callbackWaiter.wait()
+            }
+
+            let body = try #require(capturedBody)
+            let maxTokens = try #require(body["max_tokens"] as? Int)
+            let thinking = try #require(body["thinking"] as? [String: Any])
+            let budgetTokens = try #require(thinking["budget_tokens"] as? Int)
+            #expect(budgetTokens == preset.budgetTokens)
+            #expect(budgetTokens < maxTokens)
+            #expect(maxTokens <= 64000)
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `provider keeps thinking and beta header when tools are merely available`() async throws {
+        let provider = makeProvider()
+        let config = makeConfig(
+            model: "claude-sonnet-4-20250514",
+            thinkingBudget: AnthropicThinkingBudget.medium.budgetTokens
+        )
+        let messages = [Message(role: .user, content: "Answer directly")]
+        let tools: [[String: Any]] = [
+            [
+                "type": "function",
+                "function": [
+                    "name": "web_fetch",
+                    "description": "Fetch a URL",
+                    "parameters": ["type": "object", "properties": [:]]
+                ]
+            ]
+        ]
+        let responseBody = """
+        {
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "Done"}
+            ],
+            "stop_reason": "end_turn"
+        }
+        """
+
+        nonisolated(unsafe) var capturedRequest: URLRequest?
+        nonisolated(unsafe) var capturedBody: [String: Any]?
+        AnthropicMockURLProtocol.requestHandler = { request in
+            capturedRequest = request
+            if let bodyData = Self.readRequestBody(request) {
+                capturedBody = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any]
+            }
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data(responseBody.utf8))
+        }
+
+        let callbackWaiter = TestCallbackWaiter()
+        await confirmation("Response completes") { completed in
+            provider.sendMessage(
+                messages: messages,
+                config: config,
+                stream: false,
+                tools: tools,
+                callbacks: AIProviderStreamCallbacks(
+                    onChunk: { _ in },
+                    onComplete: { completed(); callbackWaiter.signal() },
+                    onError: { error in Issue.record("Unexpected error: \(error)"); callbackWaiter.signal() }
+                )
+            )
+            await callbackWaiter.wait()
+        }
+
+        let body = try #require(capturedBody)
+        let thinking = try #require(body["thinking"] as? [String: Any])
+        #expect(thinking["budget_tokens"] as? Int == AnthropicThinkingBudget.medium.budgetTokens)
+        #expect(capturedRequest?.value(forHTTPHeaderField: "anthropic-beta") == "interleaved-thinking-2025-05-14")
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `provider omits thinking and beta header on tool continuation turns`() async throws {
+        let provider = makeProvider()
+        let config = makeConfig(
+            model: "claude-sonnet-4-20250514",
+            thinkingBudget: AnthropicThinkingBudget.medium.budgetTokens
+        )
+        let toolCall = MCPToolCall(
+            id: "toolu_123",
+            toolName: "web_fetch",
+            arguments: ["url": AnyCodable("https://example.com")]
+        )
+        let messages = [
+            Message(role: .user, content: "Use a tool"),
+            Message(role: .assistant, content: "", toolCalls: [toolCall]),
+            Message(role: .tool, content: "Example Domain", toolCalls: [toolCall])
+        ]
+        let tools: [[String: Any]] = [
+            [
+                "type": "function",
+                "function": [
+                    "name": "web_fetch",
+                    "description": "Fetch a URL",
+                    "parameters": ["type": "object", "properties": [:]]
+                ]
+            ]
+        ]
+        let responseBody = """
+        {
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "Done"}
+            ],
+            "stop_reason": "end_turn"
+        }
+        """
+
+        nonisolated(unsafe) var capturedRequest: URLRequest?
+        nonisolated(unsafe) var capturedBody: [String: Any]?
+        AnthropicMockURLProtocol.requestHandler = { request in
+            capturedRequest = request
+            if let bodyData = Self.readRequestBody(request) {
+                capturedBody = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any]
+            }
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data(responseBody.utf8))
+        }
+
+        let callbackWaiter = TestCallbackWaiter()
+        await confirmation("Response completes") { completed in
+            provider.sendMessage(
+                messages: messages,
+                config: config,
+                stream: false,
+                tools: tools,
+                callbacks: AIProviderStreamCallbacks(
+                    onChunk: { _ in },
+                    onComplete: { completed(); callbackWaiter.signal() },
+                    onError: { error in Issue.record("Unexpected error: \(error)"); callbackWaiter.signal() }
+                )
+            )
+            await callbackWaiter.wait()
+        }
+
+        let body = try #require(capturedBody)
+        #expect(body["thinking"] == nil)
+        #expect(capturedRequest?.value(forHTTPHeaderField: "anthropic-beta") == nil)
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func `non-streaming response handles tool use`() async {
         let provider = makeProvider()
@@ -478,6 +704,7 @@ struct AnthropicProviderTests {
     func `cancelling during Retry-After backoff sends no retry`() async {
         let backoffStarted = FlightTestSignal()
         let releaseBackoff = FlightTestSignal()
+        let responseHandled = FlightTestSignal()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [AnthropicMockURLProtocol.self]
         let provider = AnthropicProvider(
@@ -485,6 +712,9 @@ struct AnthropicProviderTests {
             retryDelay: { _, _ in
                 backoffStarted.signal()
                 await releaseBackoff.wait()
+            },
+            onNonStreamHandled: {
+                responseHandled.signal()
             }
         )
         let attempts = FlightTestBox(0)
@@ -509,7 +739,7 @@ struct AnthropicProviderTests {
         #expect(await backoffStarted.wait(timeout: .seconds(5)))
         provider.cancelRequest()
         releaseBackoff.signal()
-        try? await Task.sleep(for: .milliseconds(300))
+        #expect(await responseHandled.wait(timeout: .seconds(5)))
 
         #expect(attempts.value == 1)
     }
@@ -569,6 +799,7 @@ struct AnthropicProviderTests {
         let messages = [Message(role: .user, content: "Hello")]
 
         nonisolated(unsafe) var receivedError: Error?
+        let callbackWaiter = TestCallbackWaiter()
 
         await confirmation("Error received") { errorReceived in
             provider.sendMessage(
@@ -578,15 +809,16 @@ struct AnthropicProviderTests {
                 tools: nil,
                 callbacks: AIProviderStreamCallbacks(
                     onChunk: { _ in },
-                    onComplete: { Issue.record("Should not complete") },
+                    onComplete: { Issue.record("Should not complete"); callbackWaiter.signal() },
                     onError: { error in
                         receivedError = error
                         errorReceived()
+                        callbackWaiter.signal()
                     }
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(100))
+            await callbackWaiter.wait()
         }
 
         #expect(receivedError != nil)
@@ -599,6 +831,7 @@ struct AnthropicProviderTests {
         let messages = [Message(role: .user, content: "Hello")]
 
         nonisolated(unsafe) var receivedError: Error?
+        let callbackWaiter = TestCallbackWaiter()
 
         await confirmation("Error received") { errorReceived in
             provider.sendMessage(
@@ -608,38 +841,39 @@ struct AnthropicProviderTests {
                 tools: nil,
                 callbacks: AIProviderStreamCallbacks(
                     onChunk: { _ in },
-                    onComplete: { Issue.record("Should not complete") },
+                    onComplete: { Issue.record("Should not complete"); callbackWaiter.signal() },
                     onError: { error in
                         receivedError = error
                         errorReceived()
+                        callbackWaiter.signal()
                     }
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(100))
+            await callbackWaiter.wait()
         }
 
         #expect(receivedError != nil)
     }
 
-    @Test
+    @Test(.timeLimit(.minutes(1)))
     func `cancel request stops current task`() async {
-        let provider = makeProvider()
+        let server = FlightTestURLProtocolServer()
+        let (session, token) = FlightTestURLProtocol.makeSession(for: server)
+        defer { FlightTestURLProtocol.unregister(token: token) }
+        let cancellationHandled = FlightTestSignal()
+        let provider = AnthropicProvider(
+            urlSession: session,
+            retryDelay: { _, _ in },
+            onNonStreamHandled: {
+                cancellationHandled.signal()
+            }
+        )
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Hello")]
 
-        AnthropicMockURLProtocol.requestHandler = { _ in
-            Thread.sleep(forTimeInterval: 0.05)
-            let response = HTTPURLResponse(
-                url: URL(string: "https://api.anthropic.com/v1/messages")!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            return (response, Data("{}".utf8))
-        }
-
-        nonisolated(unsafe) var errorCalled = false
+        let errorCalled = FlightTestBox(false)
+        let completedCalled = FlightTestBox(false)
 
         provider.sendMessage(
             messages: messages,
@@ -648,14 +882,21 @@ struct AnthropicProviderTests {
             tools: nil,
             callbacks: AIProviderStreamCallbacks(
                 onChunk: { _ in },
-                onComplete: {},
-                onError: { _ in errorCalled = true }
+                onComplete: { completedCalled.value = true },
+                onError: { _ in errorCalled.value = true }
             )
         )
 
+        let exchange = await server.exchange(at: 0)
         provider.cancelRequest()
 
-        try? await Task.sleep(for: .milliseconds(200))
+        let stopped = await exchange.waitUntilStopped()
+        let handled = await cancellationHandled.wait(timeout: .seconds(5))
+
+        #expect(stopped)
+        #expect(handled)
+        #expect(!errorCalled.value)
+        #expect(!completedCalled.value)
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -1032,7 +1273,7 @@ struct AnthropicProviderTests {
     }
 }
 
-private final class AnthropicMockURLProtocol: URLProtocol, @unchecked Sendable {
+final class AnthropicMockURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
     nonisolated(unsafe) static var lastRequest: URLRequest?
 

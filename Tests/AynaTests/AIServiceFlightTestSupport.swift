@@ -5,7 +5,8 @@ import os
 final class FlightTestSignal: @unchecked Sendable {
     private let lock = NSLock()
     private var signaled = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    private var cancelledWaiterIDs: Set<UUID> = []
 
     var isSignaled: Bool {
         lock.lock()
@@ -20,32 +21,68 @@ final class FlightTestSignal: @unchecked Sendable {
             return
         }
         signaled = true
-        let pending = waiters
+        cancelledWaiterIDs.removeAll()
+        let pending = Array(waiters.values)
         waiters.removeAll()
         lock.unlock()
         pending.forEach { $0.resume() }
     }
 
     func wait() async {
+        let waiterID = UUID()
         await withCheckedContinuation { continuation in
             lock.lock()
             if signaled {
                 lock.unlock()
                 continuation.resume()
             } else {
-                waiters.append(continuation)
+                waiters[waiterID] = continuation
                 lock.unlock()
             }
         }
     }
 
-    func wait(timeout: Duration) async -> Bool {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
-        while !isSignaled, clock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
+    private func waitCancellable() async {
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                lock.lock()
+                if signaled || cancelledWaiterIDs.remove(waiterID) != nil {
+                    lock.unlock()
+                    continuation.resume()
+                } else {
+                    waiters[waiterID] = continuation
+                    lock.unlock()
+                }
+            }
+        } onCancel: {
+            lock.lock()
+            let continuation = waiters.removeValue(forKey: waiterID)
+            if continuation == nil, !signaled {
+                cancelledWaiterIDs.insert(waiterID)
+            }
+            lock.unlock()
+            continuation?.resume()
         }
-        return isSignaled
+    }
+
+    func wait(timeout: Duration) async -> Bool {
+        if isSignaled {
+            return true
+        }
+        return await withTaskGroup(of: Bool.self) { group in
+            group.addTask { [self] in
+                await self.waitCancellable()
+                return self.isSignaled
+            }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+                return false
+            }
+            let result = await group.next() ?? false
+            group.cancelAll()
+            return result || self.isSignaled
+        }
     }
 }
 
@@ -199,25 +236,25 @@ final class FlightTestURLProtocolExchange: @unchecked Sendable {
         protocolInstance.client?.urlProtocol(protocolInstance, didFailWithError: error)
     }
 
+    private let stoppedSignal = FlightTestSignal()
+
     func waitUntilStopped(timeout: Duration = .seconds(2)) async -> Bool {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
-        while !isStopped, clock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
-        return isStopped
+        await stoppedSignal.wait(timeout: timeout)
     }
 
     fileprivate func markStopped() {
         lock.lock()
         state.stopped = true
         lock.unlock()
+        stoppedSignal.signal()
     }
 }
 
 final class FlightTestURLProtocol: URLProtocol, @unchecked Sendable {
     private static let serverLock = NSLock()
     private nonisolated(unsafe) static var server: FlightTestURLProtocolServer?
+    private nonisolated(unsafe) static var scopedServers: [String: FlightTestURLProtocolServer] = [:]
+    static let sessionHeaderName = "X-Ayna-FlightTest-Session"
 
     private let exchangeLock = NSLock()
     private var exchange: FlightTestURLProtocolExchange?
@@ -234,6 +271,23 @@ final class FlightTestURLProtocol: URLProtocol, @unchecked Sendable {
         serverLock.unlock()
     }
 
+    static func makeSession(for server: FlightTestURLProtocolServer) -> (session: URLSession, token: String) {
+        let token = UUID().uuidString
+        serverLock.lock()
+        scopedServers[token] = server
+        serverLock.unlock()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FlightTestURLProtocol.self]
+        config.httpAdditionalHeaders = [sessionHeaderName: token]
+        return (URLSession(configuration: config), token)
+    }
+
+    static func unregister(token: String) {
+        serverLock.lock()
+        scopedServers.removeValue(forKey: token)
+        serverLock.unlock()
+    }
+
     override static func canInit(with _: URLRequest) -> Bool {
         true
     }
@@ -243,8 +297,13 @@ final class FlightTestURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func startLoading() {
+        let token = request.value(forHTTPHeaderField: Self.sessionHeaderName)
         Self.serverLock.lock()
-        let server = Self.server
+        let server: FlightTestURLProtocolServer? = if let token {
+            Self.scopedServers[token]
+        } else {
+            Self.server
+        }
         Self.serverLock.unlock()
         guard let server else {
             client?.urlProtocol(
@@ -336,6 +395,32 @@ final class FlightTestAnthropicProviderFactory {
         var unavailableDescription = "Unavailable for testing"
         private(set) var requests: [FlightTestAppleRequest] = []
         private(set) var clearedSessionIDs: [String] = []
+        private var requestSignal = FlightTestSignal()
+
+        private func notifyRequestWaiters() {
+            let current = requestSignal
+            requestSignal = FlightTestSignal()
+            current.signal()
+        }
+
+        private func waitForRequest(
+            timeout: Duration,
+            matching predicate: ([FlightTestAppleRequest]) -> FlightTestAppleRequest?
+        ) async -> FlightTestAppleRequest? {
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: timeout)
+            while true {
+                if let existing = predicate(requests) {
+                    return existing
+                }
+                let remaining = clock.now.duration(to: deadline)
+                guard remaining > .zero else {
+                    return predicate(requests)
+                }
+                let signal = requestSignal
+                _ = await signal.wait(timeout: remaining)
+            }
+        }
 
         func availabilityDescription() -> String {
             unavailableDescription
@@ -364,6 +449,7 @@ final class FlightTestAnthropicProviderFactory {
                 onError: onError
             )
             requests.append(request)
+            notifyRequestWaiters()
             await request.waitForTerminalOrCancellation()
         }
 
@@ -381,28 +467,20 @@ final class FlightTestAnthropicProviderFactory {
                 onError: onError
             )
             requests.append(request)
+            notifyRequestWaiters()
             await request.waitForTerminalOrCancellation()
         }
 
-        func request(at index: Int, timeout: Duration = .seconds(2)) async -> FlightTestAppleRequest? {
-            let clock = ContinuousClock()
-            let deadline = clock.now.advanced(by: timeout)
-            while requests.count <= index, clock.now < deadline {
-                try? await Task.sleep(for: .milliseconds(5))
+        func request(at index: Int, timeout: Duration = .seconds(5)) async -> FlightTestAppleRequest? {
+            await waitForRequest(timeout: timeout) { requests in
+                requests.indices.contains(index) ? requests[index] : nil
             }
-            return requests.indices.contains(index) ? requests[index] : nil
         }
 
-        func request(sessionIDPrefix: String, timeout: Duration = .seconds(2)) async -> FlightTestAppleRequest? {
-            let clock = ContinuousClock()
-            let deadline = clock.now.advanced(by: timeout)
-            while clock.now < deadline {
-                if let request = requests.first(where: { $0.conversationID.hasPrefix(sessionIDPrefix) }) {
-                    return request
-                }
-                try? await Task.sleep(for: .milliseconds(5))
+        func request(sessionIDPrefix: String, timeout: Duration = .seconds(5)) async -> FlightTestAppleRequest? {
+            await waitForRequest(timeout: timeout) { requests in
+                requests.first { $0.conversationID.hasPrefix(sessionIDPrefix) }
             }
-            return requests.first(where: { $0.conversationID.hasPrefix(sessionIDPrefix) })
         }
     }
 

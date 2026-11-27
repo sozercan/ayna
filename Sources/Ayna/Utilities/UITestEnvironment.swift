@@ -2,7 +2,8 @@ import Foundation
 import os
 
 enum UITestEnvironment {
-    private static let defaultModel = "ui-test-model"
+    static let defaultModel = "ui-test-model"
+    static let secondaryWatchModel = "ui-test-model-fast"
 
     static var isEnabled: Bool {
         RuntimeEnvironment.isUITesting
@@ -24,15 +25,49 @@ enum UITestEnvironment {
         clearConversationArtifacts()
     }
 
-    @MainActor
-    static func makeConversationManager() -> ConversationManager {
-        let store = EncryptedConversationStore(
-            directoryURL: conversationDirectoryURL,
-            keyIdentifier: "uitest-conversation-key",
-            keychain: AIService.keychain
-        )
-        return ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
-    }
+    #if !os(watchOS)
+        @MainActor
+        static func makeConversationManager() -> ConversationManager {
+            let store = EncryptedConversationStore(
+                directoryURL: conversationDirectoryURL,
+                keyIdentifier: "uitest-conversation-key",
+                keychain: AIService.keychain
+            )
+            return ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
+        }
+    #endif
+
+    #if os(watchOS)
+        @MainActor
+        static func configureWatchIfNeeded(
+            connectivityService: WatchConnectivityService = .shared,
+            conversationStore: WatchConversationStore = .shared
+        ) {
+            guard isEnabled else { return }
+
+            configureIfNeeded()
+
+            let service = AIService.shared
+            let seededModels = [defaultModel, secondaryWatchModel]
+            for model in seededModels {
+                if !service.customModels.contains(model) {
+                    service.customModels.append(model)
+                }
+                service.modelProviders[model] = .openai
+                service.modelEndpointTypes[model] = .chatCompletions
+                if service.modelAPIKeys[model]?.isEmpty ?? true {
+                    service.modelAPIKeys[model] = "ui-test-api-key"
+                }
+            }
+            service.selectedModel = defaultModel
+
+            connectivityService.configureForUITesting(
+                availableModels: seededModels,
+                selectedModel: defaultModel
+            )
+            conversationStore.resetForUITesting()
+        }
+    #endif
 
     static var shouldSkipMCPInitialization: Bool {
         isEnabled

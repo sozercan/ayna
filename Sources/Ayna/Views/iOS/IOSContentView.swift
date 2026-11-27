@@ -6,26 +6,42 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum IOSSidebarRoute: Hashable {
+    case newChat
+    case conversation(UUID)
+}
+
 struct IOSContentView: View {
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject private var deepLinkManager = DeepLinkManager.shared
     @State private var columnVisibility = NavigationSplitViewVisibility.all
+    @State private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
+    @State private var selectedRoute: IOSSidebarRoute?
     @State private var presentedAddModelRequest: AddModelRequest?
     @State private var dismissingAddModelRequestID: UUID?
 
     var body: some View {
         ZStack {
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                IOSSidebarView(columnVisibility: $columnVisibility)
+            NavigationSplitView(
+                columnVisibility: $columnVisibility,
+                preferredCompactColumn: $preferredCompactColumn
+            ) {
+                IOSSidebarView(
+                    selectedRoute: $selectedRoute,
+                    preferredCompactColumn: $preferredCompactColumn,
+                    columnVisibility: $columnVisibility
+                )
             } detail: {
-                if let selectedId = conversationManager.selectedConversationId,
-                   selectedId != ConversationManager.newConversationId
-                {
-                    IOSChatView(conversationId: selectedId)
-                        .id(selectedId)
-                } else {
-                    IOSNewChatView()
-                        .id(conversationManager.selectedConversationId)
+                switch selectedRoute {
+                case let .conversation(selectedId):
+                    IOSChatView(
+                        conversationId: selectedId,
+                        conversationManager: conversationManager
+                    )
+                    .id(selectedId)
+                case .newChat, .none:
+                    IOSNewChatView(conversationManager: conversationManager)
+                        .id(selectedRoute)
                 }
             }
             .navigationSplitViewStyle(.balanced)
@@ -72,9 +88,19 @@ struct IOSContentView: View {
             Text("Add model '\(request.name)' (\(request.displayProvider))?\n\nOnly add models from sources you trust.")
         }
         .onAppear {
+            syncRouteFromConversationManager(conversationManager.selectedConversationId)
             if presentedAddModelRequest == nil {
                 presentedAddModelRequest = deepLinkManager.pendingAddModel
             }
+        }
+        .onChange(of: selectedRoute) { _, newRoute in
+            syncConversationManagerFromRoute(newRoute)
+            if newRoute != nil {
+                preferredCompactColumn = .detail
+            }
+        }
+        .onChange(of: conversationManager.selectedConversationId) { _, newId in
+            syncRouteFromConversationManager(newId)
         }
         .onChange(of: deepLinkManager.pendingAddModel) { oldValue, newValue in
             updatePresentedAddModel(from: oldValue, to: newValue)
@@ -87,6 +113,43 @@ struct IOSContentView: View {
                     systemPrompt: chatRequest.systemPrompt
                 )
             }
+        }
+    }
+
+    private func syncConversationManagerFromRoute(_ route: IOSSidebarRoute?) {
+        switch route {
+        case let .conversation(conversationId):
+            if conversationManager.selectedConversationId != conversationId {
+                conversationManager.selectedConversationId = conversationId
+            }
+        case .newChat:
+            if conversationManager.selectedConversationId != ConversationManager.newConversationId {
+                conversationManager.selectedConversationId = ConversationManager.newConversationId
+            }
+        case .none:
+            if conversationManager.selectedConversationId != nil {
+                conversationManager.selectedConversationId = nil
+            }
+        }
+    }
+
+    private func syncRouteFromConversationManager(_ selectedId: UUID?) {
+        let mappedRoute: IOSSidebarRoute? = switch selectedId {
+        case .none:
+            nil
+        case ConversationManager.newConversationId:
+            .newChat
+        case let .some(conversationId):
+            .conversation(conversationId)
+        }
+
+        if selectedRoute != mappedRoute {
+            selectedRoute = mappedRoute
+        }
+        if mappedRoute != nil {
+            preferredCompactColumn = .detail
+        } else {
+            preferredCompactColumn = .sidebar
         }
     }
 
@@ -137,9 +200,9 @@ struct IOSContentView: View {
 }
 
 struct IOSNewChatView: View {
-    @EnvironmentObject var conversationManager: ConversationManager
+    @ObservedObject var conversationManager: ConversationManager
     @ObservedObject private var aiService = AIService.shared
-    @StateObject private var viewModel = IOSChatViewModel.placeholder()
+    @StateObject private var viewModel: IOSChatViewModel
 
     @State private var isFileImporterPresented = false
     @State private var followsLatest = true
@@ -151,6 +214,13 @@ struct IOSNewChatView: View {
     @State private var showModelSelector = false
 
     @State private var cachedDisplayableItems: [ChatTranscriptItem] = []
+
+    init(conversationManager: ConversationManager) {
+        self.conversationManager = conversationManager
+        _viewModel = StateObject(
+            wrappedValue: IOSChatViewModel(conversationManager: conversationManager)
+        )
+    }
 
     private var pendingConversation: Conversation? {
         guard let id = viewModel.conversationId else { return nil }

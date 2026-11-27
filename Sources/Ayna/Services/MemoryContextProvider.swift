@@ -9,6 +9,7 @@ final class MemoryContextProvider {
     private let metadataService: SessionMetadataService
     private let summaryService: ConversationSummaryService
     private let factExtractor: MemoryFactExtractor
+    private let preferencesStorageProvider: () -> UserDefaults
 
     @ObservationIgnored private nonisolated(unsafe) var loadTask: Task<Void, Never>?
 
@@ -21,7 +22,7 @@ final class MemoryContextProvider {
 
     private(set) var isMemoryEnabled: Bool = false {
         didSet {
-            AppPreferences.storage.set(isMemoryEnabled, forKey: "memoryEnabled")
+            preferencesStorageProvider().set(isMemoryEnabled, forKey: "memoryEnabled")
             if isMemoryEnabled {
                 scheduleMemoryLoadIfNeeded()
             } else {
@@ -34,7 +35,7 @@ final class MemoryContextProvider {
 
     private(set) var isAutoExtractionEnabled: Bool = false {
         didSet {
-            AppPreferences.storage.set(isAutoExtractionEnabled, forKey: "memoryAutoExtraction")
+            preferencesStorageProvider().set(isAutoExtractionEnabled, forKey: "memoryAutoExtraction")
         }
     }
 
@@ -60,20 +61,23 @@ final class MemoryContextProvider {
         memoryService: UserMemoryService = .shared,
         metadataService: SessionMetadataService = .shared,
         summaryService: ConversationSummaryService = .shared,
-        factExtractor: MemoryFactExtractor = .shared
+        factExtractor: MemoryFactExtractor = .shared,
+        preferencesStorageProvider: @escaping () -> UserDefaults = { AppPreferences.storage }
     ) {
         self.memoryService = memoryService
         self.metadataService = metadataService
         self.summaryService = summaryService
         self.factExtractor = factExtractor
+        self.preferencesStorageProvider = preferencesStorageProvider
 
-        AppPreferences.storage.register(defaults: [
+        let storage = preferencesStorageProvider()
+        storage.register(defaults: [
             "memoryEnabled": false,
             "memoryAutoExtraction": false
         ])
 
-        isMemoryEnabled = AppPreferences.storage.bool(forKey: "memoryEnabled")
-        isAutoExtractionEnabled = AppPreferences.storage.bool(forKey: "memoryAutoExtraction")
+        isMemoryEnabled = storage.bool(forKey: "memoryEnabled")
+        isAutoExtractionEnabled = storage.bool(forKey: "memoryAutoExtraction")
         scheduleMemoryLoadIfNeeded()
     }
 
