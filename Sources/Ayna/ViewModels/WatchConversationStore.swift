@@ -286,6 +286,22 @@
             pageCycleManifestAccumulator.reset()
         }
 
+        func resetForUITesting() {
+            userDefaults.removeObject(forKey: persistenceKey)
+            sourceID = nil
+            lastSnapshotRevision = 0
+            committedConversations = []
+            pendingMutations = []
+            pendingDrafts = [:]
+            legacyDeliveryCoverage = [:]
+            bodyRecency = [:]
+            bodyRecencySequence = 0
+            lastAccessedConversationID = nil
+            selectedConversationId = nil
+            pageCycleManifestAccumulator.reset()
+            rebuildPublishedConversations()
+        }
+
         @discardableResult
         func applySyncSnapshot(_ snapshot: WatchSyncSnapshot) -> WatchSyncSnapshotApplyOutcome {
             let previousState = captureRuntimeState()

@@ -1592,21 +1592,19 @@ class AIService: ObservableObject {
             return requestHandle
         }
 
-        #if !os(watchOS)
-            if UITestEnvironment.isEnabled {
-                simulateUITestResponse(
-                    messages: messages,
-                    stream: stream,
-                    flightID: flightID,
-                    requestLane: requestLane,
-                    isMultiModelRequest: isMultiModelRequest,
-                    modelName: requestModel,
-                    onChunk: onChunk,
-                    onComplete: onComplete
-                )
-                return requestHandle
-            }
-        #endif
+        if UITestEnvironment.isEnabled {
+            simulateUITestResponse(
+                messages: messages,
+                stream: stream,
+                flightID: flightID,
+                requestLane: requestLane,
+                isMultiModelRequest: isMultiModelRequest,
+                modelName: requestModel,
+                onChunk: onChunk,
+                onComplete: onComplete
+            )
+            return requestHandle
+        }
 
         guard !requestModel.isEmpty else {
             DiagnosticsLogger.log(

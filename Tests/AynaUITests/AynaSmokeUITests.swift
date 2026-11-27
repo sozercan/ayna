@@ -100,32 +100,33 @@ final class AynaSmokeUITests: AynaUITestCase {
 
         let deleteMenuItem = app.menuItems["contextMenu.delete"]
         XCTAssertTrue(deleteMenuItem.waitForExistence(timeout: 3), "Delete menu item should appear in context menu")
-
-        deleteMenuItem.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-
-        let menuDismissed = NSPredicate(format: "exists == false")
-        let menuExpectation = XCTNSPredicateExpectation(predicate: menuDismissed, object: deleteMenuItem)
-        _ = XCTWaiter.wait(for: [menuExpectation], timeout: 2)
-
-        if title.exists {
-            app.typeKey(.escape, modifierFlags: [])
-
-            let escapeHandled = XCTNSPredicateExpectation(predicate: menuDismissed, object: deleteMenuItem)
-            _ = XCTWaiter.wait(for: [escapeHandled], timeout: 1)
-
-            title.click()
-
-            let selectedPredicate = NSPredicate(format: "isSelected == true OR isHittable == true")
-            let selectedExpectation = XCTNSPredicateExpectation(predicate: selectedPredicate, object: title)
-            _ = XCTWaiter.wait(for: [selectedExpectation], timeout: 1)
-
-            app.typeKey(.delete, modifierFlags: [])
-        }
+        deleteMenuItem.click()
 
         let doesNotExist = NSPredicate(format: "exists == false")
         let expectation = XCTNSPredicateExpectation(predicate: doesNotExist, object: title)
         let result = XCTWaiter.wait(for: [expectation], timeout: 10)
-        XCTAssertEqual(result, XCTWaiter.Result.completed)
+        XCTAssertEqual(result, .completed, "Context menu Delete should remove the conversation from the sidebar")
+    }
+
+    func testDeleteConversationWithKeyboard() {
+        let msg = "Conversation to delete via keyboard"
+        composeInitialMessageAndSend(msg)
+
+        let sidebarList = app.outlines[TestIdentifiers.Sidebar.conversationList]
+        let title = sidebarList.staticTexts[msg]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+
+        let rowHittablePredicate = NSPredicate(format: "isHittable == true")
+        let rowHittableExpectation = XCTNSPredicateExpectation(predicate: rowHittablePredicate, object: title)
+        XCTAssertEqual(XCTWaiter.wait(for: [rowHittableExpectation], timeout: 5), .completed)
+
+        title.click()
+        app.typeKey(.delete, modifierFlags: [])
+
+        let doesNotExist = NSPredicate(format: "exists == false")
+        let expectation = XCTNSPredicateExpectation(predicate: doesNotExist, object: title)
+        let result = XCTWaiter.wait(for: [expectation], timeout: 10)
+        XCTAssertEqual(result, .completed, "Delete key should remove the selected conversation from the sidebar")
     }
 
     func testSettingsWindow() {
@@ -166,10 +167,29 @@ final class AynaSmokeUITests: AynaUITestCase {
         let alphaRow = sidebarList.staticTexts["Topic Alpha"]
         alphaRow.click()
 
-        let messageBubble = app.otherElements.containing(
-            NSPredicate(format: "label == %@", "Topic Alpha")
+        let messagesList = app.scrollViews[TestIdentifiers.ChatView.messagesList]
+        XCTAssertTrue(messagesList.waitForExistence(timeout: 5), "Chat messages list should be visible")
+
+        let alphaMessage = messagesList.descendants(matching: .any).containing(
+            NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "chat.message.", "Topic Alpha")
         ).firstMatch
-        XCTAssertTrue(messageBubble.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            alphaMessage.waitForExistence(timeout: 5),
+            "Active conversation message should appear in the chat messages list"
+        )
+
+        let betaMessages = messagesList.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "chat.message.", "Topic Beta")
+        )
+        let betaAbsent = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "count == 0"),
+            object: betaMessages
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [betaAbsent], timeout: 5),
+            .completed,
+            "Inactive conversation messages should not appear in the chat messages list"
+        )
     }
 
     func testMessageCopy() {
@@ -207,7 +227,7 @@ final class AynaSmokeUITests: AynaUITestCase {
     @discardableResult
     private func composeInitialMessageAndSend(_ text: String) -> XCUIElement {
         let composer = ensureNewConversationComposer()
-        composer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        composer.click()
 
         let hasFocus = NSPredicate(format: "hasKeyboardFocus == true")
         let focusExpectation = XCTNSPredicateExpectation(predicate: hasFocus, object: composer)
