@@ -458,14 +458,40 @@ enum MarkdownRenderer {
 
 #if !os(watchOS)
 struct MarkdownTable {
-    enum ColumnAlignment {
+    enum ColumnAlignment: Equatable, Sendable {
         case leading
         case center
         case trailing
+
+        var frameAlignment: Alignment {
+            switch self {
+            case .leading:
+                .leading
+            case .center:
+                .center
+            case .trailing:
+                .trailing
+            }
+        }
+
+        var textAlignment: TextAlignment {
+            switch self {
+            case .leading:
+                .leading
+            case .center:
+                .center
+            case .trailing:
+                .trailing
+            }
+        }
     }
 
     let headers: [AttributedString]
     let rows: [[AttributedString]]
     let alignments: [ColumnAlignment]
+
+    func alignment(forColumn index: Int) -> ColumnAlignment {
+        alignments.indices.contains(index) ? alignments[index] : .leading
+    }
 }
 #endif
