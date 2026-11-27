@@ -858,23 +858,29 @@
 
         private static func isValidWebHost(_ host: String) -> Bool {
             let lowercased = host.lowercased()
-            if lowercased == "localhost" {
+            let normalizedHost = if lowercased.hasSuffix("."), !lowercased.hasSuffix("..") {
+                String(lowercased.dropLast())
+            } else {
+                lowercased
+            }
+
+            if normalizedHost == "localhost" {
                 return true
             }
 
-            if lowercased.contains(":") {
+            if normalizedHost.contains(":") {
                 return true
             }
 
-            guard lowercased.contains("."),
-                  !lowercased.hasPrefix("."),
-                  !lowercased.hasSuffix("."),
-                  !lowercased.contains("..")
+            guard normalizedHost.contains("."),
+                  !normalizedHost.hasPrefix("."),
+                  !normalizedHost.hasSuffix("."),
+                  !normalizedHost.contains("..")
             else {
                 return false
             }
 
-            let labels = lowercased.split(separator: ".")
+            let labels = normalizedHost.split(separator: ".")
             if labels.count == 4, labels.allSatisfy({ Int($0).map { (0 ... 255).contains($0) } ?? false }) {
                 return true
             }

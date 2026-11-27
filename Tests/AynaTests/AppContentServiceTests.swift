@@ -155,6 +155,7 @@
             #expect(BrowserExtractor.normalizedBrowserURL(from: "https://xn--e1afmkfd.xn--p1ai/") == "https://xn--e1afmkfd.xn--p1ai/")
             #expect(BrowserExtractor.normalizedBrowserURL(from: "http://intranet/dashboard") == "http://intranet/dashboard")
             #expect(BrowserExtractor.normalizedBrowserURL(from: "https://example.com./") == "https://example.com./")
+            #expect(BrowserExtractor.normalizedBrowserURL(from: "example.com./path") == "https://example.com./path")
             #expect(BrowserExtractor.normalizedBrowserURL(from: "localhost:8080/api") == "https://localhost:8080/api")
             #expect(BrowserExtractor.normalizedBrowserURL(from: "127.0.0.1:8080") == "https://127.0.0.1:8080")
             #expect(BrowserExtractor.normalizedBrowserURL(from: "  https://example.com/path?q=1  ") == "https://example.com/path?q=1")
