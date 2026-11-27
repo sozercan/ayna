@@ -178,7 +178,14 @@ struct MacChatView: View {
     @State var toolCallDepth = 0
     @State private var currentToolName: String?
     @State private var isComposerFocused = true
+    private struct ToolChainTimeoutContext {
+        let operationID: ToolChainCoordinator.OperationID
+        let assistantMessageID: UUID
+        let conversationID: UUID
+    }
+
     @State private var toolChainTimeoutTask: Task<Void, Never>?
+    @State private var toolChainTimeoutContext: ToolChainTimeoutContext?
     @State var sendPreparationTask: Task<Void, Never>?
     @State var sendPreparationID: UUID?
     @State private var pendingAutoSendClaim: MacPendingAutoSendClaim?
@@ -424,6 +431,14 @@ struct MacChatView: View {
         }
         .onDisappear {
             cancelOwnedGenerationForLifecycle()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pendingApprovalsChanged)) { notification in
+            if let notificationConversationId = notification.userInfo?["conversationId"] as? UUID,
+               notificationConversationId != conversation.id
+            {
+                return
+            }
+            syncToolChainTimeoutForPendingApprovals()
         }
         .onReceive(NotificationCenter.default.publisher(for: .sendPendingMessage)) { notification in
             guard let conversationId = notification.userInfo?["conversationId"] as? UUID,
@@ -734,8 +749,7 @@ struct MacChatView: View {
             finalizePersistedTextGeneration()
         }
         imageGenerationCoordinator.cancelCurrentOperation()
-        toolChainTimeoutTask?.cancel()
-        toolChainTimeoutTask = nil
+        clearToolChainTimeout()
         activeAssistantMessageID = nil
         activeMultiModelResponseGroupID = nil
         isGenerating = false
@@ -784,8 +798,7 @@ struct MacChatView: View {
     ) {
         guard toolChainCoordinator.owns(operationID, conversationID: conversationID) else { return }
         finalizePersistedTextGeneration()
-        toolChainTimeoutTask?.cancel()
-        toolChainTimeoutTask = nil
+        clearToolChainTimeout()
         toolChainCoordinator.cancelCurrentOperation()
         activeAssistantMessageID = nil
         activeMultiModelResponseGroupID = nil
@@ -794,18 +807,62 @@ struct MacChatView: View {
         toolCallDepth = 0
     }
 
+    private func clearToolChainTimeout() {
+        toolChainTimeoutTask?.cancel()
+        toolChainTimeoutTask = nil
+        toolChainTimeoutContext = nil
+    }
+
+    private func hasPendingApprovals(for conversationID: UUID) -> Bool {
+        (aiService.permissionService?.pendingCount(forConversation: conversationID) ?? 0) > 0
+    }
+
+    private func syncToolChainTimeoutForPendingApprovals() {
+        guard let context = toolChainTimeoutContext else { return }
+        guard toolChainCoordinator.owns(context.operationID, conversationID: context.conversationID),
+              activeAssistantMessageID == context.assistantMessageID
+        else {
+            clearToolChainTimeout()
+            return
+        }
+
+        if hasPendingApprovals(for: context.conversationID) {
+            toolChainTimeoutTask?.cancel()
+            toolChainTimeoutTask = nil
+        } else if toolChainTimeoutTask == nil {
+            startToolChainTimeoutTask(for: context)
+        }
+    }
+
     private func armToolChainTimeout(
         operationID: ToolChainCoordinator.OperationID,
         assistantMessageID: UUID,
         conversationID: UUID
     ) {
+        let context = ToolChainTimeoutContext(
+            operationID: operationID,
+            assistantMessageID: assistantMessageID,
+            conversationID: conversationID
+        )
+        toolChainTimeoutContext = context
+        toolChainTimeoutTask?.cancel()
+        toolChainTimeoutTask = nil
+        guard !hasPendingApprovals(for: conversationID) else { return }
+        startToolChainTimeoutTask(for: context)
+    }
+
+    private func startToolChainTimeoutTask(for context: ToolChainTimeoutContext) {
         toolChainTimeoutTask?.cancel()
         let coordinator = toolChainCoordinator
+        let operationID = context.operationID
+        let assistantMessageID = context.assistantMessageID
+        let conversationID = context.conversationID
         let timeoutTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(60))
             guard !Task.isCancelled,
                   coordinator.owns(operationID, conversationID: conversationID),
-                  activeAssistantMessageID == assistantMessageID
+                  activeAssistantMessageID == assistantMessageID,
+                  !hasPendingApprovals(for: conversationID)
             else {
                 return
             }
@@ -1578,8 +1635,7 @@ struct MacChatView: View {
         case .ignored:
             return
         case .responseCompleted:
-            toolChainTimeoutTask?.cancel()
-            toolChainTimeoutTask = nil
+            clearToolChainTimeout()
             guard toolChainCoordinator.finishOperation(operationID) else { return }
             activeAssistantMessageID = nil
             currentToolName = nil
@@ -1588,8 +1644,7 @@ struct MacChatView: View {
             failedMessage = nil
             failedSendPayload = nil
         case let .launchContinuation(continuation):
-            toolChainTimeoutTask?.cancel()
-            toolChainTimeoutTask = nil
+            clearToolChainTimeout()
             launchToolContinuation(
                 continuation,
                 operationID: operationID,
