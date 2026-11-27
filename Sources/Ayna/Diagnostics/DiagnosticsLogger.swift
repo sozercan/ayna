@@ -234,6 +234,10 @@ enum ErrorPresenter {
             return category(for: aynaError)
         }
 
+        if let statusError = error as? HTTPStatusError {
+            return category(for: AynaError.fromHTTPResponse(statusCode: statusError.statusCode, data: nil))
+        }
+
         if error is CancellationError {
             return .cancelled
         }
@@ -248,6 +252,10 @@ enum ErrorPresenter {
     static func isRetryable(_ error: Error) -> Bool {
         if let aynaError = error as? AynaError {
             return isRetryable(aynaError)
+        }
+
+        if let statusError = error as? HTTPStatusError {
+            return statusError.isRetryable
         }
 
         if let urlError = error as? URLError {
@@ -265,6 +273,10 @@ enum ErrorPresenter {
     static func requiresUserAction(_ error: Error) -> Bool {
         if let aynaError = error as? AynaError {
             return requiresUserAction(aynaError)
+        }
+
+        if let statusError = error as? HTTPStatusError {
+            return statusError.statusCode == 401 || statusError.statusCode == 403
         }
 
         return false

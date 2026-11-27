@@ -290,19 +290,11 @@ final class OpenAIImageService: @unchecked Sendable {
                     NetworkCircuitBreaker.recordFailure(key: circuitKey)
                 }
 
-                let message: String = {
-                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let errorDict = json["error"] as? [String: Any],
-                       let errorMessage = errorDict["message"] as? String
-                    {
-                        return errorMessage
-                    }
-                    return "HTTP \(httpResponse.statusCode)"
-                }()
+                let error = AynaError.fromHTTPResponse(statusCode: httpResponse.statusCode, data: data)
 
                 requestHandle.run { @MainActor in
                     guard requestHandle.isActive else { return }
-                    context.onError(AynaError.apiError(message: message))
+                    context.onError(error)
                 }
                 return
             }
@@ -713,19 +705,11 @@ final class OpenAIImageService: @unchecked Sendable {
                     NetworkCircuitBreaker.recordFailure(key: circuitKey)
                 }
 
-                let message: String = {
-                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let errorDict = json["error"] as? [String: Any],
-                       let errorMessage = errorDict["message"] as? String
-                    {
-                        return errorMessage
-                    }
-                    return "HTTP \(httpResponse.statusCode)"
-                }()
+                let error = AynaError.fromHTTPResponse(statusCode: httpResponse.statusCode, data: data)
 
                 requestHandle.run { @MainActor in
                     guard requestHandle.isActive else { return }
-                    onError(AynaError.apiError(message: message))
+                    onError(error)
                 }
                 return
             }

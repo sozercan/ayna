@@ -359,7 +359,40 @@ struct ErrorPresenterTests {
         #expect(ErrorPresenter.category(for: CancellationError()) == .cancelled)
         #expect(ErrorPresenter.category(for: URLError(.cancelled)) == .cancelled)
         #expect(ErrorPresenter.category(for: URLError(.notConnectedToInternet)) == .network)
+        #expect(ErrorPresenter.category(for: HTTPStatusError(statusCode: 401, message: "Unauthorized")) == .authentication)
+        #expect(ErrorPresenter.category(for: HTTPStatusError(statusCode: 403, message: "Forbidden")) == .authentication)
+        #expect(ErrorPresenter.category(for: HTTPStatusError(statusCode: 429, message: "Rate limit")) == .api)
+        #expect(ErrorPresenter.category(for: HTTPStatusError(statusCode: 503, message: "Unavailable")) == .api)
         #expect(ErrorPresenter.category(for: GenericError()) == .unknown)
+    }
+
+    @Test("HTTPStatusError retryability and user action requirements")
+    func httpStatusErrorClassification() {
+        let unauthorized = HTTPStatusError(statusCode: 401, message: "Unauthorized")
+        let forbidden = HTTPStatusError(statusCode: 403, message: "Forbidden")
+        let badRequest = HTTPStatusError(statusCode: 400, message: "Bad request")
+        let rateLimited = HTTPStatusError(statusCode: 429, message: "Too many requests")
+        let serverError = HTTPStatusError(statusCode: 503, message: "Service unavailable")
+
+        #expect(!ErrorPresenter.isRetryable(unauthorized))
+        #expect(ErrorPresenter.requiresUserAction(unauthorized))
+        #expect(ErrorPresenter.suggestedAction(for: unauthorized) == .openSettings)
+
+        #expect(!ErrorPresenter.isRetryable(forbidden))
+        #expect(ErrorPresenter.requiresUserAction(forbidden))
+        #expect(ErrorPresenter.suggestedAction(for: forbidden) == .openSettings)
+
+        #expect(!ErrorPresenter.isRetryable(badRequest))
+        #expect(!ErrorPresenter.requiresUserAction(badRequest))
+        #expect(ErrorPresenter.suggestedAction(for: badRequest) == .dismiss)
+
+        #expect(ErrorPresenter.isRetryable(rateLimited))
+        #expect(!ErrorPresenter.requiresUserAction(rateLimited))
+        #expect(ErrorPresenter.suggestedAction(for: rateLimited) == .retry)
+
+        #expect(ErrorPresenter.isRetryable(serverError))
+        #expect(!ErrorPresenter.requiresUserAction(serverError))
+        #expect(ErrorPresenter.suggestedAction(for: serverError) == .retry)
     }
 
     @Test("Retryable errors are identified correctly", arguments: zip(

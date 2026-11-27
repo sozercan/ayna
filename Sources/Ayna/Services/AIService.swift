@@ -3497,17 +3497,9 @@ class AIService: ObservableObject {
         }
 
         if let urlError = error as? URLError, urlError.code == .timedOut {
-            callbacks.onError(
-                AIError.apiError(
-                    "Request timed out. The model may be slow or overloaded. Please try again."
-                )
-            )
+            callbacks.onError(AynaError.timeout)
         } else if let urlError = error as? URLError, urlError.code == .networkConnectionLost {
-            callbacks.onError(
-                AIError.apiError(
-                    "Network connection was lost. The server may have rejected the request."
-                )
-            )
+            callbacks.onError(AynaError.networkError(underlying: urlError))
         } else {
             callbacks.onError(error)
         }
