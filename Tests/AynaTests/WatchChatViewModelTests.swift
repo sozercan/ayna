@@ -141,18 +141,50 @@
         }
 
         @Test
-        func `tool call depth limit`() {
-            let maxDepth = 5
-            var currentDepth = 0
+        func `tool call depth limit enforces WatchChatViewModel maxToolCallDepth`() async throws {
+            let store = WatchConversationStore(
+                userDefaults: defaults,
+                persistenceKey: "watch.depth.\(UUID().uuidString)",
+                mutationEnqueuer: { _ in }
+            )
+            let conversation = try #require(store.createConversation(title: "Depth Test", model: "gpt-4o"))
+            WatchConnectivityService.shared.availableModels = ["gpt-4o"]
+            WatchConnectivityService.shared.selectedModel = "gpt-4o"
 
-            for _ in 1 ... 10 {
-                guard currentDepth < maxDepth else {
-                    break
+            let aiService = WatchTestCapturingAIService(model: "gpt-4o")
+            let viewModel = WatchChatViewModel(
+                conversationStore: store,
+                connectivityService: .shared,
+                aiService: aiService
+            )
+            viewModel.setConversation(conversation.id)
+            #expect(viewModel.sendMessage("Loop tools") == .started)
+
+            for step in 0 ..< WatchChatViewModel.maxToolCallDepth {
+                let deadline = ContinuousClock().now.advanced(by: .seconds(1))
+                while aiService.requests.count <= step, ContinuousClock().now < deadline {
+                    try? await Task.sleep(for: .milliseconds(5))
                 }
-                currentDepth += 1
+                let current = try #require(aiService.requests.indices.contains(step) ? aiService.requests[step] : nil)
+                current.onToolCallRequested?("call-\(step)", "unknown_tool", [:])
+                current.onComplete()
             }
 
-            #expect(currentDepth == maxDepth, "Tool call depth should be limited to \(maxDepth)")
+            let overflowDeadline = ContinuousClock().now.advanced(by: .seconds(1))
+            while aiService.requests.count <= WatchChatViewModel.maxToolCallDepth, ContinuousClock().now < overflowDeadline {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            let overflow = try #require(aiService.requests.last)
+            overflow.onToolCallRequested?("call-overflow", "unknown_tool", [:])
+
+            let stopDeadline = ContinuousClock().now.advanced(by: .seconds(1))
+            while viewModel.isLoading, ContinuousClock().now < stopDeadline {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+
+            #expect(!viewModel.isLoading)
+            #expect(viewModel.errorMessage == "Tool call limit reached. Please try again.")
+            #expect(aiService.requests.count == WatchChatViewModel.maxToolCallDepth + 1)
         }
 
         @Test
@@ -186,79 +218,147 @@
         }
 
         @Test
-        func `title generation trigger`() {
-            var conversation = Conversation(title: "New Chat", model: "gpt-4o")
+        func `first message completion triggers title generation on WatchChatViewModel`() async throws {
+            let store = WatchConversationStore(
+                userDefaults: defaults,
+                persistenceKey: "watch.title.\(UUID().uuidString)",
+                mutationEnqueuer: { _ in }
+            )
+            let conversation = try #require(store.createConversation(title: "New Chat", model: "gpt-4o"))
+            WatchConnectivityService.shared.availableModels = ["gpt-4o"]
+            WatchConnectivityService.shared.selectedModel = "gpt-4o"
 
-            let isFirstMessage = conversation.messages.isEmpty
-            #expect(isFirstMessage, "First message should trigger title generation")
-
-            conversation.addMessage(Message(role: .user, content: "Hello"))
-            conversation.addMessage(Message(role: .assistant, content: "Hi!"))
-
-            let isStillFirstMessage = conversation.messages.isEmpty
-            #expect(!isStillFirstMessage, "Subsequent messages should not trigger title generation")
-        }
-
-        @Test
-        func `conversation update preserves local title`() {
-            let conversationId = UUID()
-
-            let localTitle = "Weather Discussion"
-            var localConv = Conversation(id: conversationId, title: localTitle, model: "gpt-4o")
-            localConv.addMessage(Message(role: .user, content: "What's the weather?"))
-
-            let syncedTitle = "New Chat"
-            var syncedConv = Conversation(id: conversationId, title: syncedTitle, model: "gpt-4o")
-            syncedConv.addMessage(Message(role: .user, content: "What's the weather?"))
-
-            let shouldPreserveLocal = syncedConv.title == "New Chat" && localConv.title != "New Chat"
-            let finalTitle = shouldPreserveLocal ? localConv.title : syncedConv.title
-
-            #expect(finalTitle == localTitle)
-        }
-
-        @Test
-        func `streaming throttle interval`() {
-            let uiUpdateInterval: TimeInterval = 0.1
-            #expect(uiUpdateInterval == 0.1)
-            #expect(uiUpdateInterval >= 0.05, "Throttle should be at least 50ms for performance")
-            #expect(uiUpdateInterval <= 0.2, "Throttle should be at most 200ms for responsiveness")
-        }
-
-        @Test
-        func `max tool call depth constant`() {
-            let maxToolCallDepth = 5
-
-            var currentDepth = 0
-            var reachedLimit = false
-
-            for _ in 1 ... 10 {
-                if currentDepth >= maxToolCallDepth {
-                    reachedLimit = true
-                    break
+            var receivedPrompts: [String] = []
+            let aiService = AIService(responseSimulator: { messages, callbacks in
+                receivedPrompts.append(messages.last?.content ?? "")
+                if receivedPrompts.count == 1 {
+                    callbacks.onChunk("Hi there!")
+                    callbacks.onComplete()
+                } else {
+                    callbacks.onChunk("Greeting Chat")
+                    callbacks.onComplete()
                 }
-                currentDepth += 1
+            })
+            aiService.customModels = ["gpt-4o"]
+            aiService.selectedModel = "gpt-4o"
+            aiService.modelProviders["gpt-4o"] = .openai
+            aiService.modelAPIKeys["gpt-4o"] = "sk-watch-test"
+
+            let viewModel = WatchChatViewModel(
+                conversationStore: store,
+                connectivityService: .shared,
+                aiService: aiService
+            )
+            viewModel.setConversation(conversation.id)
+            #expect(viewModel.sendMessage("Hello") == .started)
+
+            let deadline = ContinuousClock().now.advanced(by: .seconds(1))
+            while store.conversation(for: conversation.id)?.title == "New Chat", ContinuousClock().now < deadline {
+                try? await Task.sleep(for: .milliseconds(5))
             }
 
-            #expect(reachedLimit, "Should reach tool call depth limit")
-            #expect(currentDepth == maxToolCallDepth)
+            #expect(store.conversation(for: conversation.id)?.title == "Greeting Chat")
+            #expect(receivedPrompts.count == 2)
         }
 
         @Test
-        func `watch conversation sync merge logic`() {
-            let conversationId = UUID()
+        func `conversation store sync preserves pending local rename and draft messages`() throws {
+            let store = WatchConversationStore(
+                userDefaults: defaults,
+                persistenceKey: "watch.sync.\(UUID().uuidString)",
+                mutationEnqueuer: { _ in }
+            )
+            let created = try #require(store.createConversation(title: "New Chat", model: "gpt-4o"))
+            let userMessage = WatchMessage(from: Message(role: .user, content: "What's the weather?"))
+            #expect(store.addMessage(userMessage, to: created.id))
+            #expect(store.renameConversation(created.id, newTitle: "Weather Discussion"))
 
-            var localConv = Conversation(id: conversationId, title: "Chat", model: "gpt-4o")
-            localConv.addMessage(Message(role: .user, content: "Hello"))
-            localConv.addMessage(Message(role: .assistant, content: "Hi!"))
-            localConv.addMessage(Message(role: .assistant, content: ""))
+            var draft = try #require(store.conversation(for: created.id))
+            draft.messages.append(WatchMessage(from: Message(role: .assistant, content: "Draft reply", model: "gpt-4o")))
+            #expect(store.syncDraft(draft))
 
-            var remoteConv = Conversation(id: conversationId, title: "Chat", model: "gpt-4o")
-            remoteConv.addMessage(Message(role: .user, content: "Hello"))
-            remoteConv.addMessage(Message(role: .assistant, content: "Hi!"))
+            let now = Date()
+            let remoteConversation = WatchConversation(
+                id: created.id,
+                title: "New Chat",
+                messages: [userMessage],
+                model: "gpt-4o",
+                updatedAt: now,
+                createdAt: now
+            )
+            store.updateConversations([remoteConversation])
 
-            let shouldPreserveLocalMessages = localConv.messages.count > remoteConv.messages.count
-            #expect(shouldPreserveLocalMessages)
+            let merged = try #require(store.conversation(for: created.id))
+            #expect(merged.title == "Weather Discussion")
+            #expect(merged.messages.count == 2)
+            #expect(merged.messages.last?.content == "Draft reply")
+        }
+
+        @Test
+        func `streaming throttle interval batches rapid chunks until WatchChatViewModel interval elapses`() async throws {
+            let store = WatchConversationStore(
+                userDefaults: defaults,
+                persistenceKey: "watch.throttle.\(UUID().uuidString)",
+                mutationEnqueuer: { _ in }
+            )
+            let conversation = try #require(store.createConversation(title: "Throttle Test", model: "gpt-4o"))
+            WatchConnectivityService.shared.availableModels = ["gpt-4o"]
+            WatchConnectivityService.shared.selectedModel = "gpt-4o"
+
+            var currentTime = Date(timeIntervalSince1970: 1000)
+            let clockCallCount = FlightTestBox(0)
+            let secondChunkProcessed = FlightTestSignal()
+            var capturedCallbacks: AIServiceResponseSimulationCallbacks?
+            let aiService = AIService(responseSimulator: { _, callbacks in
+                capturedCallbacks = callbacks
+            })
+            aiService.customModels = ["gpt-4o"]
+            aiService.selectedModel = "gpt-4o"
+            aiService.modelProviders["gpt-4o"] = .openai
+            aiService.modelAPIKeys["gpt-4o"] = "sk-watch-test"
+
+            let viewModel = WatchChatViewModel(
+                conversationStore: store,
+                connectivityService: .shared,
+                aiService: aiService,
+                now: {
+                    clockCallCount.update { $0 += 1 }
+                    if clockCallCount.value == 2 {
+                        secondChunkProcessed.signal()
+                    }
+                    return currentTime
+                }
+            )
+            viewModel.setConversation(conversation.id)
+            #expect(viewModel.sendMessage("Stream") == .started)
+
+            let callbacks = try #require(capturedCallbacks)
+            callbacks.onChunk("Hello")
+            let firstDeadline = ContinuousClock().now.advanced(by: .seconds(1))
+            while viewModel.streamingContent != "Hello", ContinuousClock().now < firstDeadline {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(viewModel.streamingContent == "Hello")
+
+            currentTime = currentTime.addingTimeInterval(WatchChatViewModel.defaultUIUpdateInterval / 2)
+            callbacks.onChunk(" world")
+            #expect(await secondChunkProcessed.wait(timeout: .seconds(1)))
+            #expect(viewModel.streamingContent == "Hello")
+
+            currentTime = currentTime.addingTimeInterval(WatchChatViewModel.defaultUIUpdateInterval)
+            callbacks.onChunk("!")
+            let flushDeadline = ContinuousClock().now.advanced(by: .seconds(1))
+            while viewModel.streamingContent != "Hello world!", ContinuousClock().now < flushDeadline {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(viewModel.streamingContent == "Hello world!")
+
+            callbacks.onComplete()
+            let doneDeadline = ContinuousClock().now.advanced(by: .seconds(1))
+            while viewModel.isLoading, ContinuousClock().now < doneDeadline {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(store.conversation(for: conversation.id)?.messages.last?.content == "Hello world!")
         }
 
         @Test
@@ -332,6 +432,66 @@
             )
 
             #expect(selected == "configured")
+        }
+    }
+
+    private struct WatchCapturedRequest: @unchecked Sendable {
+        let onChunk: @Sendable (String) -> Void
+        let onComplete: @Sendable () -> Void
+        let onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?
+    }
+
+    @MainActor
+    private final class WatchTestCapturingAIService: AIService {
+        private(set) var requests: [WatchCapturedRequest] = []
+
+        init(model: String) {
+            super.init(responseSimulator: { _, _ in })
+            customModels = [model]
+            selectedModel = model
+            modelProviders[model] = .openai
+            modelAPIKeys[model] = "sk-watch-test"
+        }
+
+        override func sendMessage(
+            messages: [Message],
+            model: String?,
+            temperature: Double?,
+            stream: Bool,
+            tools: [[String: Any]]?,
+            conversationId: UUID?,
+            requestLane: AITextRequestLane,
+            isMultiModelRequest: Bool,
+            onChunk: @escaping @Sendable (String) -> Void,
+            onComplete: @escaping @Sendable () -> Void,
+            onError: @escaping @Sendable (Error) -> Void,
+            onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?,
+            onReasoning: (@Sendable (String) -> Void)?,
+            requestFlightID: RequestFlightID?
+        ) -> AITextRequest {
+            requests.append(
+                WatchCapturedRequest(
+                    onChunk: onChunk,
+                    onComplete: onComplete,
+                    onToolCallRequested: onToolCallRequested
+                )
+            )
+            return super.sendMessage(
+                messages: messages,
+                model: model,
+                temperature: temperature,
+                stream: stream,
+                tools: tools,
+                conversationId: conversationId,
+                requestLane: requestLane,
+                isMultiModelRequest: isMultiModelRequest,
+                onChunk: onChunk,
+                onComplete: onComplete,
+                onError: onError,
+                onToolCallRequested: onToolCallRequested,
+                onReasoning: onReasoning,
+                requestFlightID: requestFlightID
+            )
         }
     }
 

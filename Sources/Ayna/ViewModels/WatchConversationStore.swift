@@ -13,7 +13,17 @@
             case persistenceFailed
         }
 
-        static let shared = WatchConversationStore()
+        static let shared: WatchConversationStore = {
+            if RuntimeEnvironment.isUITesting {
+                let suiteName = "AynaWatchUITests.\(ProcessInfo.processInfo.processIdentifier)"
+                let uiTestDefaults = UserDefaults(suiteName: suiteName) ?? .standard
+                return WatchConversationStore(
+                    userDefaults: uiTestDefaults,
+                    persistenceKey: uiTestPersistenceKey
+                )
+            }
+            return WatchConversationStore()
+        }()
 
         @Published private(set) var conversations: [WatchConversation] = []
         @Published var selectedConversationId: UUID? {
@@ -143,6 +153,7 @@
         }
 
         private static let defaultPersistenceKey = "com.sertacozercan.ayna.watch.conversations"
+        private static let uiTestPersistenceKey = "com.sertacozercan.ayna.watch.conversations.uitest"
         private static let defaultMaximumCachedConversationBodies = 20
 
         private let userDefaults: UserDefaults
@@ -284,6 +295,22 @@
 
         func resetPageCycleManifest() {
             pageCycleManifestAccumulator.reset()
+        }
+
+        func resetForUITesting() {
+            userDefaults.removeObject(forKey: persistenceKey)
+            sourceID = nil
+            lastSnapshotRevision = 0
+            committedConversations = []
+            pendingMutations = []
+            pendingDrafts = [:]
+            legacyDeliveryCoverage = [:]
+            bodyRecency = [:]
+            bodyRecencySequence = 0
+            lastAccessedConversationID = nil
+            selectedConversationId = nil
+            pageCycleManifestAccumulator.reset()
+            rebuildPublishedConversations()
         }
 
         @discardableResult

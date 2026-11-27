@@ -22,15 +22,18 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
     }
 
     private let retryDelay: @Sendable (Int, Date?) async -> Void
+    private let onNonStreamHandled: (@MainActor () -> Void)?
 
     init(
         urlSession: URLSession,
         retryDelay: @escaping @Sendable (Int, Date?) async -> Void = { attempt, retryAfter in
             await AIRetryPolicy.wait(for: attempt, retryAfterDate: retryAfter)
-        }
+        },
+        onNonStreamHandled: (@MainActor () -> Void)? = nil
     ) {
         self.urlSession = urlSession
         self.retryDelay = retryDelay
+        self.onNonStreamHandled = onNonStreamHandled
     }
 
     deinit {
@@ -68,7 +71,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             let message = seconds > 0
                 ? "Anthropic service temporarily unavailable. Please try again in \(seconds)s."
                 : "Anthropic service temporarily unavailable. Please try again shortly."
-            callbacks.onError(AynaError.apiError(message: message))
+            callbacks.onError(AynaError.httpError(statusCode: 503, message: message))
             return
         }
 
@@ -176,7 +179,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         currentStreamTask?.cancel()
 
         if let errorMessage = checkCircuitBreaker(key: circuitKey) {
-            callbacks.onError(AynaError.apiError(message: errorMessage))
+            callbacks.onError(AynaError.httpError(statusCode: 503, message: errorMessage))
             return
         }
 
@@ -370,7 +373,7 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         attempt: Int = 0
     ) {
         if let errorMessage = checkCircuitBreaker(key: circuitKey) {
-            callbacks.onError(AynaError.apiError(message: errorMessage))
+            callbacks.onError(AynaError.httpError(statusCode: 503, message: errorMessage))
             return
         }
 
@@ -402,7 +405,11 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         circuitKey: String,
         attempt: Int
     ) async {
+        defer { onNonStreamHandled?() }
         if let error {
+            if let urlError = error as? URLError, urlError.code == .cancelled {
+                return
+            }
             DiagnosticsLogger.log(
                 .aiService,
                 level: .error,
@@ -610,11 +617,9 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             await MainActor.run {
                 self.currentStreamTask = nil
                 if let urlError = error as? URLError, urlError.code == .timedOut {
-                    callbacks.onError(AynaError.apiError(message:
-                        "Anthropic request timed out. The model may be slow or overloaded. Please try again."))
+                    callbacks.onError(AynaError.timeout)
                 } else if let urlError = error as? URLError, urlError.code == .networkConnectionLost {
-                    callbacks.onError(AynaError.apiError(message:
-                        "Network connection was lost. The Anthropic server may have rejected the request."))
+                    callbacks.onError(AynaError.networkError(underlying: urlError))
                 } else if error is CancellationError {
                 } else {
                     callbacks.onError(error)

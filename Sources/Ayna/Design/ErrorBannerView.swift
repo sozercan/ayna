@@ -9,7 +9,7 @@ public struct ErrorBannerView: View {
 
     let onOpenSettings: (() -> Void)?
 
-    let openSettingsTab: AnyHashable?
+    let openSettingsTab: SettingsTab?
 
     let onDismiss: () -> Void
 
@@ -20,7 +20,7 @@ public struct ErrorBannerView: View {
         recoverySuggestion: String? = nil,
         onRetry: (() -> Void)? = nil,
         onOpenSettings: (() -> Void)? = nil,
-        openSettingsTab: AnyHashable? = nil,
+        openSettingsTab: SettingsTab? = nil,
         onDismiss: @escaping () -> Void,
         identifierPrefix: String = "error.banner"
     ) {
@@ -66,7 +66,7 @@ public struct ErrorBannerView: View {
 
             HStack(spacing: Spacing.xs) {
                 #if os(macOS)
-                    if let tab = openSettingsTab as? SettingsTab {
+                    if let tab = openSettingsTab {
                         SettingsLink {
                             Text("Open Settings")
                                 .font(Typography.buttonSmall)

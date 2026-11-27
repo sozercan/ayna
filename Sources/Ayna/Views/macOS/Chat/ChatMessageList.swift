@@ -71,6 +71,7 @@ struct ChatMessageList: View {
                 .padding(.horizontal, Spacing.contentPadding)
                 .padding(.vertical, Spacing.contentPadding)
             }
+            .accessibilityIdentifier(TestIdentifiers.ChatView.messagesList)
             .defaultScrollAnchor(.bottom)
             .onChange(of: conversation.messages.count) { _, _ in
                 scrollDebounceTask?.cancel()
