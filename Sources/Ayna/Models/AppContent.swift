@@ -1,7 +1,8 @@
 #if os(macOS)
     import AppKit
 
-    struct AppContent: @unchecked Sendable {
+    @MainActor
+    struct AppContent {
         let appName: String
 
         let appIcon: NSImage?
@@ -89,7 +90,8 @@
         }
     }
 
-    enum AppContentResult: Sendable {
+    @MainActor
+    enum AppContentResult {
         case success(AppContent)
 
         case permissionDenied
