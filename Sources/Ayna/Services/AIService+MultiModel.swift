@@ -18,8 +18,7 @@ extension AIService {
         let onReasoning: (@Sendable (String, String) -> Void)?
     }
 
-    @discardableResult
-    func sendToMultipleModels(
+    func performSendToMultipleModels(
         messages: [Message],
         models: [String],
         temperature: Double? = nil,

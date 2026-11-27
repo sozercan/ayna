@@ -588,4 +588,64 @@ class AIService: ObservableObject {
     func delay(for attempt: Int, retryAfterDate: Date? = nil) async {
         await retryDelay(attempt, retryAfterDate)
     }
+
+    @discardableResult
+    func sendMessage(
+        messages: [Message],
+        model: String? = nil,
+        temperature: Double? = nil,
+        stream: Bool = true,
+        tools: [[String: Any]]? = nil,
+        conversationId: UUID? = nil,
+        requestLane: AITextRequestLane = .foreground,
+        isMultiModelRequest: Bool = false,
+        onChunk: @escaping @Sendable (String) -> Void,
+        onComplete: @escaping @Sendable () -> Void,
+        onError: @escaping @Sendable (Error) -> Void,
+        onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
+        onReasoning: (@Sendable (String) -> Void)? = nil,
+        requestFlightID: RequestFlightID? = nil
+    ) -> AITextRequest {
+        performSendMessage(
+            messages: messages,
+            model: model,
+            temperature: temperature,
+            stream: stream,
+            tools: tools,
+            conversationId: conversationId,
+            requestLane: requestLane,
+            isMultiModelRequest: isMultiModelRequest,
+            onChunk: onChunk,
+            onComplete: onComplete,
+            onError: onError,
+            onToolCallRequested: onToolCallRequested,
+            onReasoning: onReasoning,
+            requestFlightID: requestFlightID
+        )
+    }
+
+    @discardableResult
+    func sendToMultipleModels(
+        messages: [Message],
+        models: [String],
+        temperature: Double? = nil,
+        onChunk: @escaping @Sendable (String, String) -> Void,
+        onModelComplete: @escaping @Sendable (String) -> Void,
+        onAllComplete: @escaping @Sendable () -> Void,
+        onError: @escaping @Sendable (String, Error) -> Void,
+        onPendingToolCall: (@Sendable (String, String, String, [String: Any]) -> Void)? = nil,
+        onReasoning: (@Sendable (String, String) -> Void)? = nil
+    ) -> AITextBatchRequest {
+        performSendToMultipleModels(
+            messages: messages,
+            models: models,
+            temperature: temperature,
+            onChunk: onChunk,
+            onModelComplete: onModelComplete,
+            onAllComplete: onAllComplete,
+            onError: onError,
+            onPendingToolCall: onPendingToolCall,
+            onReasoning: onReasoning
+        )
+    }
 }

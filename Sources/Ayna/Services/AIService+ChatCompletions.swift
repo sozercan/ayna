@@ -16,8 +16,7 @@ extension AIService {
         let flightID: RequestFlightID
     }
 
-    @discardableResult
-    func sendMessage(
+    func performSendMessage(
         messages: [Message],
         model: String? = nil,
         temperature: Double? = nil,
