@@ -221,13 +221,90 @@ struct AnthropicProviderTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
-    func `provider omits thinking and beta header when tools are present`() async throws {
+    func `provider keeps thinking and beta header when tools are merely available`() async throws {
         let provider = makeProvider()
         let config = makeConfig(
             model: "claude-sonnet-4-20250514",
             thinkingBudget: AnthropicThinkingBudget.medium.budgetTokens
         )
-        let messages = [Message(role: .user, content: "Use a tool")]
+        let messages = [Message(role: .user, content: "Answer directly")]
+        let tools: [[String: Any]] = [
+            [
+                "type": "function",
+                "function": [
+                    "name": "web_fetch",
+                    "description": "Fetch a URL",
+                    "parameters": ["type": "object", "properties": [:]]
+                ]
+            ]
+        ]
+        let responseBody = """
+        {
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "Done"}
+            ],
+            "stop_reason": "end_turn"
+        }
+        """
+
+        nonisolated(unsafe) var capturedRequest: URLRequest?
+        nonisolated(unsafe) var capturedBody: [String: Any]?
+        AnthropicMockURLProtocol.requestHandler = { request in
+            capturedRequest = request
+            if let bodyData = Self.readRequestBody(request) {
+                capturedBody = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any]
+            }
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data(responseBody.utf8))
+        }
+
+        let callbackWaiter = TestCallbackWaiter()
+        await confirmation("Response completes") { completed in
+            provider.sendMessage(
+                messages: messages,
+                config: config,
+                stream: false,
+                tools: tools,
+                callbacks: AIProviderStreamCallbacks(
+                    onChunk: { _ in },
+                    onComplete: { completed(); callbackWaiter.signal() },
+                    onError: { error in Issue.record("Unexpected error: \(error)"); callbackWaiter.signal() }
+                )
+            )
+            await callbackWaiter.wait()
+        }
+
+        let body = try #require(capturedBody)
+        let thinking = try #require(body["thinking"] as? [String: Any])
+        #expect(thinking["budget_tokens"] as? Int == AnthropicThinkingBudget.medium.budgetTokens)
+        #expect(capturedRequest?.value(forHTTPHeaderField: "anthropic-beta") == "interleaved-thinking-2025-05-14")
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `provider omits thinking and beta header on tool continuation turns`() async throws {
+        let provider = makeProvider()
+        let config = makeConfig(
+            model: "claude-sonnet-4-20250514",
+            thinkingBudget: AnthropicThinkingBudget.medium.budgetTokens
+        )
+        let toolCall = MCPToolCall(
+            id: "toolu_123",
+            toolName: "web_fetch",
+            arguments: ["url": AnyCodable("https://example.com")]
+        )
+        let messages = [
+            Message(role: .user, content: "Use a tool"),
+            Message(role: .assistant, content: "", toolCalls: [toolCall]),
+            Message(role: .tool, content: "Example Domain", toolCalls: [toolCall])
+        ]
         let tools: [[String: Any]] = [
             [
                 "type": "function",

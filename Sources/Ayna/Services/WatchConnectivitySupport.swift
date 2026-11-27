@@ -854,11 +854,13 @@ enum WatchContextKeys {
     static let modelProviders = "modelProviders"
     static let modelEndpoints = "modelEndpoints"
     static let modelEndpointTypes = "modelEndpointTypes"
+    static let modelThinkingBudgets = "modelThinkingBudgets"
     static let modelAPIKeys = "modelAPIKeys"
     static let removedModelDigests = "removedModelDigests"
     static let removedModelProviderDigests = "removedModelProviderDigests"
     static let removedModelEndpointDigests = "removedModelEndpointDigests"
     static let removedModelEndpointTypeDigests = "removedModelEndpointTypeDigests"
+    static let removedModelThinkingBudgetDigests = "removedModelThinkingBudgetDigests"
     static let removedModelAPIKeyDigests = "removedModelAPIKeyDigests"
     static let modelMetadataEpoch = "modelMetadataEpoch"
     static let modelMetadataComplete = "modelMetadataComplete"
@@ -1554,18 +1556,52 @@ struct WatchModelMetadataValueDigests: Codable, Equatable, Sendable {
     var providers: [String: String] = [:]
     var endpoints: [String: String] = [:]
     var endpointTypes: [String: String] = [:]
+    var thinkingBudgets: [String: String] = [:]
     var apiKeys: [String: String] = [:]
+
+    init(
+        providers: [String: String] = [:],
+        endpoints: [String: String] = [:],
+        endpointTypes: [String: String] = [:],
+        thinkingBudgets: [String: String] = [:],
+        apiKeys: [String: String] = [:]
+    ) {
+        self.providers = providers
+        self.endpoints = endpoints
+        self.endpointTypes = endpointTypes
+        self.thinkingBudgets = thinkingBudgets
+        self.apiKeys = apiKeys
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case providers
+        case endpoints
+        case endpointTypes
+        case thinkingBudgets
+        case apiKeys
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        providers = try container.decodeIfPresent([String: String].self, forKey: .providers) ?? [:]
+        endpoints = try container.decodeIfPresent([String: String].self, forKey: .endpoints) ?? [:]
+        endpointTypes = try container.decodeIfPresent([String: String].self, forKey: .endpointTypes) ?? [:]
+        thinkingBudgets = try container.decodeIfPresent([String: String].self, forKey: .thinkingBudgets) ?? [:]
+        apiKeys = try container.decodeIfPresent([String: String].self, forKey: .apiKeys) ?? [:]
+    }
 
     static func hashing(
         providers: [String: String],
         endpoints: [String: String],
         endpointTypes: [String: String],
+        thinkingBudgets: [String: Int] = [:],
         apiKeys: [String: String]
     ) -> Self {
         Self(
             providers: digestValues(providers, value: { $0 }),
             endpoints: digestValues(endpoints, value: { $0 }),
             endpointTypes: digestValues(endpointTypes, value: { $0 }),
+            thinkingBudgets: digestValues(thinkingBudgets, value: { String($0) }),
             apiKeys: digestValues(apiKeys, value: { $0 })
         )
     }
@@ -1585,6 +1621,7 @@ struct WatchModelMetadataInventory: Equatable, Sendable {
     var providerModelIDs: [String]
     var endpointModelIDs: [String]
     var endpointTypeModelIDs: [String]
+    var thinkingBudgetModelIDs: [String] = []
     var apiKeyModelIDs: [String]
     var valueDigests = WatchModelMetadataValueDigests()
 }
@@ -1594,13 +1631,31 @@ struct WatchModelRemovalPublication: Equatable, Sendable {
     let removedProviderDigests: [String]
     let removedEndpointDigests: [String]
     let removedEndpointTypeDigests: [String]
+    let removedThinkingBudgetDigests: [String]
     let removedAPIKeyDigests: [String]
+
+    init(
+        removedModelDigests: [String],
+        removedProviderDigests: [String],
+        removedEndpointDigests: [String],
+        removedEndpointTypeDigests: [String],
+        removedThinkingBudgetDigests: [String] = [],
+        removedAPIKeyDigests: [String]
+    ) {
+        self.removedModelDigests = removedModelDigests
+        self.removedProviderDigests = removedProviderDigests
+        self.removedEndpointDigests = removedEndpointDigests
+        self.removedEndpointTypeDigests = removedEndpointTypeDigests
+        self.removedThinkingBudgetDigests = removedThinkingBudgetDigests
+        self.removedAPIKeyDigests = removedAPIKeyDigests
+    }
 
     var isEmpty: Bool {
         removedModelDigests.isEmpty
             && removedProviderDigests.isEmpty
             && removedEndpointDigests.isEmpty
             && removedEndpointTypeDigests.isEmpty
+            && removedThinkingBudgetDigests.isEmpty
             && removedAPIKeyDigests.isEmpty
     }
 }
@@ -1612,6 +1667,7 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
         let providers: Set<String>
         let endpoints: Set<String>
         let endpointTypes: Set<String>
+        let thinkingBudgets: Set<String>
         let apiKeys: Set<String>
     }
 
@@ -1624,9 +1680,28 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
     private(set) var retiredEndpointDigests: Set<String>
     private(set) var publishedEndpointTypeDigests: Set<String>
     private(set) var retiredEndpointTypeDigests: Set<String>
+    private(set) var publishedThinkingBudgetDigests: Set<String>
+    private(set) var retiredThinkingBudgetDigests: Set<String>
     private(set) var publishedAPIKeyDigests: Set<String>
     private(set) var retiredAPIKeyDigests: Set<String>
     private(set) var publishedValueDigests: WatchModelMetadataValueDigests?
+
+    private enum CodingKeys: String, CodingKey {
+        case epoch
+        case publishedDigests
+        case retiredDigests
+        case publishedProviderDigests
+        case retiredProviderDigests
+        case publishedEndpointDigests
+        case retiredEndpointDigests
+        case publishedEndpointTypeDigests
+        case retiredEndpointTypeDigests
+        case publishedThinkingBudgetDigests
+        case retiredThinkingBudgetDigests
+        case publishedAPIKeyDigests
+        case retiredAPIKeyDigests
+        case publishedValueDigests
+    }
 
     init(epoch: UUID = UUID()) {
         self.epoch = epoch
@@ -1638,9 +1713,29 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
         retiredEndpointDigests = []
         publishedEndpointTypeDigests = []
         retiredEndpointTypeDigests = []
+        publishedThinkingBudgetDigests = []
+        retiredThinkingBudgetDigests = []
         publishedAPIKeyDigests = []
         retiredAPIKeyDigests = []
         publishedValueDigests = WatchModelMetadataValueDigests()
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        epoch = try container.decode(UUID.self, forKey: .epoch)
+        publishedDigests = try container.decodeIfPresent(Set<String>.self, forKey: .publishedDigests) ?? []
+        retiredDigests = try container.decodeIfPresent(Set<String>.self, forKey: .retiredDigests) ?? []
+        publishedProviderDigests = try container.decodeIfPresent(Set<String>.self, forKey: .publishedProviderDigests) ?? []
+        retiredProviderDigests = try container.decodeIfPresent(Set<String>.self, forKey: .retiredProviderDigests) ?? []
+        publishedEndpointDigests = try container.decodeIfPresent(Set<String>.self, forKey: .publishedEndpointDigests) ?? []
+        retiredEndpointDigests = try container.decodeIfPresent(Set<String>.self, forKey: .retiredEndpointDigests) ?? []
+        publishedEndpointTypeDigests = try container.decodeIfPresent(Set<String>.self, forKey: .publishedEndpointTypeDigests) ?? []
+        retiredEndpointTypeDigests = try container.decodeIfPresent(Set<String>.self, forKey: .retiredEndpointTypeDigests) ?? []
+        publishedThinkingBudgetDigests = try container.decodeIfPresent(Set<String>.self, forKey: .publishedThinkingBudgetDigests) ?? []
+        retiredThinkingBudgetDigests = try container.decodeIfPresent(Set<String>.self, forKey: .retiredThinkingBudgetDigests) ?? []
+        publishedAPIKeyDigests = try container.decodeIfPresent(Set<String>.self, forKey: .publishedAPIKeyDigests) ?? []
+        retiredAPIKeyDigests = try container.decodeIfPresent(Set<String>.self, forKey: .retiredAPIKeyDigests) ?? []
+        publishedValueDigests = try container.decodeIfPresent(WatchModelMetadataValueDigests.self, forKey: .publishedValueDigests)
     }
 
     mutating func publication(
@@ -1690,6 +1785,16 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
         publishedEndpointTypeDigests = endpointTypes.published
         retiredEndpointTypeDigests = endpointTypes.retired
 
+        let thinkingBudgets = Self.advance(
+            currentModelIDs: inventory.thinkingBudgetModelIDs,
+            published: publishedThinkingBudgetDigests,
+            retired: retiredThinkingBudgetDigests,
+            invalidated: valueChanges.thinkingBudgets,
+            retainsCurrentTombstones: true
+        )
+        publishedThinkingBudgetDigests = thinkingBudgets.published
+        retiredThinkingBudgetDigests = thinkingBudgets.retired
+
         let apiKeys = Self.advance(
             currentModelIDs: inventory.apiKeyModelIDs,
             published: publishedAPIKeyDigests,
@@ -1707,6 +1812,7 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
                 removedProviderDigests: [],
                 removedEndpointDigests: [],
                 removedEndpointTypeDigests: [],
+                removedThinkingBudgetDigests: [],
                 removedAPIKeyDigests: []
             )
         }
@@ -1716,6 +1822,7 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
             removedProviderDigests: providers.retired.sorted(),
             removedEndpointDigests: endpoints.retired.sorted(),
             removedEndpointTypeDigests: endpointTypes.retired.sorted(),
+            removedThinkingBudgetDigests: thinkingBudgets.retired.sorted(),
             removedAPIKeyDigests: apiKeys.retired.sorted()
         )
     }
@@ -1725,6 +1832,7 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
             + retiredProviderDigests.count
             + retiredEndpointDigests.count
             + retiredEndpointTypeDigests.count
+            + retiredThinkingBudgetDigests.count
             + retiredAPIKeyDigests.count
     }
 
@@ -1738,6 +1846,8 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
         retiredEndpointDigests = []
         publishedEndpointTypeDigests = Self.digests(inventory.endpointTypeModelIDs)
         retiredEndpointTypeDigests = []
+        publishedThinkingBudgetDigests = Self.digests(inventory.thinkingBudgetModelIDs)
+        retiredThinkingBudgetDigests = []
         publishedAPIKeyDigests = Self.digests(inventory.apiKeyModelIDs)
         retiredAPIKeyDigests = []
         publishedValueDigests = inventory.valueDigests
@@ -1773,6 +1883,7 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
                 providers: [],
                 endpoints: [],
                 endpointTypes: [],
+                thinkingBudgets: [],
                 apiKeys: []
             )
         }
@@ -1780,6 +1891,7 @@ struct WatchModelRemovalTracker: Codable, Equatable, Sendable {
             providers: changedModelDigests(from: previous.providers, to: current.providers),
             endpoints: changedModelDigests(from: previous.endpoints, to: current.endpoints),
             endpointTypes: changedModelDigests(from: previous.endpointTypes, to: current.endpointTypes),
+            thinkingBudgets: changedModelDigests(from: previous.thinkingBudgets, to: current.thinkingBudgets),
             apiKeys: changedModelDigests(from: previous.apiKeys, to: current.apiKeys)
         )
     }
@@ -1807,6 +1919,7 @@ struct WatchModelMetadataState: Equatable, Sendable {
     var modelProviders: [String: String]
     var modelEndpoints: [String: String]
     var modelEndpointTypes: [String: String]
+    var modelThinkingBudgets: [String: Int] = [:]
     var modelAPIKeys: [String: String]
 
     mutating func merge(_ page: WatchModelMetadataPage) {
@@ -1826,6 +1939,7 @@ struct WatchModelMetadataState: Equatable, Sendable {
         mergeValues(page.modelProviders, into: &modelProviders)
         mergeValues(page.modelEndpoints, into: &modelEndpoints)
         mergeValues(page.modelEndpointTypes, into: &modelEndpointTypes)
+        mergeValues(page.modelThinkingBudgets, into: &modelThinkingBudgets)
         mergeValues(page.modelAPIKeys, into: &modelAPIKeys)
     }
 
@@ -1842,6 +1956,7 @@ struct WatchModelMetadataState: Equatable, Sendable {
         modelProviders = page.modelProviders ?? [:]
         modelEndpoints = page.modelEndpoints ?? [:]
         modelEndpointTypes = page.modelEndpointTypes ?? [:]
+        modelThinkingBudgets = page.modelThinkingBudgets ?? [:]
         modelAPIKeys = page.modelAPIKeys ?? [:]
     }
 
@@ -1852,6 +1967,7 @@ struct WatchModelMetadataState: Equatable, Sendable {
         modelProviders = [:]
         modelEndpoints = [:]
         modelEndpointTypes = [:]
+        modelThinkingBudgets = [:]
         modelAPIKeys = [:]
     }
 
@@ -1860,6 +1976,7 @@ struct WatchModelMetadataState: Equatable, Sendable {
         removeEntries(withDigests: page.removedModelProviderDigests, from: &modelProviders)
         removeEntries(withDigests: page.removedModelEndpointDigests, from: &modelEndpoints)
         removeEntries(withDigests: page.removedModelEndpointTypeDigests, from: &modelEndpointTypes)
+        removeEntries(withDigests: page.removedModelThinkingBudgetDigests, from: &modelThinkingBudgets)
         removeEntries(withDigests: page.removedModelAPIKeyDigests, from: &modelAPIKeys)
     }
 
@@ -1884,6 +2001,7 @@ struct WatchModelMetadataState: Equatable, Sendable {
         modelProviders = modelProviders.filter { isRetained($0.key) }
         modelEndpoints = modelEndpoints.filter { isRetained($0.key) }
         modelEndpointTypes = modelEndpointTypes.filter { isRetained($0.key) }
+        modelThinkingBudgets = modelThinkingBudgets.filter { isRetained($0.key) }
         modelAPIKeys = modelAPIKeys.filter { isRetained($0.key) }
     }
 }
@@ -1896,11 +2014,13 @@ struct WatchModelMetadataPage: Equatable, Sendable {
     var modelProviders: [String: String]?
     var modelEndpoints: [String: String]?
     var modelEndpointTypes: [String: String]?
+    var modelThinkingBudgets: [String: Int]?
     var modelAPIKeys: [String: String]?
     var removedModelDigests: [String]?
     var removedModelProviderDigests: [String]?
     var removedModelEndpointDigests: [String]?
     var removedModelEndpointTypeDigests: [String]?
+    var removedModelThinkingBudgetDigests: [String]?
     var removedModelAPIKeyDigests: [String]?
 
     init(
@@ -1911,11 +2031,13 @@ struct WatchModelMetadataPage: Equatable, Sendable {
         modelProviders: [String: String]? = nil,
         modelEndpoints: [String: String]? = nil,
         modelEndpointTypes: [String: String]? = nil,
+        modelThinkingBudgets: [String: Int]? = nil,
         modelAPIKeys: [String: String]? = nil,
         removedModelDigests: [String]? = nil,
         removedModelProviderDigests: [String]? = nil,
         removedModelEndpointDigests: [String]? = nil,
         removedModelEndpointTypeDigests: [String]? = nil,
+        removedModelThinkingBudgetDigests: [String]? = nil,
         removedModelAPIKeyDigests: [String]? = nil
     ) {
         self.selectedModel = selectedModel
@@ -1925,11 +2047,13 @@ struct WatchModelMetadataPage: Equatable, Sendable {
         self.modelProviders = modelProviders
         self.modelEndpoints = modelEndpoints
         self.modelEndpointTypes = modelEndpointTypes
+        self.modelThinkingBudgets = modelThinkingBudgets
         self.modelAPIKeys = modelAPIKeys
         self.removedModelDigests = removedModelDigests
         self.removedModelProviderDigests = removedModelProviderDigests
         self.removedModelEndpointDigests = removedModelEndpointDigests
         self.removedModelEndpointTypeDigests = removedModelEndpointTypeDigests
+        self.removedModelThinkingBudgetDigests = removedModelThinkingBudgetDigests
         self.removedModelAPIKeyDigests = removedModelAPIKeyDigests
     }
 
@@ -1942,13 +2066,25 @@ struct WatchModelMetadataPage: Equatable, Sendable {
             modelProviders: context[WatchContextKeys.modelProviders] as? [String: String],
             modelEndpoints: context[WatchContextKeys.modelEndpoints] as? [String: String],
             modelEndpointTypes: context[WatchContextKeys.modelEndpointTypes] as? [String: String],
+            modelThinkingBudgets: Self.decodeThinkingBudgets(from: context[WatchContextKeys.modelThinkingBudgets]),
             modelAPIKeys: context[WatchContextKeys.modelAPIKeys] as? [String: String],
             removedModelDigests: context[WatchContextKeys.removedModelDigests] as? [String],
             removedModelProviderDigests: context[WatchContextKeys.removedModelProviderDigests] as? [String],
             removedModelEndpointDigests: context[WatchContextKeys.removedModelEndpointDigests] as? [String],
             removedModelEndpointTypeDigests: context[WatchContextKeys.removedModelEndpointTypeDigests] as? [String],
+            removedModelThinkingBudgetDigests: context[WatchContextKeys.removedModelThinkingBudgetDigests] as? [String],
             removedModelAPIKeyDigests: context[WatchContextKeys.removedModelAPIKeyDigests] as? [String]
         )
+    }
+
+    private static func decodeThinkingBudgets(from rawValue: Any?) -> [String: Int]? {
+        if let budgets = rawValue as? [String: Int] {
+            return budgets
+        }
+        guard let rawDict = rawValue as? [String: NSNumber] else {
+            return nil
+        }
+        return rawDict.mapValues(\.intValue)
     }
 
     mutating func merge(_ page: WatchModelMetadataPage) {
@@ -1967,6 +2103,7 @@ struct WatchModelMetadataPage: Equatable, Sendable {
         mergeOptionalValues(page.modelProviders, into: &modelProviders)
         mergeOptionalValues(page.modelEndpoints, into: &modelEndpoints)
         mergeOptionalValues(page.modelEndpointTypes, into: &modelEndpointTypes)
+        mergeOptionalValues(page.modelThinkingBudgets, into: &modelThinkingBudgets)
         mergeOptionalValues(page.modelAPIKeys, into: &modelAPIKeys)
         if let removedModelDigests = page.removedModelDigests {
             self.removedModelDigests = mergingUnique(self.removedModelDigests ?? [], removedModelDigests)
@@ -1979,6 +2116,9 @@ struct WatchModelMetadataPage: Equatable, Sendable {
         }
         if let removed = page.removedModelEndpointTypeDigests {
             removedModelEndpointTypeDigests = mergingUnique(removedModelEndpointTypeDigests ?? [], removed)
+        }
+        if let removed = page.removedModelThinkingBudgetDigests {
+            removedModelThinkingBudgetDigests = mergingUnique(removedModelThinkingBudgetDigests ?? [], removed)
         }
         if let removed = page.removedModelAPIKeyDigests {
             removedModelAPIKeyDigests = mergingUnique(removedModelAPIKeyDigests ?? [], removed)

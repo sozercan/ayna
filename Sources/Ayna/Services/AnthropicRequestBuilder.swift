@@ -62,7 +62,7 @@ enum AnthropicOutputLimits {
         stream: Bool,
         requestedMaxTokens: Int?,
         requestedBudgetTokens: Int?,
-        hasTools: Bool = false
+        allowThinking: Bool = true
     ) -> (maxTokens: Int, budgetTokens: Int?) {
         let cap = outputCap(for: model)
         var maxTokens = requestedMaxTokens ?? defaultMaxTokens(model: model, stream: stream)
@@ -70,7 +70,7 @@ enum AnthropicOutputLimits {
             maxTokens = min(maxTokens, cap)
         }
 
-        guard !hasTools,
+        guard allowThinking,
               let requestedBudgetTokens,
               requestedBudgetTokens >= AnthropicThinkingBudget.minimumBudgetTokens
         else {
@@ -214,6 +214,25 @@ enum AnthropicRequestBuilder {
         }
     }
 
+    static func hasAssistantToolUseHistory(_ messages: [Message]) -> Bool {
+        let sanitizedMessages = ToolTranscriptSanitizer.sanitize(messages)
+        var toolResponseIds = Set<String>()
+        for message in sanitizedMessages where message.role == .tool {
+            if let toolCallId = message.toolCalls?.first?.id {
+                toolResponseIds.insert(toolCallId)
+            }
+        }
+        return sanitizedMessages.contains { message in
+            guard message.role == .assistant,
+                  let toolCalls = message.toolCalls,
+                  !toolCalls.isEmpty
+            else {
+                return false
+            }
+            return toolCalls.contains { toolResponseIds.contains($0.id) }
+        }
+    }
+
     static func buildMessagesBody(
         messages: [Message],
         config: AnthropicRequestConfig,
@@ -223,13 +242,13 @@ enum AnthropicRequestBuilder {
         try Task.checkCancellation()
         let (systemPrompt, anthropicMessages) = try extractSystemAndConvertMessages(messages)
 
-        let hasTools = !(tools?.isEmpty ?? true)
+        let allowThinking = !hasAssistantToolUseHistory(messages)
         let resolvedLimits = AnthropicOutputLimits.resolvedLimits(
             model: config.model,
             stream: stream,
             requestedMaxTokens: config.maxTokens,
             requestedBudgetTokens: config.budgetTokens,
-            hasTools: hasTools
+            allowThinking: allowThinking
         )
 
         var body: [String: Any] = [

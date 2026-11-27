@@ -72,13 +72,13 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             return
         }
 
-        let hasTools = !(tools?.isEmpty ?? true)
+        let allowThinking = !AnthropicRequestBuilder.hasAssistantToolUseHistory(messages)
         let resolvedLimits = AnthropicOutputLimits.resolvedLimits(
             model: config.model,
             stream: stream,
             requestedMaxTokens: config.maxTokens,
             requestedBudgetTokens: config.thinkingBudget,
-            hasTools: hasTools
+            allowThinking: allowThinking
         )
 
         var betaHeaders: [String] = []

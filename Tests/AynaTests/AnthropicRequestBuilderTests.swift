@@ -461,8 +461,8 @@ struct AnthropicRequestBuilderTests {
         #expect(resolved.budgetTokens == 31999)
     }
 
-    @Test("Thinking is omitted when tools are provided to prevent rejected tool continuations")
-    func thinkingOmittedWhenToolsAreProvided() throws {
+    @Test("Thinking stays enabled when tools are available on a normal turn")
+    func thinkingStaysEnabledWhenToolsAreAvailableWithoutToolHistory() throws {
         let config = AnthropicRequestConfig(
             model: "claude-sonnet-4-20250514",
             apiKey: "test-key",
@@ -482,6 +482,48 @@ struct AnthropicRequestBuilderTests {
 
         let body = try AnthropicRequestBuilder.buildMessagesBody(
             messages: [Message(role: .user, content: "Fetch example.com")],
+            config: config,
+            stream: true,
+            tools: tools
+        )
+
+        let thinking = try #require(body["thinking"] as? [String: Any])
+        #expect(thinking["type"] as? String == "enabled")
+        #expect(thinking["budget_tokens"] as? Int == AnthropicThinkingBudget.medium.budgetTokens)
+        #expect((body["tools"] as? [[String: Any]])?.count == 1)
+    }
+
+    @Test("Thinking is omitted on tool continuation turns without stored thinking blocks")
+    func thinkingOmittedOnToolContinuationTurns() throws {
+        let config = AnthropicRequestConfig(
+            model: "claude-sonnet-4-20250514",
+            apiKey: "test-key",
+            maxTokens: 16000,
+            budgetTokens: AnthropicThinkingBudget.medium.budgetTokens
+        )
+        let toolCall = MCPToolCall(
+            id: "toolu_123",
+            toolName: "web_fetch",
+            arguments: ["url": AnyCodable("https://example.com")]
+        )
+        let messages = [
+            Message(role: .user, content: "Fetch example.com"),
+            Message(role: .assistant, content: "", toolCalls: [toolCall]),
+            Message(role: .tool, content: "Example Domain", toolCalls: [toolCall])
+        ]
+        let tools: [[String: Any]] = [
+            [
+                "type": "function",
+                "function": [
+                    "name": "web_fetch",
+                    "description": "Fetch a URL",
+                    "parameters": ["type": "object", "properties": [:]]
+                ]
+            ]
+        ]
+
+        let body = try AnthropicRequestBuilder.buildMessagesBody(
+            messages: messages,
             config: config,
             stream: true,
             tools: tools
