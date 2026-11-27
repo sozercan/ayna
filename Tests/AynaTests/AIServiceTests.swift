@@ -678,6 +678,7 @@ extension AIServiceGlobalStateTests {
         func `Send message without API key throws error`() async {
             let service = makeService()
             service.modelAPIKeys["gpt-4o"] = ""
+            let callbackWaiter = TestCallbackWaiter()
 
             await confirmation("onError called") { errorReceived in
                 service.sendMessage(
@@ -692,20 +693,23 @@ extension AIServiceGlobalStateTests {
                     },
                     onComplete: {
                         Issue.record("Completion should not fire when API key is missing")
+                        callbackWaiter.signal()
                     },
                     onError: { error in
                         guard case AynaError.missingAPIKey = error else {
                             Issue.record("Unexpected error: \(error)")
+                            callbackWaiter.signal()
                             return
                         }
                         errorReceived()
+                        callbackWaiter.signal()
                     },
                     onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: nil
                 )
 
-                try? await Task.sleep(for: .milliseconds(100))
+                await callbackWaiter.wait()
             }
         }
 
@@ -726,6 +730,7 @@ extension AIServiceGlobalStateTests {
             }
 
             let receivedChunk = ResultHolder()
+            let callbackWaiter = TestCallbackWaiter()
 
             await confirmation("Request completes") { completed in
                 service.sendMessage(
@@ -740,16 +745,18 @@ extension AIServiceGlobalStateTests {
                     },
                     onComplete: {
                         completed()
+                        callbackWaiter.signal()
                     },
                     onError: { error in
                         Issue.record("Unexpected error: \(error)")
+                        callbackWaiter.signal()
                     },
                     onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: nil
                 )
 
-                try? await Task.sleep(for: .milliseconds(500))
+                await callbackWaiter.wait()
             }
 
             let request = try #require(MockURLProtocol.lastRequest)
@@ -806,6 +813,7 @@ extension AIServiceGlobalStateTests {
             }
 
             let receivedChunk = ResultHolder()
+            let callbackWaiter = TestCallbackWaiter()
 
             await confirmation("Structured response parsed") { completed in
                 service.sendMessage(
@@ -821,16 +829,18 @@ extension AIServiceGlobalStateTests {
                     onComplete: {
                         #expect(receivedChunk.value == "Structured hello")
                         completed()
+                        callbackWaiter.signal()
                     },
                     onError: { error in
                         Issue.record("Unexpected error: \(error)")
+                        callbackWaiter.signal()
                     },
                     onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: nil
                 )
 
-                try? await Task.sleep(for: .milliseconds(500))
+                await callbackWaiter.wait()
             }
         }
 
@@ -1002,6 +1012,7 @@ extension AIServiceGlobalStateTests {
             }
 
             let receivedChunk = ResultHolder()
+            let callbackWaiter = TestCallbackWaiter()
 
             await confirmation("Anthropic response received") { completed in
                 service.sendMessage(
@@ -1016,16 +1027,18 @@ extension AIServiceGlobalStateTests {
                     },
                     onComplete: {
                         completed()
+                        callbackWaiter.signal()
                     },
                     onError: { error in
                         Issue.record("Unexpected error: \(error)")
+                        callbackWaiter.signal()
                     },
                     onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: nil
                 )
 
-                try? await Task.sleep(for: .milliseconds(500))
+                await callbackWaiter.wait()
             }
 
             if let request = capturedRequest {
@@ -1042,6 +1055,7 @@ extension AIServiceGlobalStateTests {
         func `Anthropic model without API key returns missing key error`() async {
             let service = makeAnthropicService()
             service.modelAPIKeys["claude-sonnet-4-20250514"] = ""
+            let callbackWaiter = TestCallbackWaiter()
 
             await confirmation("onError called") { errorReceived in
                 service.sendMessage(
@@ -1056,20 +1070,23 @@ extension AIServiceGlobalStateTests {
                     },
                     onComplete: {
                         Issue.record("Completion should not fire when API key is missing")
+                        callbackWaiter.signal()
                     },
                     onError: { error in
                         guard case AynaError.missingAPIKey = error else {
                             Issue.record("Unexpected error: \(error)")
+                            callbackWaiter.signal()
                             return
                         }
                         errorReceived()
+                        callbackWaiter.signal()
                     },
                     onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: nil
                 )
 
-                try? await Task.sleep(for: .milliseconds(100))
+                await callbackWaiter.wait()
             }
         }
 
@@ -1093,6 +1110,7 @@ extension AIServiceGlobalStateTests {
             }
 
             let receivedErrorHolder = ErrorHolder()
+            let callbackWaiter = TestCallbackWaiter()
 
             await confirmation("Error received") { errorReceived in
                 service.sendMessage(
@@ -1105,17 +1123,19 @@ extension AIServiceGlobalStateTests {
                     onChunk: { _ in },
                     onComplete: {
                         Issue.record("Should not complete on 401 error")
+                        callbackWaiter.signal()
                     },
                     onError: { error in
                         receivedErrorHolder.error = error
                         errorReceived()
+                        callbackWaiter.signal()
                     },
                     onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: nil
                 )
 
-                try? await Task.sleep(for: .milliseconds(500))
+                await callbackWaiter.wait()
             }
 
             #expect(receivedErrorHolder.error != nil)
@@ -1153,6 +1173,7 @@ extension AIServiceGlobalStateTests {
 
             let receivedChunks = ResultHolder()
             let receivedReasoning = ResultHolder()
+            let callbackWaiter = TestCallbackWaiter()
 
             await confirmation("Response completes") { completed in
                 service.sendMessage(
@@ -1167,9 +1188,11 @@ extension AIServiceGlobalStateTests {
                     },
                     onComplete: {
                         completed()
+                        callbackWaiter.signal()
                     },
                     onError: { error in
                         Issue.record("Unexpected error: \(error)")
+                        callbackWaiter.signal()
                     },
                     onToolCall: nil,
                     onToolCallRequested: nil,
@@ -1178,7 +1201,7 @@ extension AIServiceGlobalStateTests {
                     }
                 )
 
-                try? await Task.sleep(for: .milliseconds(500))
+                await callbackWaiter.wait()
             }
 
             #expect(receivedChunks.value == "Here is my answer.")

@@ -261,13 +261,7 @@ struct ConversationManagerTests {
         manager.conversations = [conversation]
         manager.save(conversation)
         await immediateTask.value
-
-        for _ in 0 ..< 100 {
-            if try await store.loadConversation(id: conversation.id)?.title == "Latest snapshot" {
-                break
-            }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        await manager.flushPendingSaves()
 
         #expect(try await store.loadConversation(id: conversation.id)?.title == "Latest snapshot")
         manager.clearAllConversations()
@@ -309,7 +303,9 @@ struct ConversationManagerTests {
         manager.renameConversation(placeholder, newTitle: "Saved During Flush")
         await flushGate.release()
 
-        try await Task.sleep(for: .milliseconds(50))
+        for _ in 0 ..< 5 {
+            await Task.yield()
+        }
         #expect(await !(completion.isComplete()))
 
         await metadataGate.release()
@@ -404,14 +400,15 @@ struct ConversationManagerTests {
         _ = await manager.loadingTask?.value
 
         #expect(manager.conversations.first?.messages.isEmpty == true)
-        manager.selectedConversationId = conversation.id
-
-        for _ in 0 ..< 20 {
-            if manager.conversations.first?.messages.count == conversation.messages.count {
-                break
+        let hydrated = TestCallbackWaiter()
+        let cancellable = manager.$conversations.sink { conversations in
+            if conversations.first?.messages.count == conversation.messages.count {
+                hydrated.signal()
             }
-            try await Task.sleep(for: .milliseconds(25))
         }
+        defer { cancellable.cancel() }
+        manager.selectedConversationId = conversation.id
+        await hydrated.wait()
 
         #expect(manager.conversations.first?.messages.count == conversation.messages.count)
     }
@@ -437,15 +434,14 @@ struct ConversationManagerTests {
 
         _ = manager.conversation(byId: conversation.id)
         await loadGate.waitUntilStarted()
-        manager.deleteConversation(placeholder)
-
-        for _ in 0 ..< 100 where try await store.loadConversation(id: conversation.id) != nil {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        let deleteTask = try #require(manager.deleteConversation(placeholder))
+        _ = await deleteTask.value
+        await manager.flushPendingSaves()
         #expect(try await store.loadConversation(id: conversation.id) == nil)
 
         await loadGate.release()
-        try await Task.sleep(for: .milliseconds(100))
+        _ = await manager.ensureConversationLoaded(conversation.id)
+        await manager.flushPendingSaves()
 
         #expect(try await store.loadConversation(id: conversation.id) == nil)
         #expect(!manager.conversations.contains { $0.id == conversation.id })
@@ -531,7 +527,7 @@ struct ConversationManagerTests {
 
         manager.createNewConversation(title: "Saved During Reload")
         let conversationId = try #require(manager.conversations.first?.id)
-        try await Task.sleep(for: .milliseconds(50))
+        await Task.yield()
 
         let reloadTask = Task { @MainActor in
             await manager.reloadConversations()
@@ -571,13 +567,12 @@ struct ConversationManagerTests {
         )
 
         await metadataGate.waitUntilStarted()
-        manager.clearAllConversations()
+        let clearTask = manager.clearAllConversations()
         await metadataGate.release()
         _ = await manager.loadingTask?.value
+        await clearTask.value
+        await manager.flushPendingSaves()
 
-        for _ in 0 ..< 100 where try await !(store.loadConversations().isEmpty) {
-            try await Task.sleep(for: .milliseconds(10))
-        }
         #expect(try await store.loadConversations().isEmpty)
         #expect(manager.conversations.isEmpty)
     }
@@ -656,10 +651,7 @@ struct ConversationManagerTests {
             searchIndexWarmupDelay: .zero
         )
         _ = await manager.loadingTask?.value
-
-        for _ in 0 ..< 100 where !FileManager.default.fileExists(atPath: searchIndexURL.path) {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        await manager.waitForSearchIndexWarmup()
 
         #expect(FileManager.default.fileExists(atPath: searchIndexURL.path))
         manager.clearAllConversations()
@@ -683,7 +675,7 @@ struct ConversationManagerTests {
             searchIndexWarmupEnabled: false
         )
         _ = await manager.loadingTask?.value
-        try await Task.sleep(for: .milliseconds(50))
+        await manager.waitForSearchIndexWarmup()
 
         #expect(!FileManager.default.fileExists(atPath: searchIndexURL.path))
     }
@@ -745,15 +737,14 @@ struct ConversationManagerTests {
 
         _ = manager.conversation(byId: conversation.id)
         await loadGate.waitUntilStarted()
-        manager.clearAllConversations()
-
-        for _ in 0 ..< 100 where try await store.loadConversation(id: conversation.id) != nil {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        let clearTask = manager.clearAllConversations()
+        await clearTask.value
+        await manager.flushPendingSaves()
         #expect(try await store.loadConversation(id: conversation.id) == nil)
 
         await loadGate.release()
-        try await Task.sleep(for: .milliseconds(100))
+        _ = await manager.ensureConversationLoaded(conversation.id)
+        await manager.flushPendingSaves()
 
         #expect(try await store.loadConversation(id: conversation.id) == nil)
         #expect(manager.conversations.isEmpty)
@@ -787,7 +778,9 @@ struct ConversationManagerTests {
         try await store.save(updated)
         await manager.reloadConversations()
         await loadGate.release()
-        try await Task.sleep(for: .milliseconds(50))
+        for _ in 0 ..< 5 {
+            await Task.yield()
+        }
 
         #expect(manager.isMetadataOnlyConversation(original.id))
         let hydrated = try #require(await manager.ensureConversationLoaded(original.id))
@@ -801,23 +794,32 @@ struct ConversationManagerTests {
         let store = TestHelpers.makeTestStore(directory: directory)
         let conversation = TestHelpers.sampleConversation(title: "Coalesced Hydration")
         try await store.save(conversation)
-        let loadProbe = ConversationLoadProbe(store: store)
+        let loadGate = ConversationStaleLoadGate(store: store)
+        let loadCount = FlightTestBox(0)
         let manager = ConversationManager(
             store: store,
             saveDebounceDuration: .milliseconds(0),
             conversationLoader: { conversationId in
-                try await loadProbe.load(conversationId)
+                loadCount.update { $0 += 1 }
+                return try await loadGate.load(conversationId)
             }
         )
         _ = await manager.loadingTask?.value
 
         _ = manager.conversation(byId: conversation.id)
-        async let first = manager.ensureConversationLoaded(conversation.id)
-        async let second = manager.ensureConversationLoaded(conversation.id)
-        let loaded = await [first, second]
+        await loadGate.waitUntilStarted()
+        let firstTask = Task { @MainActor in
+            await manager.ensureConversationLoaded(conversation.id)
+        }
+        let secondTask = Task { @MainActor in
+            await manager.ensureConversationLoaded(conversation.id)
+        }
+        await Task.yield()
+        await loadGate.release()
+        let loaded = await [firstTask.value, secondTask.value]
 
         #expect(loaded.allSatisfy { $0?.messages.count == conversation.messages.count })
-        #expect(await loadProbe.loadCount() == 1)
+        #expect(loadCount.value == 1)
     }
 
     @Test
@@ -889,15 +891,14 @@ struct ConversationManagerTests {
         let conversation = TestHelpers.sampleConversation(title: "Original Debounced")
         try await store.save(conversation)
 
-        let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(500))
+        let manager = ConversationManager(store: store, saveDebounceDuration: .seconds(10))
         _ = await manager.loadingTask?.value
 
         var firstEdit = try #require(manager.conversations.first)
         firstEdit.title = "First Pending Title"
         firstEdit.updatedAt = Date().addingTimeInterval(10)
         manager.save(firstEdit)
-
-        try await Task.sleep(for: .milliseconds(100))
+        await Task.yield()
 
         var secondEdit = firstEdit
         secondEdit.title = "Second Pending Title"
@@ -905,17 +906,9 @@ struct ConversationManagerTests {
         secondEdit.updatedAt = Date().addingTimeInterval(20)
         manager.conversations = [secondEdit]
         manager.save(secondEdit)
+        await manager.flushPendingSaves()
 
-        var persistedConversation: Conversation?
-        for _ in 0 ..< 200 {
-            persistedConversation = try await store.loadConversation(id: conversation.id)
-            if persistedConversation?.title == "Second Pending Title" {
-                break
-            }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-
-        let persisted = try #require(persistedConversation)
+        let persisted = try #require(try await store.loadConversation(id: conversation.id))
         #expect(persisted.title == "Second Pending Title")
         #expect(persisted.temperature == 0.42)
         #expect(persisted.messages.count == conversation.messages.count)
@@ -1019,8 +1012,7 @@ struct ConversationManagerTests {
         let dirty = TestHelpers.sampleConversation(title: "Dirty")
         manager.conversations = [dirty]
         manager.save(dirty)
-
-        try await Task.sleep(for: .milliseconds(50))
+        await Task.yield()
 
         let diskBefore = try await store.loadConversations()
         #expect(diskBefore.isEmpty)
@@ -1049,7 +1041,7 @@ struct ConversationManagerTests {
         let messageId = try #require(hydrated.messages.first?.id)
 
         #expect(manager.editMessage(in: hydrated, messageId: messageId, newContent: "current replacement"))
-        try await Task.sleep(for: .milliseconds(50))
+        await Task.yield()
 
         await manager.reloadConversations()
 
@@ -1163,12 +1155,7 @@ struct ConversationManagerTests {
         #expect(manager.appendToMessage(conversationId: conversation.id, messageId: reply.id, chunk: "Partial answer"))
 
         await manager.reloadConversations()
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(5))
-        while await loads.calls < 3, clock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        try await Task.sleep(for: .milliseconds(50))
+        #expect(await manager.waitUntilConversationStateIsAuthoritative())
 
         #expect(await loads.calls >= 3)
         #expect(manager.conversation(byId: conversation.id)?.messages.last?.content == "Partial answer")
@@ -1526,25 +1513,6 @@ private actor ConversationStaleLoadGate {
     }
 }
 
-private actor ConversationLoadProbe {
-    private let store: EncryptedConversationStore
-    private var count = 0
-
-    init(store: EncryptedConversationStore) {
-        self.store = store
-    }
-
-    func load(_ conversationId: UUID) async throws -> Conversation? {
-        count += 1
-        try await Task.sleep(for: .milliseconds(50))
-        return try await store.loadConversation(id: conversationId)
-    }
-
-    func loadCount() -> Int {
-        count
-    }
-}
-
 private actor PersistenceFlushGate {
     private var callCount = 0
     private var firstCallStarted = false
@@ -1620,15 +1588,15 @@ extension ConversationManagerTests {
 
     @Test
     @MainActor
-    func `Appending streamed content advances the conversation revision`() async throws {
+    func `Appending streamed content advances the conversation revision`() throws {
         let directory = try TestHelpers.makeTemporaryDirectory()
         let manager = makeManager(directory: directory)
         manager.createNewConversation()
         let conversation = try #require(manager.conversations.first)
         let message = Message(role: .assistant, content: "")
         manager.addMessage(to: conversation, message: message)
-        let previousUpdate = try #require(manager.conversations.first?.updatedAt)
-        try await Task.sleep(for: .milliseconds(2))
+        let previousUpdate = Date.distantPast
+        manager.conversations[0].updatedAt = previousUpdate
 
         let appended = manager.appendToMessage(
             conversationId: conversation.id,
@@ -1746,11 +1714,7 @@ extension ConversationManagerTests {
         )
 
         _ = await manager.loadingTask?.value
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while !manager.isConversationStateAuthoritative, clock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
+        #expect(await manager.waitUntilConversationStateIsAuthoritative())
 
         #expect(manager.isConversationStateAuthoritative)
         #expect(manager.conversations.map(\.id) == [stored.id])
@@ -1910,19 +1874,14 @@ extension ConversationManagerTests {
         _ = await store.enqueue(.load, outcome: .load([stored]))
         let manager = ConversationManager(
             store: store,
-            loadRetryBaseDelay: .milliseconds(100)
+            loadRetryBaseDelay: .milliseconds(1)
         )
 
         _ = await manager.loadingTask?.value
         await manager.clearAllConversations().value
 
         #expect(!manager.isConversationStateAuthoritative)
-
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while !manager.conversations.contains(where: { $0.id == stored.id }), clock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(10))
-        }
+        #expect(await manager.waitUntilConversationStateIsAuthoritative())
 
         #expect(manager.isConversationStateAuthoritative)
         #expect(manager.conversations.map(\.id) == [stored.id])

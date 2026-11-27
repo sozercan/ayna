@@ -704,6 +704,7 @@ struct AnthropicProviderTests {
     func `cancelling during Retry-After backoff sends no retry`() async {
         let backoffStarted = FlightTestSignal()
         let releaseBackoff = FlightTestSignal()
+        let backoffResumed = FlightTestSignal()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [AnthropicMockURLProtocol.self]
         let provider = AnthropicProvider(
@@ -711,6 +712,7 @@ struct AnthropicProviderTests {
             retryDelay: { _, _ in
                 backoffStarted.signal()
                 await releaseBackoff.wait()
+                backoffResumed.signal()
             }
         )
         let attempts = FlightTestBox(0)
@@ -735,7 +737,10 @@ struct AnthropicProviderTests {
         #expect(await backoffStarted.wait(timeout: .seconds(5)))
         provider.cancelRequest()
         releaseBackoff.signal()
-        try? await Task.sleep(for: .milliseconds(300))
+        #expect(await backoffResumed.wait(timeout: .seconds(5)))
+        for _ in 0 ..< 5 {
+            await Task.yield()
+        }
 
         #expect(attempts.value == 1)
     }
@@ -795,6 +800,7 @@ struct AnthropicProviderTests {
         let messages = [Message(role: .user, content: "Hello")]
 
         nonisolated(unsafe) var receivedError: Error?
+        let callbackWaiter = TestCallbackWaiter()
 
         await confirmation("Error received") { errorReceived in
             provider.sendMessage(
@@ -804,15 +810,16 @@ struct AnthropicProviderTests {
                 tools: nil,
                 callbacks: AIProviderStreamCallbacks(
                     onChunk: { _ in },
-                    onComplete: { Issue.record("Should not complete") },
+                    onComplete: { Issue.record("Should not complete"); callbackWaiter.signal() },
                     onError: { error in
                         receivedError = error
                         errorReceived()
+                        callbackWaiter.signal()
                     }
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(100))
+            await callbackWaiter.wait()
         }
 
         #expect(receivedError != nil)
@@ -825,6 +832,7 @@ struct AnthropicProviderTests {
         let messages = [Message(role: .user, content: "Hello")]
 
         nonisolated(unsafe) var receivedError: Error?
+        let callbackWaiter = TestCallbackWaiter()
 
         await confirmation("Error received") { errorReceived in
             provider.sendMessage(
@@ -834,38 +842,34 @@ struct AnthropicProviderTests {
                 tools: nil,
                 callbacks: AIProviderStreamCallbacks(
                     onChunk: { _ in },
-                    onComplete: { Issue.record("Should not complete") },
+                    onComplete: { Issue.record("Should not complete"); callbackWaiter.signal() },
                     onError: { error in
                         receivedError = error
                         errorReceived()
+                        callbackWaiter.signal()
                     }
                 )
             )
 
-            try? await Task.sleep(for: .milliseconds(100))
+            await callbackWaiter.wait()
         }
 
         #expect(receivedError != nil)
     }
 
-    @Test
+    @Test(.timeLimit(.minutes(1)))
     func `cancel request stops current task`() async {
-        let provider = makeProvider()
+        let server = FlightTestURLProtocolServer()
+        FlightTestURLProtocol.install(server: server)
+        defer { FlightTestURLProtocol.reset() }
+        let sessionConfig = URLSessionConfiguration.ephemeral
+        sessionConfig.protocolClasses = [FlightTestURLProtocol.self]
+        let provider = AnthropicProvider(urlSession: URLSession(configuration: sessionConfig), retryDelay: { _, _ in })
         let config = makeConfig()
         let messages = [Message(role: .user, content: "Hello")]
 
-        AnthropicMockURLProtocol.requestHandler = { _ in
-            Thread.sleep(forTimeInterval: 0.05)
-            let response = HTTPURLResponse(
-                url: URL(string: "https://api.anthropic.com/v1/messages")!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            return (response, Data("{}".utf8))
-        }
-
-        nonisolated(unsafe) var errorCalled = false
+        let errorCalled = FlightTestBox(false)
+        let completedCalled = FlightTestBox(false)
 
         provider.sendMessage(
             messages: messages,
@@ -874,14 +878,22 @@ struct AnthropicProviderTests {
             tools: nil,
             callbacks: AIProviderStreamCallbacks(
                 onChunk: { _ in },
-                onComplete: {},
-                onError: { _ in errorCalled = true }
+                onComplete: { completedCalled.value = true },
+                onError: { _ in errorCalled.value = true }
             )
         )
 
+        let exchange = await server.exchange(at: 0)
         provider.cancelRequest()
 
-        try? await Task.sleep(for: .milliseconds(200))
+        let stopped = await exchange.waitUntilStopped()
+        for _ in 0 ..< 5 {
+            await Task.yield()
+        }
+
+        #expect(stopped)
+        #expect(!errorCalled.value)
+        #expect(!completedCalled.value)
     }
 
     @Test(.timeLimit(.minutes(1)))

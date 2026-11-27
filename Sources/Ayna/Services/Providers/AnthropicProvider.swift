@@ -403,6 +403,9 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
         attempt: Int
     ) async {
         if let error {
+            if let urlError = error as? URLError, urlError.code == .cancelled {
+                return
+            }
             DiagnosticsLogger.log(
                 .aiService,
                 level: .error,

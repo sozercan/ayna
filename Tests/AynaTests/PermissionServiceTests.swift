@@ -92,6 +92,38 @@ struct PermissionServiceTests {
         #expect(sut.pendingCount(forConversation: conversationId) == 0)
     }
 
+    private func waitForPendingApprovals(count: Int, in service: PermissionService? = nil) async {
+        let target = service ?? sut
+        if target.pendingApprovals.count >= count {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            nonisolated(unsafe) var observer: NSObjectProtocol?
+            nonisolated(unsafe) var resumed = false
+            observer = NotificationCenter.default.addObserver(
+                forName: .pendingApprovalsChanged,
+                object: nil,
+                queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
+                    guard !resumed, target.pendingApprovals.count >= count else { return }
+                    resumed = true
+                    if let observer {
+                        NotificationCenter.default.removeObserver(observer)
+                    }
+                    continuation.resume()
+                }
+            }
+            if target.pendingApprovals.count >= count, !resumed {
+                resumed = true
+                if let observer {
+                    NotificationCenter.default.removeObserver(observer)
+                }
+                continuation.resume()
+            }
+        }
+    }
+
     @Test("Approve removes from pending and resumes")
     func approveRemovesFromPending() async {
         let conversationId = UUID()
@@ -105,7 +137,7 @@ struct PermissionServiceTests {
             )
         }
 
-        try? await Task.sleep(for: .milliseconds(50))
+        await waitForPendingApprovals(count: 1)
 
         #expect(sut.pendingApprovals.count == 1)
 
@@ -131,7 +163,7 @@ struct PermissionServiceTests {
             )
         }
 
-        try? await Task.sleep(for: .milliseconds(50))
+        await waitForPendingApprovals(count: 1)
 
         if let approvalId = sut.pendingApprovals.first?.id {
             sut.deny(approvalId)
@@ -155,7 +187,7 @@ struct PermissionServiceTests {
             )
         }
 
-        try? await Task.sleep(for: .milliseconds(50))
+        await waitForPendingApprovals(count: 1)
 
         if let approvalId = sut.pendingApprovals.first?.id {
             sut.approve(approvalId, rememberForSession: true)
@@ -183,11 +215,7 @@ struct PermissionServiceTests {
             )
         }
 
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while sut.pendingApprovals.isEmpty, clock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
+        await waitForPendingApprovals(count: 1)
         #expect(sut.pendingApprovals.count == 1)
 
         task.cancel()
@@ -208,11 +236,7 @@ struct PermissionServiceTests {
             )
         }
 
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while sut.pendingApprovals.isEmpty, clock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
+        await waitForPendingApprovals(count: 1)
         guard let approvalID = sut.pendingApprovals.first?.id else {
             Issue.record("Approval did not become pending")
             return
@@ -237,11 +261,7 @@ struct PermissionServiceTests {
             )
         }
 
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while sut.pendingApprovals.isEmpty, clock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
+        await waitForPendingApprovals(count: 1)
         let approvalID = sut.pendingApprovals.first?.id
         #expect(approvalID != nil)
         guard let approvalID else { return }
@@ -274,11 +294,7 @@ struct PermissionServiceTests {
             )
         }
 
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while sut.pendingApprovals.count < 2, clock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
+        await waitForPendingApprovals(count: 2)
         #expect(sut.pendingApprovals.count == 2)
         guard let firstID = sut.pendingApprovals.first?.id else { return }
 
@@ -302,11 +318,7 @@ struct PermissionServiceTests {
             )
         }
 
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while sut.pendingApprovals.isEmpty, clock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
+        await waitForPendingApprovals(count: 1)
         let approvalID = sut.pendingApprovals.first?.id
         #expect(approvalID != nil)
         guard let approvalID else { return }
@@ -337,11 +349,7 @@ struct PermissionServiceTests {
             )
         }
 
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while sut.pendingApprovals.count < 2, clock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
+        await waitForPendingApprovals(count: 2)
         #expect(sut.pendingApprovals.count == 2)
 
         staleTask.cancel()
@@ -387,7 +395,7 @@ struct PermissionServiceTests {
             )
         }
 
-        try? await Task.sleep(for: .milliseconds(50))
+        await waitForPendingApprovals(count: 3)
 
         sut.denyAllPending(forConversation: conversationId, reason: "Conversation closed")
 
@@ -412,9 +420,13 @@ struct PermissionServiceTests {
 
     @Test("No timeout keeps an approval pending until cancelled", .timeLimit(.minutes(1)))
     func noTimeoutKeepsApprovalPending() async {
-        sut.approvalTimeoutSeconds = 0
+        let timeoutScheduled = FlightTestBox(false)
+        let service = PermissionService(timeoutSleep: { _ in
+            timeoutScheduled.value = true
+        })
+        service.approvalTimeoutSeconds = 0
         let task = Task {
-            await sut.requestApproval(
+            await service.requestApproval(
                 toolName: "write_file",
                 description: "Write file",
                 details: "/tmp/no-timeout.txt",
@@ -422,32 +434,46 @@ struct PermissionServiceTests {
             )
         }
 
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
-        while sut.pendingApprovals.isEmpty, clock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(5))
+        await waitForPendingApprovals(count: 1, in: service)
+        for _ in 0 ..< 5 {
+            await Task.yield()
         }
-        #expect(sut.pendingApprovals.count == 1)
-
-        try? await Task.sleep(for: .milliseconds(300))
-        #expect(sut.pendingApprovals.count == 1)
+        #expect(service.pendingApprovals.count == 1)
+        #expect(!timeoutScheduled.value)
 
         task.cancel()
         #expect(await task.value == false)
-        #expect(sut.pendingApprovals.isEmpty)
+        #expect(service.pendingApprovals.isEmpty)
     }
 
     @Test("A positive timeout still denies a pending approval", .timeLimit(.minutes(1)))
     func positiveTimeoutDeniesPendingApproval() async {
-        sut.approvalTimeoutSeconds = 1
-        let approved = await sut.requestApproval(
-            toolName: "write_file",
-            description: "Write file",
-            details: "/tmp/timeout.txt",
-            conversationId: UUID()
-        )
+        let timeoutStarted = FlightTestSignal()
+        let releaseTimeout = FlightTestSignal()
+        let observedSeconds = FlightTestBox<Int?>(nil)
+        let service = PermissionService(timeoutSleep: { seconds in
+            observedSeconds.value = seconds
+            timeoutStarted.signal()
+            await releaseTimeout.wait()
+        })
+        service.approvalTimeoutSeconds = 1
+        let task = Task {
+            await service.requestApproval(
+                toolName: "write_file",
+                description: "Write file",
+                details: "/tmp/timeout.txt",
+                conversationId: UUID()
+            )
+        }
+
+        await timeoutStarted.wait()
+        #expect(observedSeconds.value == 1)
+        #expect(service.pendingApprovals.count == 1)
+
+        releaseTimeout.signal()
+        let approved = await task.value
         #expect(approved == false)
-        #expect(sut.pendingApprovals.isEmpty)
+        #expect(service.pendingApprovals.isEmpty)
     }
 
     @Test("Timeout is configurable")
