@@ -11,6 +11,7 @@ extension MacChatView {
         let assistantMessageID: UUID
         let model: String
         let temperature: Double
+        let maxToolCallDepth: Int
         let toolsWrapper: UncheckedSendableWrapper<[[String: Any]]?>
     }
 
@@ -156,6 +157,7 @@ extension MacChatView {
             assistantMessageID: assistantMessageID,
             model: model,
             temperature: temperature,
+            maxToolCallDepth: AgentSettingsStore.shared.settings.maxToolChainDepth,
             toolsWrapper: UncheckedSendableWrapper(tools)
         )
         let toolCallAdmissionGate = ToolCallRequestAdmissionGate()
@@ -283,7 +285,6 @@ extension MacChatView {
         argumentsWrapper: UncheckedSendableWrapper<[String: Any]>,
         context: ToolStreamContext
     ) {
-        let maxToolCallDepth = AgentSettingsStore.shared.settings.maxToolChainDepth
         guard activeAssistantMessageID == context.assistantMessageID,
               let token = toolCallRequestRoundCoordinator.registerTool(
                   for: context.operationID,
@@ -294,7 +295,7 @@ extension MacChatView {
         }
 
         if token.registrationIndex == 0 {
-            guard toolCallDepth < maxToolCallDepth else {
+            guard toolCallDepth < context.maxToolCallDepth else {
                 logChat("⚠️ Max tool call depth reached, stopping", level: .error)
                 abortOwnedTextGeneration(operationID: context.operationID, conversationID: context.conversationID)
                 errorMessage = "Tool call limit reached. Please try again."
