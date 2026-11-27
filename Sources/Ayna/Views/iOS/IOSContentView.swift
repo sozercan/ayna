@@ -34,10 +34,13 @@ struct IOSContentView: View {
             } detail: {
                 switch selectedRoute {
                 case let .conversation(selectedId):
-                    IOSChatView(conversationId: selectedId)
-                        .id(selectedId)
+                    IOSChatView(
+                        conversationId: selectedId,
+                        conversationManager: conversationManager
+                    )
+                    .id(selectedId)
                 case .newChat, .none:
-                    IOSNewChatView()
+                    IOSNewChatView(conversationManager: conversationManager)
                         .id(selectedRoute)
                 }
             }
@@ -197,9 +200,9 @@ struct IOSContentView: View {
 }
 
 struct IOSNewChatView: View {
-    @EnvironmentObject var conversationManager: ConversationManager
+    @ObservedObject var conversationManager: ConversationManager
     @ObservedObject private var aiService = AIService.shared
-    @StateObject private var viewModel = IOSChatViewModel.placeholder()
+    @StateObject private var viewModel: IOSChatViewModel
 
     @State private var isFileImporterPresented = false
     @State private var followsLatest = true
@@ -211,6 +214,13 @@ struct IOSNewChatView: View {
     @State private var showModelSelector = false
 
     @State private var cachedDisplayableItems: [ChatTranscriptItem] = []
+
+    init(conversationManager: ConversationManager) {
+        self.conversationManager = conversationManager
+        _viewModel = StateObject(
+            wrappedValue: IOSChatViewModel(conversationManager: conversationManager)
+        )
+    }
 
     private var pendingConversation: Conversation? {
         guard let id = viewModel.conversationId else { return nil }

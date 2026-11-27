@@ -54,11 +54,15 @@ struct ErrorBannerViewTests {
             message: message,
             recoverySuggestion: suggestion,
             onRetry: {},
+            openSettingsTab: .models,
             onDismiss: {},
             identifierPrefix: prefix
         )
 
-        #expect(view != nil)
+        #expect(view.message == message)
+        #expect(view.recoverySuggestion == suggestion)
+        #expect(view.openSettingsTab == .models)
+        #expect(view.identifierPrefix == prefix)
     }
 }
 

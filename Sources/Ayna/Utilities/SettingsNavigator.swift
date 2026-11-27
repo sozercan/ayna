@@ -2,7 +2,7 @@ import Combine
 import Foundation
 import SwiftUI
 
-enum SettingsTab: Hashable {
+public enum SettingsTab: Hashable, Sendable {
     case general
     case models
     case mcp
