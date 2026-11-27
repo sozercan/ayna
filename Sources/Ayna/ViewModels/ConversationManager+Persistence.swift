@@ -294,18 +294,22 @@ extension ConversationManager {
         case .saved:
             return true
         case .superseded:
-            if await persistenceCoordinator.settleCurrentState(for: conversationID) != .failed {
+            switch await persistenceCoordinator.settleCurrentState(for: conversationID) {
+            case .saved:
                 return true
+            case .deleted:
+                return false
+            case .failed:
+                logManager(
+                    "❌ Failed to save conversation",
+                    level: .error,
+                    metadata: [
+                        "id": conversationID.uuidString,
+                        "error": "Failed to settle the latest conversation state",
+                    ]
+                )
+                return false
             }
-            logManager(
-                "❌ Failed to save conversation",
-                level: .error,
-                metadata: [
-                    "id": conversationID.uuidString,
-                    "error": "Failed to settle the latest conversation state",
-                ]
-            )
-            return false
         case let .failed(error):
             logManager(
                 "❌ Failed to save conversation",
