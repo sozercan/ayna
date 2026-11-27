@@ -306,6 +306,8 @@
             WatchConnectivityService.shared.selectedModel = "gpt-4o"
 
             var currentTime = Date(timeIntervalSince1970: 1000)
+            let clockCallCount = FlightTestBox(0)
+            let secondChunkProcessed = FlightTestSignal()
             var capturedCallbacks: AIServiceResponseSimulationCallbacks?
             let aiService = AIService(responseSimulator: { _, callbacks in
                 capturedCallbacks = callbacks
@@ -319,7 +321,13 @@
                 conversationStore: store,
                 connectivityService: .shared,
                 aiService: aiService,
-                now: { currentTime }
+                now: {
+                    clockCallCount.update { $0 += 1 }
+                    if clockCallCount.value == 2 {
+                        secondChunkProcessed.signal()
+                    }
+                    return currentTime
+                }
             )
             viewModel.setConversation(conversation.id)
             #expect(viewModel.sendMessage("Stream") == .started)
@@ -334,7 +342,7 @@
 
             currentTime = currentTime.addingTimeInterval(WatchChatViewModel.defaultUIUpdateInterval / 2)
             callbacks.onChunk(" world")
-            try? await Task.sleep(for: .milliseconds(25))
+            #expect(await secondChunkProcessed.wait(timeout: .seconds(1)))
             #expect(viewModel.streamingContent == "Hello")
 
             currentTime = currentTime.addingTimeInterval(WatchChatViewModel.defaultUIUpdateInterval)
