@@ -38,6 +38,12 @@ class WatchUITestCase: XCTestCase {
         let textField = app.textFields["watch.newChat.composerTextField"]
         XCTAssertTrue(textField.waitForExistence(timeout: UITestTimeout.normal), "New chat text field not found")
         textField.tap()
+
+        let hasKeyboardFocus = (textField.value(forKey: "hasKeyboardFocus") as? Bool) ?? false
+        guard hasKeyboardFocus || app.keyboards.firstMatch.waitForExistence(timeout: UITestTimeout.immediate) else {
+            throw XCTSkip("watchOS simulator Quickboard did not grant keyboard focus to composerTextField")
+        }
+
         textField.typeText(text)
 
         let returnKey = app.keyboards.buttons["return"]

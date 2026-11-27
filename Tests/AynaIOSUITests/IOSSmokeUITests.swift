@@ -2,6 +2,7 @@ import UIKit
 import UniformTypeIdentifiers
 import XCTest
 
+@MainActor
 final class IOSSmokeUITests: IOSUITestCase {
     func testComposerPastesImagesPlainTextAndMixedContent() throws {
         tapNewConversationButton()
