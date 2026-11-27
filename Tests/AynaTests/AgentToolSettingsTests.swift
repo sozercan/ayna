@@ -441,6 +441,23 @@ import Testing
             }
             #expect(!toolNames.contains(WebFetchService.toolName))
         }
+
+        @Test
+        func `Standalone AIService does not overwrite WebFetchService.shared permissionService`() {
+            let sharedPermissionService = PermissionService()
+            let previousPermissionService = WebFetchService.shared.permissionService
+            WebFetchService.shared.permissionService = sharedPermissionService
+            defer { WebFetchService.shared.permissionService = previousPermissionService }
+
+            let standalone = AIService()
+            #expect(WebFetchService.shared.permissionService === sharedPermissionService)
+            #expect(standalone.permissionService !== sharedPermissionService)
+
+            let store = AgentSettingsStore(initialSettings: .default, webFetchService: WebFetchService())
+            let standaloneWithStore = AIService(agentSettingsStore: store)
+            #expect(WebFetchService.shared.permissionService === sharedPermissionService)
+            #expect(standaloneWithStore.permissionService !== sharedPermissionService)
+        }
     }
 #endif
 

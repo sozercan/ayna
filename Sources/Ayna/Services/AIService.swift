@@ -483,8 +483,9 @@ class AIService: ObservableObject {
             responseSimulator: AIServiceResponseSimulator? = nil,
             appleIntelligenceService: (any AppleIntelligenceServing)? = nil,
             agentSettingsStore: AgentSettingsStore,
-            webFetchService: WebFetchService = WebFetchService.shared
+            webFetchService: WebFetchService? = nil
         ) {
+            let resolvedWebFetchService = webFetchService ?? WebFetchService()
             self.init(
                 urlSession: urlSession,
                 anthropicProviderFactory: anthropicProviderFactory,
@@ -492,7 +493,7 @@ class AIService: ObservableObject {
                 requestFlightObserver: requestFlightObserver,
                 responseSimulator: responseSimulator,
                 appleIntelligenceService: appleIntelligenceService,
-                webFetchService: webFetchService
+                webFetchService: resolvedWebFetchService
             )
             if let builtinService = builtinToolService,
                let permService = permissionService
@@ -500,7 +501,7 @@ class AIService: ObservableObject {
                 agentSettingsStore.attach(
                     builtinToolService: builtinService,
                     permissionService: permService,
-                    webFetchService: webFetchService
+                    webFetchService: resolvedWebFetchService
                 )
             }
         }
@@ -518,13 +519,17 @@ class AIService: ObservableObject {
         requestFlightObserver: RequestFlightObserver = .none,
         responseSimulator: AIServiceResponseSimulator? = nil,
         appleIntelligenceService: (any AppleIntelligenceServing)? = nil,
-        webFetchService: WebFetchService = WebFetchService.shared
+        webFetchService: WebFetchService? = nil
     ) {
         self.anthropicProviderFactory = anthropicProviderFactory
         self.retryDelay = retryDelay
         self.requestFlightObserver = requestFlightObserver
         self.responseSimulator = responseSimulator
-        self.webFetchService = webFetchService
+        #if os(macOS)
+            self.webFetchService = webFetchService ?? WebFetchService()
+        #else
+            self.webFetchService = webFetchService ?? WebFetchService.shared
+        #endif
         #if !os(watchOS)
             injectedAppleIntelligenceService = appleIntelligenceService
         #endif
