@@ -642,14 +642,20 @@
             }
 
             if let focused = accessibility.getFocusedElement(in: element) {
-                if let directURL = Self.normalizedBrowserURL(from: accessibility.getURL(focused))
-                    ?? Self.normalizedBrowserURL(from: accessibility.getDocument(focused))
+                if let documentURL = Self.normalizedBrowserURL(from: accessibility.getDocument(focused)) {
+                    return documentURL
+                }
+
+                let focusedRole = accessibility.getRole(focused)
+                if focusedRole == "AXWebArea",
+                   let webAreaURL = Self.normalizedBrowserURL(from: accessibility.getURL(focused))
                 {
-                    return directURL
+                    return webAreaURL
                 }
 
                 if isAddressBarCandidate(focused, accessibility: accessibility),
                    let valueURL = Self.normalizedBrowserURL(from: accessibility.getValue(focused))
+                   ?? Self.normalizedBrowserURL(from: accessibility.getURL(focused))
                 {
                     return valueURL
                 }
@@ -663,6 +669,7 @@
             let maxEnqueuedElements = 300
             var queue: [(element: AXUIElement, depth: Int)] = [(root, 0)]
             var queueIndex = 0
+            var addressBarFallback: String?
 
             while queueIndex < queue.count {
                 let current = queue[queueIndex]
@@ -679,7 +686,8 @@
                         }
                     }
 
-                    if Self.isAddressBarRole(role),
+                    if addressBarFallback == nil,
+                       Self.isAddressBarRole(role),
                        Self.isAddressBarDescriptor(
                            identifier: accessibility.getIdentifier(current.element),
                            description: accessibility.getDescription(current.element),
@@ -689,7 +697,7 @@
                        let candidate = Self.normalizedBrowserURL(from: accessibility.getValue(current.element))
                        ?? Self.normalizedBrowserURL(from: accessibility.getURL(current.element))
                     {
-                        return candidate
+                        addressBarFallback = candidate
                     }
                 }
 
@@ -701,7 +709,7 @@
                 }
             }
 
-            return nil
+            return addressBarFallback
         }
 
         private func isAddressBarCandidate(_ element: AXUIElement, accessibility: AccessibilityService) -> Bool {
@@ -764,7 +772,7 @@
                 }
 
                 if scheme == "http" || scheme == "https" {
-                    guard let host = url.host, isValidWebHost(host) else {
+                    guard let host = url.host, !host.isEmpty else {
                         return nil
                     }
                     return url.absoluteString
