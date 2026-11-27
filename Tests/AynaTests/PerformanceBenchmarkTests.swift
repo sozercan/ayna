@@ -19,7 +19,6 @@ struct ParserPerformanceBenchmarkTests {
                 line,
                 toolCallBuffers: buffers,
                 toolCallIds: ids,
-                onToolCall: nil,
                 onToolCallRequested: nil
             )
             buffers = result.toolCallBuffers
@@ -45,7 +44,6 @@ struct ParserPerformanceBenchmarkTests {
                 line,
                 toolCallBuffers: buffers,
                 toolCallIds: ids,
-                onToolCall: nil,
                 onToolCallRequested: nil
             )
             buffers = result.toolCallBuffers

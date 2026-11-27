@@ -466,7 +466,6 @@ enum WatchLiveModelPolicy {
                         )
                     }
                 },
-                onToolCall: nil,
                 onToolCallRequested: toolCallAdmissionGate.admittedCallback { [weak self] toolCallID, toolName, arguments in
                     nonisolated(unsafe) let arguments = arguments
                     coordinator.enqueueCallback(for: operationID, conversationID: conversationId) { [weak self] in

@@ -35,7 +35,6 @@ struct AIProviderStreamCallbacks: Sendable {
     let onChunk: @Sendable (String) -> Void
     let onComplete: @Sendable () -> Void
     let onError: @Sendable (Error) -> Void
-    let onToolCall: (@Sendable (String, String, [String: Any]) async -> String)?
     let onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)?
     let onReasoning: (@Sendable (String) -> Void)?
 
@@ -43,14 +42,12 @@ struct AIProviderStreamCallbacks: Sendable {
         onChunk: @escaping @Sendable (String) -> Void,
         onComplete: @escaping @Sendable () -> Void,
         onError: @escaping @Sendable (Error) -> Void,
-        onToolCall: (@Sendable (String, String, [String: Any]) async -> String)? = nil,
         onToolCallRequested: (@Sendable (String, String, [String: Any]) -> Void)? = nil,
         onReasoning: (@Sendable (String) -> Void)? = nil
     ) {
         self.onChunk = onChunk
         self.onComplete = onComplete
         self.onError = onError
-        self.onToolCall = onToolCall
         self.onToolCallRequested = onToolCallRequested
         self.onReasoning = onReasoning
     }

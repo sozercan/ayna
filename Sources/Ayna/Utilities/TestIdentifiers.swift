@@ -62,25 +62,31 @@ enum TestIdentifiers {
         static let newChatButton = "watch.newChatButton"
         static let modelSelectorButton = "watch.modelSelectorButton"
         static let modelList = "watch.modelList"
-        static let newChatView = "watch.newChat.view"
 
         static func modelRow(for modelName: String) -> String {
             "watch.modelRow.\(modelName)"
         }
 
-        static let chatMessagesList = "watch.chat.messagesList"
-        static let chatComposerTextField = "watch.chat.composerTextField"
-        static let chatStopButton = "watch.chat.stopButton"
-        static let chatTypingIndicator = "watch.chat.typingIndicator"
-
-        static func chatMessageRow(for messageId: UUID) -> String {
-            "watch.chat.message.\(messageId.uuidString)"
-        }
-
-        static let newChatComposerTextField = "watch.newChat.composerTextField"
-
         static func conversationRow(for conversationId: UUID) -> String {
             "watch.conversationRow.\(conversationId.uuidString)"
+        }
+
+        // swiftlint:disable:next nesting
+        enum ChatView {
+            static let messagesList = "watch.chat.messagesList"
+            static let composerTextField = "watch.chat.composerTextField"
+            static let stopButton = "watch.chat.stopButton"
+            static let typingIndicator = "watch.chat.typingIndicator"
+
+            static func messageRow(for messageId: UUID) -> String {
+                "watch.chat.message.\(messageId.uuidString)"
+            }
+        }
+
+        // swiftlint:disable:next nesting
+        enum NewChatView {
+            static let view = "watch.newChat.view"
+            static let composerTextField = "watch.newChat.composerTextField"
         }
     }
 }

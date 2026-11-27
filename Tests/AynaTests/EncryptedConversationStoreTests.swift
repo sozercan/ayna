@@ -699,7 +699,8 @@ struct EncryptedConversationStoreTests {
         let store = TestHelpers.makeTestStore(directory: directory)
         let retained = TestHelpers.sampleConversation(title: "Retained Index")
         let evicted = TestHelpers.sampleConversation(title: "Evicted Index")
-        try await store.save([retained, evicted])
+        try await store.save(retained)
+        try await store.save(evicted)
         try await store.warmConversationSearchIndex(candidateIds: [retained.id, evicted.id])
 
         #expect(FileManager.default.fileExists(atPath: store.searchIndexFileURL(for: retained.id).path))

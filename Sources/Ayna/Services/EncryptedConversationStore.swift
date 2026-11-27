@@ -2033,12 +2033,6 @@ final class EncryptedConversationStore: Sendable {
         }.value
     }
 
-    func save(_ conversations: [Conversation]) async throws {
-        for conversation in conversations {
-            try await save(conversation)
-        }
-    }
-
     private nonisolated static func symbolicLinkPath(in urls: [URL]) -> String? {
         for url in urls where (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) != nil {
             return url.path

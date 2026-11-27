@@ -378,7 +378,7 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         DiagnosticsLogger.log(
             .app,
             level: .fault,
-            message: "🔗 DEBUG AppDelegate: after handle - pendingAddModel=\(String(describing: DeepLinkManager.shared.pendingAddModel)), pendingChat=\(String(describing: DeepLinkManager.shared.pendingChat))"
+            message: "🔗 DEBUG AppDelegate: after handle - pendingAddModel=\(String(describing: DeepLinkManager.shared.pendingAddModel))"
         )
 
         if let chatRequest = DeepLinkManager.shared.consumeNextReadyChat() {

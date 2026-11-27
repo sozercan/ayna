@@ -30,7 +30,7 @@
                                     {
                                         WatchMessageView(message: message)
                                             .id(message.id)
-                                            .accessibilityIdentifier(TestIdentifiers.Watch.chatMessageRow(for: message.id))
+                                            .accessibilityIdentifier(TestIdentifiers.Watch.ChatView.messageRow(for: message.id))
                                     }
                                 }
 
@@ -57,7 +57,7 @@
                         }
                         .padding(.horizontal, 4)
                     }
-                    .accessibilityIdentifier(TestIdentifiers.Watch.chatMessagesList)
+                    .accessibilityIdentifier(TestIdentifiers.Watch.ChatView.messagesList)
                     .onChange(of: conversationStore.conversation(for: conversationId)?.messages.count) { _, _ in
                         withAnimation {
                             if viewModel.isLoading, !viewModel.isStreaming {
@@ -118,7 +118,7 @@
                             .clipShape(Capsule())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityIdentifier(TestIdentifiers.Watch.chatStopButton)
+                        .accessibilityIdentifier(TestIdentifiers.Watch.ChatView.stopButton)
                     } else {
                         TextField("Ask anything", text: $messageText)
                             .font(.system(size: 13))
@@ -127,7 +127,7 @@
                             .onSubmit {
                                 sendMessage()
                             }
-                            .accessibilityIdentifier(TestIdentifiers.Watch.chatComposerTextField)
+                            .accessibilityIdentifier(TestIdentifiers.Watch.ChatView.composerTextField)
                     }
                 }
                 .padding(.top, 4)
@@ -161,7 +161,7 @@
                 .background(Color(white: 0.2))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier(TestIdentifiers.Watch.chatTypingIndicator)
+                .accessibilityIdentifier(TestIdentifiers.Watch.ChatView.typingIndicator)
             }
 
             private func toolIndicator(_: String) -> some View {

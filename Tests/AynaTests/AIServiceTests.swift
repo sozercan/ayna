@@ -368,79 +368,6 @@ extension AIServiceGlobalStateTests {
         }
 
         @Test(.timeLimit(.minutes(1)))
-        func `Stream tool result is discarded after ownership changes`() async {
-            let server = FlightTestURLProtocolServer()
-            FlightTestURLProtocol.install(server: server)
-            let config = URLSessionConfiguration.ephemeral
-            config.protocolClasses = [FlightTestURLProtocol.self]
-            let toolStarted = FlightTestSignal()
-            let releaseTool = FlightTestSignal()
-            let staleParserStopped = FlightTestSignal()
-            let service = AIService(
-                urlSession: URLSession(configuration: config),
-                requestFlightObserver: RequestFlightObserver { checkpoint, ownsFlight in
-                    if checkpoint == .streamCancellation, !ownsFlight {
-                        staleParserStopped.signal()
-                    }
-                }
-            )
-            let models = ["tool-stream", "tool-replacement"]
-            service.customModels = models
-            service.selectedModel = models[0]
-            for model in models {
-                service.modelProviders[model] = .openai
-                service.modelAPIKeys[model] = "sk-unit-test"
-            }
-            let staleChunks = FlightTestBox("")
-            let staleCompleted = FlightTestBox(false)
-
-            service.sendMessage(
-                messages: [Message(role: .user, content: "Tool")],
-                model: models[0],
-                stream: true,
-                onChunk: { staleChunks.value += $0 },
-                onComplete: { staleCompleted.value = true },
-                onError: { _ in },
-                onToolCall: { _, _, _ in
-                    toolStarted.signal()
-                    await releaseTool.wait()
-                    return "stale tool result"
-                }
-            )
-            let first = await server.exchange(at: 0)
-            first.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
-            first.send(Data(
-                #"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"test_tool","arguments":"{}"}}]}}]}"#.utf8
-            ))
-            first.send(Data("\n".utf8))
-            first.send(Data(#"data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#.utf8))
-            first.send(Data("\n".utf8))
-            let didStartTool = await toolStarted.wait(timeout: .seconds(2))
-            #expect(didStartTool)
-
-            service.sendMessage(
-                messages: [Message(role: .user, content: "Replacement")],
-                model: models[1],
-                stream: true,
-                onChunk: { _ in },
-                onComplete: {},
-                onError: { _ in }
-            )
-            let replacement = await server.exchange(at: 1)
-            replacement.sendResponse(statusCode: 200, headers: ["Content-Type": "text/event-stream"])
-
-            releaseTool.signal()
-            let stoppedStaleParser = await staleParserStopped.wait(timeout: .seconds(2))
-            #expect(stoppedStaleParser)
-            #expect(staleChunks.value.isEmpty)
-            #expect(!staleCompleted.value)
-
-            service.cancelCurrentRequest()
-            let replacementStopped = await replacement.waitUntilStopped()
-            #expect(replacementStopped)
-        }
-
-        @Test(.timeLimit(.minutes(1)))
         func `Per-model multi stream terminal leaves the foreground stream owned`() async {
             let server = FlightTestURLProtocolServer()
             FlightTestURLProtocol.install(server: server)
@@ -704,7 +631,6 @@ extension AIServiceGlobalStateTests {
                         errorReceived()
                         callbackWaiter.signal()
                     },
-                    onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: nil
                 )
@@ -751,7 +677,6 @@ extension AIServiceGlobalStateTests {
                         Issue.record("Unexpected error: \(error)")
                         callbackWaiter.signal()
                     },
-                    onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: nil
                 )
@@ -835,7 +760,6 @@ extension AIServiceGlobalStateTests {
                         Issue.record("Unexpected error: \(error)")
                         callbackWaiter.signal()
                     },
-                    onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: nil
                 )
@@ -1033,7 +957,6 @@ extension AIServiceGlobalStateTests {
                         Issue.record("Unexpected error: \(error)")
                         callbackWaiter.signal()
                     },
-                    onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: nil
                 )
@@ -1081,7 +1004,6 @@ extension AIServiceGlobalStateTests {
                         errorReceived()
                         callbackWaiter.signal()
                     },
-                    onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: nil
                 )
@@ -1130,7 +1052,6 @@ extension AIServiceGlobalStateTests {
                         errorReceived()
                         callbackWaiter.signal()
                     },
-                    onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: nil
                 )
@@ -1194,7 +1115,6 @@ extension AIServiceGlobalStateTests {
                         Issue.record("Unexpected error: \(error)")
                         callbackWaiter.signal()
                     },
-                    onToolCall: nil,
                     onToolCallRequested: nil,
                     onReasoning: { reasoning in
                         receivedReasoning.value += reasoning

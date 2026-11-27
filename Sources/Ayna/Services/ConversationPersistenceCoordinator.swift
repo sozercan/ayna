@@ -92,15 +92,6 @@ private final class OperationOverridingConversationStore: ConversationStoreAdapt
     }
 }
 
-// swiftlint:disable:next type_name
-private struct ConversationPersistenceCompatibilityError: LocalizedError {
-    let message: String
-
-    var errorDescription: String? {
-        message
-    }
-}
-
 enum ConversationSaveMode: Sendable { case coalesced, immediate }
 
 enum ConversationSaveResult: Equatable, Sendable {
@@ -128,11 +119,6 @@ struct PersistenceReceipt<Value: Sendable>: Sendable {
             return reconcile?(settled) ?? settled
         }
     }
-}
-
-@MainActor
-private final class PersistenceAttemptErrorBox {
-    var error: (any Error)?
 }
 
 struct ConversationSnapshotRepairToken: Hashable, Sendable {
@@ -166,28 +152,12 @@ enum ConversationSnapshotSettlementResult: Equatable, Sendable {
 struct DestructivePersistenceReceipt<Value: Sendable>: Sendable {
     fileprivate let receipt: PersistenceReceipt<Value>
     let repairToken: ConversationSnapshotRepairToken
-    fileprivate let attemptErrorProvider: @MainActor @Sendable () -> (any Error)?
-
-    fileprivate init(
-        receipt: PersistenceReceipt<Value>,
-        repairToken: ConversationSnapshotRepairToken,
-        attemptErrorProvider: @escaping @MainActor @Sendable () -> (any Error)? = { nil }
-    ) {
-        self.receipt = receipt
-        self.repairToken = repairToken
-        self.attemptErrorProvider = attemptErrorProvider
-    }
 
     @MainActor
     var value: Value {
         get async {
             await receipt.value
         }
-    }
-
-    @MainActor
-    fileprivate var attemptError: (any Error)? {
-        attemptErrorProvider()
     }
 }
 
@@ -244,17 +214,6 @@ final class ConversationPersistenceCoordinator {
         let changes: [UUID: DesiredState]
     }
 
-    private struct CompatibilityClearOperation {
-        let generation: UInt64
-        let task: Task<ConversationClearResult, Never>
-        let rollbackSnapshot: [UUID: Conversation]
-    }
-
-    private struct CompatibilityClearObservation {
-        let generation: UInt64
-        let task: Task<ConversationClearResult, Never>
-    }
-
     private enum SnapshotRepairStatus {
         case settled
         case pending(isScheduled: Bool)
@@ -284,15 +243,6 @@ final class ConversationPersistenceCoordinator {
     private var rewriteScheduledToken: UInt64?
     private var rewriteCoveredTokens: [UUID: UInt64] = [:]
     private var repairDeletedIDs: Set<UUID> = []
-
-    private var compatibilitySuppressedSaveIDs: Set<UUID> = []
-    private var compatibilityDeletingIDs: Set<UUID> = []
-    private var compatibilityDeletionGenerations: [UUID: UInt64] = [:]
-    private var compatibilityDeletionRollbacks: [UUID: Conversation] = [:]
-    private var compatibilityClearGeneration: UInt64 = 0
-    private var compatibilityActiveClearCount = 0
-    private var compatibilityActiveClearOperation: CompatibilityClearOperation?
-    private var compatibilityLatestClearObservation: CompatibilityClearObservation?
 
     private var ioTail = Task { @MainActor in }
 
@@ -332,239 +282,20 @@ final class ConversationPersistenceCoordinator {
         ordered(storageSnapshot)
     }
 
-    @discardableResult
-    func enqueueSave(
-        _ conversation: Conversation,
-        allowsRecreation: Bool = false
-    ) -> PersistenceReceipt<ConversationSaveResult>? {
-        if compatibilitySuppressedSaveIDs.contains(conversation.id) {
-            guard allowsRecreation else { return nil }
-            compatibilitySuppressedSaveIDs.remove(conversation.id)
-        }
-        return apply(conversation, mode: .coalesced)
-    }
-
-    func suppressSavesUntilExplicitRecreation(for conversationIDs: Set<UUID>) {
-        compatibilitySuppressedSaveIDs.formUnion(conversationIDs)
-    }
-
-    func saveImmediately(
-        _ conversation: Conversation,
-        allowsRecreation: Bool = false
-    ) async throws {
-        let receipt = registerImmediateSave(
-            conversation,
-            allowsRecreation: allowsRecreation
-        )
-        try await settleImmediateSave(receipt, conversationID: conversation.id)
-    }
-
-    func registerImmediateSave(
-        _ conversation: Conversation,
-        allowsRecreation: Bool = false
-    ) -> PersistenceReceipt<ConversationSaveResult> {
-        if compatibilitySuppressedSaveIDs.contains(conversation.id) {
-            guard allowsRecreation else {
-                return PersistenceReceipt(task: Task { .superseded })
-            }
-            compatibilitySuppressedSaveIDs.remove(conversation.id)
-        }
-        return apply(conversation, mode: .immediate)
-            ?? PersistenceReceipt(task: Task { .superseded })
-    }
-
-    func settleImmediateSave(
-        _ receipt: PersistenceReceipt<ConversationSaveResult>,
-        conversationID: UUID
-    ) async throws {
-        switch await receipt.value {
-        case .saved:
-            return
-        case .superseded:
-            guard await settleCurrentState(for: conversationID) != .failed else {
-                throw ConversationPersistenceCompatibilityError(
-                    message: "Failed to settle the latest conversation state"
-                )
-            }
-        case let .failed(message):
-            throw ConversationPersistenceCompatibilityError(message: message)
-        }
-    }
-
-    func enqueueDerivedUpdateIfCurrent(_ conversation: Conversation) -> Bool {
-        guard dirty[conversation.id] == nil,
-              proposedSaves[conversation.id] == nil,
-              !compatibilitySuppressedSaveIDs.contains(conversation.id)
-        else {
-            return false
-        }
-        apply(conversation, mode: .coalesced)
-        return true
-    }
-
-    func delete(_ conversationID: UUID) async throws {
-        compatibilityDeletionGenerations[conversationID, default: 0] &+= 1
-        let generation = compatibilityDeletionGenerations[conversationID] ?? 0
-        compatibilityDeletingIDs.insert(conversationID)
-        compatibilitySuppressedSaveIDs.insert(conversationID)
-
-        let activeClear = compatibilityActiveClearOperation
-        var rollback = compatibilityDeletionRollbacks[conversationID]
-            ?? snapshot[conversationID]
-            ?? activeClear?.rollbackSnapshot[conversationID]
-        if let rollback {
-            compatibilityDeletionRollbacks[conversationID] = rollback
-        }
-
-        if let activeClear {
-            var observedClearGeneration = activeClear.generation
-            var clearResult = await activeClear.task.value
-            guard compatibilityDeletionGenerations[conversationID] == generation else {
-                throw CancellationError()
-            }
-
-            while let newerClear = compatibilityLatestClearObservation,
-                  newerClear.generation > observedClearGeneration
-            {
-                observedClearGeneration = newerClear.generation
-                clearResult = await newerClear.task.value
-                guard compatibilityDeletionGenerations[conversationID] == generation else {
-                    throw CancellationError()
-                }
-            }
-
-            rollback = compatibilityDeletionRollbacks[conversationID] ?? rollback
-            switch clearResult {
-            case .cleared, .committedWithCleanupFailure:
-                let hasPostClearState = snapshot[conversationID] != nil
-                    || storageSnapshot[conversationID] != nil
-                    || dirty[conversationID] != nil
-                    || proposedSaves[conversationID] != nil
-                guard hasPostClearState else {
-                    compatibilityDeletingIDs.remove(conversationID)
-                    compatibilityDeletionRollbacks.removeValue(forKey: conversationID)
-                    return
-                }
-            case .failed, .recoveryRequired, .superseded:
-                break
-            }
-        }
-
-        let deletion = delete(id: conversationID, rollback: rollback)
-        let result = await deletion.value
-        let attemptError = deletion.attemptError
-        let isCurrentRequest = compatibilityDeletionGenerations[conversationID] == generation
-        if isCurrentRequest {
-            compatibilityDeletingIDs.remove(conversationID)
-            compatibilityDeletionRollbacks.removeValue(forKey: conversationID)
-        }
-
-        switch result {
-        case .deleted:
-            return
-        case .superseded:
-            if let attemptError {
-                throw attemptError
-            }
-            guard isCurrentRequest else {
-                throw CancellationError()
-            }
-            return
-        case let .failed(_, message):
-            if rollback != nil {
-                _ = await settleCurrentSnapshot(for: deletion.repairToken)
-            }
-            if compatibilityDeletionGenerations[conversationID] == generation {
-                compatibilitySuppressedSaveIDs.remove(conversationID)
-            }
-            if let attemptError {
-                throw attemptError
-            }
-            throw ConversationPersistenceCompatibilityError(message: message)
-        }
-    }
-
-    func clearAll(
-        suppressing conversationIDs: Set<UUID>,
-        attachmentCleanupSnapshot: AttachmentCleanupSnapshot? = nil
-    ) async throws {
-        compatibilityClearGeneration &+= 1
-        let generation = compatibilityClearGeneration
-        compatibilityActiveClearCount += 1
-        let newlySuppressedIDs = conversationIDs.subtracting(compatibilitySuppressedSaveIDs)
-        compatibilitySuppressedSaveIDs.formUnion(conversationIDs)
-        let conversations = orderedSnapshot()
-        let receipt = makeClearReceipt(
-            conversations: conversations,
-            attachmentCleanupSnapshot: attachmentCleanupSnapshot
-        )
-        let task = Task { @MainActor in
-            await receipt.value
-        }
-        compatibilityActiveClearOperation = CompatibilityClearOperation(
-            generation: generation,
-            task: task,
-            rollbackSnapshot: dictionary(from: conversations)
-        )
-        compatibilityLatestClearObservation = CompatibilityClearObservation(
-            generation: generation,
-            task: task
-        )
-        defer {
-            compatibilityActiveClearCount -= 1
-            if compatibilityActiveClearOperation?.generation == generation {
-                compatibilityActiveClearOperation = nil
-            }
-        }
-
-        let result = await task.value
-        switch result {
-        case .cleared, .committedWithCleanupFailure, .superseded:
-            return
-        case let .recoveryRequired(message):
-            throw ConversationPersistenceCompatibilityError(message: message)
-        case let .failed(_, message):
-            compatibilitySuppressedSaveIDs.subtract(newlySuppressedIDs)
-            throw ConversationPersistenceCompatibilityError(message: message)
-        }
-    }
-
-    func deletingConversationIds() -> Set<UUID> {
-        compatibilityDeletingIDs
-    }
-
-    func isDeleting(_ conversationID: UUID) -> Bool {
-        compatibilityDeletingIDs.contains(conversationID)
-    }
-
-    func deletionGeneration(for conversationID: UUID) -> UInt64 {
-        compatibilityDeletionGenerations[conversationID] ?? 0
-    }
-
-    func isClearing() -> Bool {
-        compatibilityActiveClearCount > 0
-    }
-
-    func clearGeneration() -> UInt64 {
-        compatibilityClearGeneration
-    }
-
-    func flushPendingSaves(
-        excludingUnscheduledConversationIDs: Set<UUID> = []
-    ) async {
-        await flush(
-            excludingUnscheduledConversationIDs: excludingUnscheduledConversationIDs
-        ).value
-    }
-
     func pendingConversationIds() -> Set<UUID> {
         Set(dirty.keys).union(proposedSaves.keys)
     }
 
     func reconciliationState() -> ConversationPersistenceReconciliationState {
-        ConversationPersistenceReconciliationState(
+        let deletingIds = Set(dirty.compactMap { id, intent -> UUID? in
+            if case .deleted = intent.desired {
+                return id
+            }
+            return nil
+        })
+        return ConversationPersistenceReconciliationState(
             dirtyIds: pendingConversationIds(),
-            deletingIds: compatibilityDeletingIDs
+            deletingIds: deletingIds
         )
     }
 
@@ -694,7 +425,6 @@ final class ConversationPersistenceCoordinator {
         rollback: Conversation?
     ) -> DestructivePersistenceReceipt<ConversationDeleteResult> {
         let token = nextToken()
-        let attemptErrorBox = PersistenceAttemptErrorBox()
 
         proposedSaves.removeValue(forKey: id)
         snapshot.removeValue(forKey: id)
@@ -711,8 +441,7 @@ final class ConversationPersistenceCoordinator {
 
         let physical = activateDelete(
             id: id,
-            token: token,
-            attemptErrorBox: attemptErrorBox
+            token: token
         ) ?? PersistenceReceipt(
             task: Task { .superseded }
         )
@@ -724,8 +453,7 @@ final class ConversationPersistenceCoordinator {
             repairToken: ConversationSnapshotRepairToken(
                 operationToken: token,
                 kind: .delete(id)
-            ),
-            attemptErrorProvider: { attemptErrorBox.error }
+            )
         )
     }
 
@@ -1028,8 +756,7 @@ final class ConversationPersistenceCoordinator {
     @discardableResult
     private func activateDelete(
         id: UUID,
-        token: UInt64,
-        attemptErrorBox: PersistenceAttemptErrorBox? = nil
+        token: UInt64
     ) -> PersistenceReceipt<ConversationDeleteResult>? {
         guard var intent = dirty[id], intent.token == token, !intent.isScheduled,
               case .deleted = intent.desired
@@ -1051,7 +778,6 @@ final class ConversationPersistenceCoordinator {
                 return self.finishDelete(id: id, token: token, rollback: registeredRollback, error: nil)
             } catch {
                 guard let self else { return .superseded }
-                attemptErrorBox?.error = error
                 let rollback: Conversation? = if let currentIntent = self.dirty[id],
                                                  currentIntent.token == token,
                                                  case .deleted = currentIntent.desired
@@ -1331,7 +1057,6 @@ final class ConversationPersistenceCoordinator {
         error: String?
     ) -> ConversationDeleteResult {
         if error == nil {
-            compatibilityDeletionRollbacks.removeValue(forKey: id)
             if let currentIntent = dirty[id],
                currentIntent.token > token,
                case .deleted = currentIntent.desired,

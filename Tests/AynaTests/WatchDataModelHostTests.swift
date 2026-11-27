@@ -118,9 +118,8 @@ struct WatchDataModelHostTests {
 
     @Test
     func `Long custom model identifiers preserve settings key identity across data model Codable`() throws {
-        let maximumModelCharacters = WatchSyncPayloadConfiguration.default.maximumModelCharacters
         let model = "custom-provider/" + String(repeating: "data-model-segment-", count: 12)
-        #expect(model.count > maximumModelCharacters)
+        #expect(model.count > 160)
         let message = WatchMessage(
             id: UUID(),
             role: Message.Role.assistant.rawValue,

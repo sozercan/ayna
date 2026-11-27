@@ -1031,7 +1031,7 @@ struct ConversationManagerTests {
         let store = TestHelpers.makeTestStore(directory: directory, keyIdentifier: keyId, keychain: keychain)
 
         let kept = TestHelpers.sampleConversation(title: "Kept")
-        try await store.save([kept])
+        try await store.save(kept)
 
         let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
         _ = await manager.loadingTask?.value
@@ -1690,8 +1690,9 @@ extension ConversationManagerTests {
         let manager = ConversationManager(store: store, saveDebounceDuration: .milliseconds(0))
         _ = await manager.loadingTask?.value
         #expect(manager.isConversationStateAuthoritative)
-        manager.conversations = [TestHelpers.sampleConversation()]
-        try await store.save(manager.conversations)
+        let conversation = TestHelpers.sampleConversation()
+        manager.conversations = [conversation]
+        try await store.save(conversation)
 
         let clearing = manager.clearAllConversations()
         await clearing.value

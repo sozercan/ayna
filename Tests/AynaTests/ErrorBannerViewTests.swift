@@ -68,33 +68,33 @@ struct ErrorBannerViewTests {
 
 @Suite("Error Recovery Suggestion Tests")
 struct ErrorRecoverySuggestionTests {
-    @Test("AIError missingAPIKey has recovery suggestion")
-    func openAIErrorMissingAPIKeyHasRecoverySuggestion() {
-        let error = AIService.AIError.missingAPIKey
+    @Test("AynaError missingAPIKey has recovery suggestion")
+    func aynaErrorMissingAPIKeyHasRecoverySuggestion() {
+        let error = AynaError.missingAPIKey(provider: "OpenAI")
 
         #expect(error.recoverySuggestion != nil)
         #expect(error.recoverySuggestion?.contains("Settings") ?? false)
     }
 
-    @Test("AIError missingModel has recovery suggestion")
-    func openAIErrorMissingModelHasRecoverySuggestion() {
-        let error = AIService.AIError.missingModel
+    @Test("AynaError noModelSelected has recovery suggestion")
+    func aynaErrorNoModelSelectedHasRecoverySuggestion() {
+        let error = AynaError.noModelSelected
 
         #expect(error.recoverySuggestion != nil)
         #expect(error.recoverySuggestion?.contains("Models") ?? false)
     }
 
-    @Test("AIError invalidResponse has recovery suggestion")
-    func openAIErrorInvalidResponseHasRecoverySuggestion() {
-        let error = AIService.AIError.invalidResponse
+    @Test("AynaError invalidResponse has recovery suggestion")
+    func aynaErrorInvalidResponseHasRecoverySuggestion() {
+        let error = AynaError.invalidResponse(detail: nil)
 
         #expect(error.recoverySuggestion != nil)
         #expect(error.recoverySuggestion?.contains("again") ?? false)
     }
 
-    @Test("AIError contentFiltered has recovery suggestion")
-    func openAIErrorContentFilteredHasRecoverySuggestion() {
-        let error = AIService.AIError.contentFiltered("test content")
+    @Test("AynaError contentFiltered has recovery suggestion")
+    func aynaErrorContentFilteredHasRecoverySuggestion() {
+        let error = AynaError.contentFiltered(reason: "test content")
 
         #expect(error.recoverySuggestion != nil)
         #expect(error.recoverySuggestion?.contains("rephras") ?? false)
@@ -130,9 +130,9 @@ struct LocalizedErrorExtensionTests {
     @Test("Error description is not nil")
     func errorDescriptionIsNotNil() {
         let errors: [any LocalizedError] = [
-            AIService.AIError.missingAPIKey,
-            AIService.AIError.missingModel,
-            AIService.AIError.invalidResponse,
+            AynaError.missingAPIKey(provider: "OpenAI"),
+            AynaError.noModelSelected,
+            AynaError.invalidResponse(detail: nil),
             TavilyError.notConfigured,
             TavilyError.invalidAPIKey,
         ]
@@ -145,9 +145,9 @@ struct LocalizedErrorExtensionTests {
     @Test("Recovery suggestion is not nil")
     func recoverySuggestionIsNotNil() {
         let errors: [any LocalizedError] = [
-            AIService.AIError.missingAPIKey,
-            AIService.AIError.missingModel,
-            AIService.AIError.invalidResponse,
+            AynaError.missingAPIKey(provider: "OpenAI"),
+            AynaError.noModelSelected,
+            AynaError.invalidResponse(detail: nil),
             TavilyError.notConfigured,
             TavilyError.invalidAPIKey,
         ]
