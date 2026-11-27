@@ -216,13 +216,18 @@ enum AnthropicRequestBuilder {
 
     static func hasAssistantToolUseHistory(_ messages: [Message]) -> Bool {
         let sanitizedMessages = ToolTranscriptSanitizer.sanitize(messages)
+        let currentTurnMessages: ArraySlice<Message> = if let lastUserIndex = sanitizedMessages.lastIndex(where: { $0.role == .user }) {
+            sanitizedMessages[sanitizedMessages.index(after: lastUserIndex)...]
+        } else {
+            sanitizedMessages[...]
+        }
         var toolResponseIds = Set<String>()
-        for message in sanitizedMessages where message.role == .tool {
+        for message in currentTurnMessages where message.role == .tool {
             if let toolCallId = message.toolCalls?.first?.id {
                 toolResponseIds.insert(toolCallId)
             }
         }
-        return sanitizedMessages.contains { message in
+        return currentTurnMessages.contains { message in
             guard message.role == .assistant,
                   let toolCalls = message.toolCalls,
                   !toolCalls.isEmpty

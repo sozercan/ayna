@@ -532,4 +532,37 @@ struct AnthropicRequestBuilderTests {
         #expect(body["thinking"] == nil)
         #expect((body["tools"] as? [[String: Any]])?.count == 1)
     }
+
+    @Test("Thinking resumes on a new user turn after a completed tool exchange")
+    func thinkingResumesAfterCompletedToolExchange() throws {
+        let config = AnthropicRequestConfig(
+            model: "claude-sonnet-4-20250514",
+            apiKey: "test-key",
+            maxTokens: 16000,
+            budgetTokens: AnthropicThinkingBudget.medium.budgetTokens
+        )
+        let toolCall = MCPToolCall(
+            id: "toolu_123",
+            toolName: "web_fetch",
+            arguments: ["url": AnyCodable("https://example.com")]
+        )
+        let messages = [
+            Message(role: .user, content: "Fetch example.com"),
+            Message(role: .assistant, content: "", toolCalls: [toolCall]),
+            Message(role: .tool, content: "Example Domain", toolCalls: [toolCall]),
+            Message(role: .assistant, content: "It says Example Domain."),
+            Message(role: .user, content: "Summarize that in one sentence.")
+        ]
+
+        let body = try AnthropicRequestBuilder.buildMessagesBody(
+            messages: messages,
+            config: config,
+            stream: true,
+            tools: nil
+        )
+
+        let thinking = try #require(body["thinking"] as? [String: Any])
+        #expect(thinking["type"] as? String == "enabled")
+        #expect(thinking["budget_tokens"] as? Int == AnthropicThinkingBudget.medium.budgetTokens)
+    }
 }
