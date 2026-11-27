@@ -415,6 +415,14 @@ class AIService: ObservableObject {
         }
     }
 
+    @Published var modelThinkingBudgets: [String: Int] {
+        didSet {
+            #if !os(watchOS)
+                AppPreferences.storage.set(modelThinkingBudgets, forKey: "modelThinkingBudgets")
+            #endif
+        }
+    }
+
     @Published var modelAPIKeys: [String: String] {
         didSet {
             #if !os(watchOS)
@@ -559,6 +567,7 @@ class AIService: ObservableObject {
         let savedCustomModels = AppPreferences.storage.array(forKey: "customModels") as? [String] ?? []
         let savedEndpointTypeValues = AppPreferences.storage.dictionary(forKey: "modelEndpointTypes") as? [String: String]
         let savedEndpointValues = AppPreferences.storage.dictionary(forKey: "modelEndpoints") as? [String: String]
+        let savedThinkingBudgetValues = AppPreferences.storage.dictionary(forKey: "modelThinkingBudgets") as? [String: Int]
 
         unrecognizedProviderValues = savedProviderValues?.filter {
             AIProvider(rawValue: $0.value) == nil
@@ -636,6 +645,10 @@ class AIService: ObservableObject {
 
         let loadedEndpoints = savedEndpointValues ?? [:]
         modelEndpoints = loadedEndpoints
+
+        modelThinkingBudgets = savedThinkingBudgetValues?.filter {
+            $0.value >= AnthropicThinkingBudget.minimumBudgetTokens
+        } ?? [:]
 
         let (loadedAPIKeys, loadSuccess) = AIService.loadModelAPIKeys()
         var mutableAPIKeys = loadedAPIKeys
@@ -791,6 +804,17 @@ class AIService: ObservableObject {
             return nil
         }
         return trimmed
+    }
+
+    func thinkingBudget(for modelName: String?) -> Int? {
+        guard let normalizedName = normalizedModelName(modelName),
+              let budget = modelThinkingBudgets[normalizedName],
+              budget >= AnthropicThinkingBudget.minimumBudgetTokens
+        else {
+            return nil
+        }
+
+        return budget
     }
 
     private func customEndpoint(for modelName: String?) -> (endpoint: String, model: String)? {
@@ -4528,7 +4552,7 @@ class AIService: ObservableObject {
             customEndpoint: endpointInfo?.endpoint,
             maxTokens: nil,
             temperature: nil,
-            thinkingBudget: nil
+            thinkingBudget: thinkingBudget(for: model)
         )
 
         let systemPrompt = messages.first { $0.role == .system }?.content

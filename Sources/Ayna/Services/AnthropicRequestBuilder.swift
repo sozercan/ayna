@@ -1,6 +1,50 @@
 import Foundation
 import os
 
+enum AnthropicThinkingBudget: Int, CaseIterable, Identifiable, Sendable {
+    case off = 0
+    case low = 4096
+    case medium = 10000
+    case high = 16000
+    case max = 32000
+
+    static let minimumBudgetTokens = 1024
+
+    var id: Int {
+        rawValue
+    }
+
+    var budgetTokens: Int? {
+        self == .off ? nil : rawValue
+    }
+
+    var displayName: String {
+        switch self {
+        case .off:
+            "Off"
+        case .low:
+            "Low (4,096 tokens)"
+        case .medium:
+            "Medium (10,000 tokens)"
+        case .high:
+            "High (16,000 tokens)"
+        case .max:
+            "Max (32,000 tokens)"
+        }
+    }
+
+    static func preset(for budgetTokens: Int?) -> Self {
+        guard let budgetTokens, budgetTokens >= minimumBudgetTokens else {
+            return .off
+        }
+        if let exact = Self(rawValue: budgetTokens) {
+            return exact
+        }
+        let presets: [Self] = [.low, .medium, .high, .max]
+        return presets.min { abs($0.rawValue - budgetTokens) < abs($1.rawValue - budgetTokens) } ?? .low
+    }
+}
+
 enum AnthropicOutputLimits {
     static let streamingDefault = 64000
     static let nonStreamingDefault = 16000

@@ -816,6 +816,7 @@ struct APISettingsView: View {
     @State private var tempModelName = ""
     @State private var selectedModelName: String?
     @State private var tempEndpointType: APIEndpointType = .chatCompletions
+    @State private var tempThinkingBudget: AnthropicThinkingBudget = .off
     @State private var isValidating = false
     @State private var validationStatus: ValidationStatus = .notChecked
 
@@ -1148,6 +1149,7 @@ struct APISettingsView: View {
                                                     aiService.modelAPIKeys.removeValue(forKey: selectedName)
                                                     aiService.modelEndpoints.removeValue(forKey: selectedName)
                                                     aiService.modelEndpointTypes.removeValue(forKey: selectedName)
+                                                    aiService.modelThinkingBudgets.removeValue(forKey: selectedName)
 
                                                     if !aiService.customModels.contains(modelName) {
                                                         aiService.customModels.append(modelName)
@@ -1160,6 +1162,7 @@ struct APISettingsView: View {
 
                                                 aiService.modelProviders[modelName] = .openai
                                                 aiService.modelEndpointTypes[modelName] = tempEndpointType
+                                                aiService.modelThinkingBudgets.removeValue(forKey: modelName)
 
                                                 if !apiKey.isEmpty {
                                                     aiService.modelAPIKeys[modelName] = apiKey
@@ -1199,6 +1202,7 @@ struct APISettingsView: View {
                                                 aiService.customModels.append(modelName)
                                                 aiService.modelProviders[modelName] = .openai
                                                 aiService.modelEndpointTypes[modelName] = tempEndpointType
+                                                aiService.modelThinkingBudgets.removeValue(forKey: modelName)
 
                                                 if !apiKey.isEmpty {
                                                     aiService.modelAPIKeys[modelName] = apiKey
@@ -1341,6 +1345,7 @@ struct APISettingsView: View {
                                 tempModelName: $tempModelName,
                                 tempAPIKey: $tempAPIKey,
                                 tempEndpoint: $tempEndpoint,
+                                tempThinkingBudget: $tempThinkingBudget,
                                 showAPIKey: $showAPIKey,
                                 selectedModelName: $selectedModelName,
                                 validationStatus: $validationStatus
@@ -1446,6 +1451,7 @@ struct APISettingsView: View {
         tempAPIKey = ""
         tempEndpoint = aiService.provider == .anthropic ? "" : "https://api.openai.com/"
         tempEndpointType = .chatCompletions
+        tempThinkingBudget = .off
         validationStatus = .notChecked
     }
 
@@ -1562,6 +1568,7 @@ struct APISettingsView: View {
         tempModelName = model
         tempAPIKey = aiService.modelAPIKeys[model] ?? ""
         tempEndpointType = aiService.modelEndpointTypes[model] ?? .chatCompletions
+        tempThinkingBudget = AnthropicThinkingBudget.preset(for: aiService.thinkingBudget(for: model))
 
         switch aiService.provider {
         case .openai:
@@ -1579,6 +1586,7 @@ struct APISettingsView: View {
         aiService.modelEndpoints.removeValue(forKey: model)
         aiService.modelAPIKeys.removeValue(forKey: model)
         aiService.modelEndpointTypes.removeValue(forKey: model)
+        aiService.modelThinkingBudgets.removeValue(forKey: model)
 
         if aiService.selectedModel == model {
             if let nextModel = aiService.customModels.first {
@@ -1592,6 +1600,7 @@ struct APISettingsView: View {
             selectedModelName = nil
             tempModelName = ""
             tempEndpoint = "https://api.openai.com/"
+            tempThinkingBudget = .off
         }
     }
 
@@ -1622,6 +1631,9 @@ struct APISettingsView: View {
             aiService.modelAPIKeys[newName] = apiKey
         }
         aiService.modelEndpointTypes[newName] = aiService.modelEndpointTypes[model] ?? .chatCompletions
+        if let thinkingBudget = aiService.modelThinkingBudgets[model] {
+            aiService.modelThinkingBudgets[newName] = thinkingBudget
+        }
 
         selectedModelName = newName
         loadModelConfig(newName)
@@ -1633,6 +1645,7 @@ struct AnthropicConfigurationView: View {
     @Binding var tempModelName: String
     @Binding var tempAPIKey: String
     @Binding var tempEndpoint: String
+    @Binding var tempThinkingBudget: AnthropicThinkingBudget
     @Binding var showAPIKey: Bool
     @Binding var selectedModelName: String?
     @Binding var validationStatus: APISettingsView.ValidationStatus
@@ -1733,6 +1746,32 @@ struct AnthropicConfigurationView: View {
                         validationStatus = .notChecked
                     }
                     Text("Your Anthropic API key (stored securely)")
+                        .font(Typography.caption)
+                        .foregroundStyle(.tertiary)
+                }
+
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    HStack {
+                        Text("Extended Thinking Budget")
+                            .font(Typography.subheadline)
+                            .fontWeight(.medium)
+                        Spacer()
+                        Text("Optional")
+                            .font(Typography.micro)
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.horizontal, Spacing.xs)
+                            .padding(.vertical, Spacing.xxxs)
+                            .background(Color.secondary.opacity(0.1))
+                            .clipShape(.rect(cornerRadius: Spacing.CornerRadius.xs))
+                    }
+                    Picker("Extended Thinking Budget", selection: $tempThinkingBudget) {
+                        ForEach(AnthropicThinkingBudget.allCases) { preset in
+                            Text(preset.displayName).tag(preset)
+                        }
+                    }
+                    .labelsHidden()
+                    .accessibilityIdentifier("settings.anthropic.thinkingBudgetPicker")
+                    Text("Allocate thinking tokens for Claude extended thinking. Choose Off to disable.")
                         .font(Typography.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -1949,6 +1988,7 @@ struct AnthropicConfigurationView: View {
             aiService.modelAPIKeys.removeValue(forKey: oldName)
             aiService.modelEndpoints.removeValue(forKey: oldName)
             aiService.modelEndpointTypes.removeValue(forKey: oldName)
+            aiService.modelThinkingBudgets.removeValue(forKey: oldName)
         }
 
         if !aiService.customModels.contains(modelName) {
@@ -1962,6 +2002,12 @@ struct AnthropicConfigurationView: View {
             aiService.modelEndpoints[modelName] = endpoint
         } else {
             aiService.modelEndpoints.removeValue(forKey: modelName)
+        }
+
+        if let budgetTokens = tempThinkingBudget.budgetTokens {
+            aiService.modelThinkingBudgets[modelName] = budgetTokens
+        } else {
+            aiService.modelThinkingBudgets.removeValue(forKey: modelName)
         }
 
         selectedModelName = modelName
