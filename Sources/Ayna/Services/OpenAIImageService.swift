@@ -290,7 +290,7 @@ final class OpenAIImageService: @unchecked Sendable {
                     NetworkCircuitBreaker.recordFailure(key: circuitKey)
                 }
 
-                let error = AynaError.fromHTTPResponse(statusCode: httpResponse.statusCode, data: data)
+                let error = Self.httpResponseError(statusCode: httpResponse.statusCode, data: data)
 
                 requestHandle.run { @MainActor in
                     guard requestHandle.isActive else { return }
@@ -705,7 +705,7 @@ final class OpenAIImageService: @unchecked Sendable {
                     NetworkCircuitBreaker.recordFailure(key: circuitKey)
                 }
 
-                let error = AynaError.fromHTTPResponse(statusCode: httpResponse.statusCode, data: data)
+                let error = Self.httpResponseError(statusCode: httpResponse.statusCode, data: data)
 
                 requestHandle.run { @MainActor in
                     guard requestHandle.isActive else { return }
@@ -724,6 +724,30 @@ final class OpenAIImageService: @unchecked Sendable {
             self?.parseResponse(data, context: context)
         }
         requestHandle.resume(task)
+    }
+
+    private static let nonRetryableRateLimitCodes: Set<String> = [
+        "insufficient_quota",
+        "billing_hard_limit_reached",
+        "billing_not_active",
+    ]
+
+    private static func httpResponseError(statusCode: Int, data: Data) -> AynaError {
+        if statusCode == 429,
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let errorObject = json["error"] as? [String: Any]
+        {
+            let code = (errorObject["code"] as? String)?.lowercased()
+            let type = (errorObject["type"] as? String)?.lowercased()
+            if code.map(nonRetryableRateLimitCodes.contains) == true
+                || type.map(nonRetryableRateLimitCodes.contains) == true
+            {
+                let message = (errorObject["message"] as? String)
+                    ?? "Quota exceeded. Check your plan and billing details."
+                return .apiError(message: message)
+            }
+        }
+        return AynaError.fromHTTPResponse(statusCode: statusCode, data: data)
     }
 }
 

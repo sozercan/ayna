@@ -617,11 +617,9 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             await MainActor.run {
                 self.currentStreamTask = nil
                 if let urlError = error as? URLError, urlError.code == .timedOut {
-                    callbacks.onError(AynaError.apiError(message:
-                        "Anthropic request timed out. The model may be slow or overloaded. Please try again."))
+                    callbacks.onError(AynaError.timeout)
                 } else if let urlError = error as? URLError, urlError.code == .networkConnectionLost {
-                    callbacks.onError(AynaError.apiError(message:
-                        "Network connection was lost. The Anthropic server may have rejected the request."))
+                    callbacks.onError(AynaError.networkError(underlying: urlError))
                 } else if error is CancellationError {
                 } else {
                     callbacks.onError(error)
