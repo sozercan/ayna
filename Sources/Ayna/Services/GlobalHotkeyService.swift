@@ -2,30 +2,38 @@
     import AppKit
     import Carbon.HIToolbox
 
-    @MainActor @Observable
-    final class GlobalHotkeyService {
-        static let shared = GlobalHotkeyService()
+    @MainActor
+    protocol GlobalHotkeyBackend {
+        func register(
+            keyCode: UInt32,
+            modifiers: UInt32,
+            signature: OSType,
+            id: UInt32,
+            onPressed: @escaping @MainActor () -> Void
+        ) throws
 
+        func unregister()
+    }
+
+    @MainActor
+    final class CarbonGlobalHotkeyBackend: GlobalHotkeyBackend {
         private var hotkeyRef: EventHotKeyRef?
-
         private var eventHandlerRef: EventHandlerRef?
+        private var expectedSignature: OSType = 0
+        private var expectedID: UInt32 = 0
+        private var onPressed: (@MainActor () -> Void)?
 
-        private(set) var capturedApp: NSRunningApplication?
-
-        var onHotkeyPressed: ((NSRunningApplication?) -> Void)?
-
-        private(set) var isRegistered: Bool = false
-
-        private let hotkeySignature: OSType = fourCharCode("AYNA")
-
-        private let hotkeyID: UInt32 = 1
-
-        private init() {}
-
-        func register(keyCode: UInt32 = UInt32(kVK_Space), modifiers: UInt32 = UInt32(cmdKey | shiftKey)) throws {
-            if isRegistered {
-                unregister()
-            }
+        func register(
+            keyCode: UInt32,
+            modifiers: UInt32,
+            signature: OSType,
+            id: UInt32,
+            onPressed: @escaping @MainActor () -> Void
+        ) throws {
+            unregister()
+            expectedSignature = signature
+            expectedID = id
+            self.onPressed = onPressed
 
             var eventType = EventTypeSpec(
                 eventClass: OSType(kEventClassKeyboard),
@@ -56,16 +64,16 @@
                         return OSStatus(eventNotHandledErr)
                     }
 
-                    let service = Unmanaged<GlobalHotkeyService>.fromOpaque(userData).takeUnretainedValue()
+                    let backend = Unmanaged<CarbonGlobalHotkeyBackend>.fromOpaque(userData).takeUnretainedValue()
 
-                    guard hotKeyID.signature == service.hotkeySignature,
-                          hotKeyID.id == service.hotkeyID
+                    guard hotKeyID.signature == backend.expectedSignature,
+                          hotKeyID.id == backend.expectedID
                     else {
                         return OSStatus(eventNotHandledErr)
                     }
 
                     Task { @MainActor in
-                        service.handleHotkeyPressed()
+                        backend.onPressed?()
                     }
 
                     return noErr
@@ -77,10 +85,11 @@
             )
 
             guard installStatus == noErr else {
+                self.onPressed = nil
                 throw GlobalHotkeyError.eventHandlerInstallFailed(status: installStatus)
             }
 
-            let hotKeyID = EventHotKeyID(signature: hotkeySignature, id: hotkeyID)
+            let hotKeyID = EventHotKeyID(signature: signature, id: id)
 
             let registerStatus = RegisterEventHotKey(
                 keyCode,
@@ -96,7 +105,73 @@
                     RemoveEventHandler(handler)
                     eventHandlerRef = nil
                 }
+                self.onPressed = nil
                 throw GlobalHotkeyError.registrationFailed(status: registerStatus)
+            }
+        }
+
+        func unregister() {
+            if let hotkey = hotkeyRef {
+                UnregisterEventHotKey(hotkey)
+                hotkeyRef = nil
+            }
+
+            if let handler = eventHandlerRef {
+                RemoveEventHandler(handler)
+                eventHandlerRef = nil
+            }
+
+            onPressed = nil
+        }
+    }
+
+    @MainActor @Observable
+    final class GlobalHotkeyService {
+        static let shared = GlobalHotkeyService()
+
+        private let backend: any GlobalHotkeyBackend
+        private let frontmostApplicationProvider: () -> NSRunningApplication?
+        private let appBundleIdentifierProvider: (NSRunningApplication) -> String?
+        private let ownBundleIdentifierProvider: () -> String?
+
+        private(set) var capturedApp: NSRunningApplication?
+
+        var onHotkeyPressed: ((NSRunningApplication?) -> Void)?
+
+        private(set) var isRegistered: Bool = false
+
+        private let hotkeySignature: OSType = fourCharCode("AYNA")
+
+        private let hotkeyID: UInt32 = 1
+
+        init(
+            backend: any GlobalHotkeyBackend = CarbonGlobalHotkeyBackend(),
+            frontmostApplicationProvider: @escaping () -> NSRunningApplication? = {
+                NSWorkspace.shared.frontmostApplication
+            },
+            appBundleIdentifierProvider: @escaping (NSRunningApplication) -> String? = \.bundleIdentifier,
+            ownBundleIdentifierProvider: @escaping () -> String? = {
+                Bundle.main.bundleIdentifier
+            }
+        ) {
+            self.backend = backend
+            self.frontmostApplicationProvider = frontmostApplicationProvider
+            self.appBundleIdentifierProvider = appBundleIdentifierProvider
+            self.ownBundleIdentifierProvider = ownBundleIdentifierProvider
+        }
+
+        func register(keyCode: UInt32 = UInt32(kVK_Space), modifiers: UInt32 = UInt32(cmdKey | shiftKey)) throws {
+            if isRegistered {
+                unregister()
+            }
+
+            try backend.register(
+                keyCode: keyCode,
+                modifiers: modifiers,
+                signature: hotkeySignature,
+                id: hotkeyID
+            ) { [weak self] in
+                self?.handleHotkeyPressed()
             }
 
             isRegistered = true
@@ -113,15 +188,7 @@
         }
 
         func unregister() {
-            if let hotkey = hotkeyRef {
-                UnregisterEventHotKey(hotkey)
-                hotkeyRef = nil
-            }
-
-            if let handler = eventHandlerRef {
-                RemoveEventHandler(handler)
-                eventHandlerRef = nil
-            }
+            backend.unregister()
 
             isRegistered = false
 
@@ -133,10 +200,12 @@
         }
 
         private func handleHotkeyPressed() {
-            capturedApp = NSWorkspace.shared.frontmostApplication
+            capturedApp = frontmostApplicationProvider()
 
-            let aynaBundle = Bundle.main.bundleIdentifier
-            if capturedApp?.bundleIdentifier == aynaBundle {
+            if let captured = capturedApp,
+               let aynaBundle = ownBundleIdentifierProvider(),
+               appBundleIdentifierProvider(captured) == aynaBundle
+            {
                 capturedApp = nil
             }
 

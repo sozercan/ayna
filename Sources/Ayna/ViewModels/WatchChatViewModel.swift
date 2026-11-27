@@ -173,10 +173,13 @@ enum WatchLiveModelPolicy {
         private var titleRequestContext: TitleRequestContext?
         private var pendingResponsePromotions: [UUID: PendingResponsePromotion] = [:]
 
-        private let maxToolCallDepth = 5
+        static let maxToolCallDepth = 5
+        static let defaultUIUpdateInterval: TimeInterval = 0.1
 
+        private let maxToolCallDepth: Int
         private var lastUIUpdateTime: Date = .distantPast
-        private let uiUpdateInterval: TimeInterval = 0.1
+        private let uiUpdateInterval: TimeInterval
+        private let now: () -> Date
         private var pendingContent = ""
         private var pendingReasoning = ""
 
@@ -184,11 +187,17 @@ enum WatchLiveModelPolicy {
             conversationStore: WatchConversationStore = .shared,
             connectivityService: WatchConnectivityService = .shared,
             aiService: AIService = .shared,
+            maxToolCallDepth: Int = WatchChatViewModel.maxToolCallDepth,
+            uiUpdateInterval: TimeInterval = WatchChatViewModel.defaultUIUpdateInterval,
+            now: @escaping () -> Date = Date.init,
             requestObserver: ((RequestConfiguration) -> Void)? = nil
         ) {
             self.conversationStore = conversationStore
             self.connectivityService = connectivityService
             self.aiService = aiService
+            self.maxToolCallDepth = maxToolCallDepth
+            self.uiUpdateInterval = uiUpdateInterval
+            self.now = now
             self.requestObserver = requestObserver
         }
 
@@ -409,7 +418,7 @@ enum WatchLiveModelPolicy {
                         }
                         self.pendingContent += chunk
 
-                        let now = Date()
+                        let now = self.now()
                         if now.timeIntervalSince(self.lastUIUpdateTime) >= self.uiUpdateInterval {
                             self.publishPendingResponse(
                                 assistantMessageId: assistantMessageId,
@@ -551,7 +560,7 @@ enum WatchLiveModelPolicy {
                         }
                         self.isStreaming = true
                         self.pendingReasoning += reasoning
-                        let now = Date()
+                        let now = self.now()
                         if now.timeIntervalSince(self.lastUIUpdateTime) >= self.uiUpdateInterval {
                             self.publishPendingResponse(
                                 assistantMessageId: assistantMessageId,
