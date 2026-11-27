@@ -428,6 +428,10 @@ struct MacChatView: View {
         .onAppear {
             isComposerFocused = true
             checkAndProcessPendingPrompt()
+            consumePendingSendIfNeeded()
+        }
+        .onChange(of: conversationManager.pendingSendConversationIds) { _, _ in
+            consumePendingSendIfNeeded()
         }
         .onDisappear {
             cancelOwnedGenerationForLifecycle()
@@ -440,21 +444,26 @@ struct MacChatView: View {
             }
             syncToolChainTimeoutForPendingApprovals()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .sendPendingMessage)) { notification in
-            guard let conversationId = notification.userInfo?["conversationId"] as? UUID,
-                  conversationId == conversation.id,
-                  !isGenerating
-            else { return }
+    }
 
-            let messages = currentConversation.messages
-            if let lastMessage = messages.last,
-               lastMessage.role == .user,
-               !messages.contains(where: { $0.role == .assistant })
-            {
-                logChat("📤 Auto-sending message from Work with Apps", level: .info)
-                sendPendingUserMessage()
-            }
+    private func consumePendingSendIfNeeded() {
+        guard !isGenerating,
+              sendPreparationTask == nil,
+              conversationManager.hasPendingSend(for: conversation.id)
+        else { return }
+
+        let messages = currentConversation.messages
+        guard let lastMessage = messages.last,
+              lastMessage.role == .user,
+              !messages.contains(where: { $0.role == .assistant })
+        else {
+            _ = conversationManager.consumePendingSend(for: conversation.id)
+            return
         }
+
+        guard conversationManager.consumePendingSend(for: conversation.id) else { return }
+        logChat("📤 Auto-sending message from Work with Apps", level: .info)
+        sendPendingUserMessage()
     }
 
     private func checkAndProcessPendingPrompt() {
@@ -481,7 +490,7 @@ struct MacChatView: View {
         )
 
         messageText = prompt
-        beginSendMessage(delay: .milliseconds(100))
+        beginSendMessage()
     }
 
     private func sendPendingUserMessage() {
@@ -875,7 +884,7 @@ struct MacChatView: View {
         coordinator.track(timeoutTask, for: operationID)
     }
 
-    private func beginSendMessage(delay: Duration? = nil) {
+    private func beginSendMessage() {
         if isGenerating || sendPreparationTask != nil {
             logChat("🛑 Stop button clicked, cancelling...", level: .info)
             cancelOwnedGenerationForLifecycle()
@@ -906,20 +915,16 @@ struct MacChatView: View {
             activeModel: resolveModelForSending(selection: selectedModel)
         )
         pasteImportSessionID = UUID()
-        scheduleSend(preparation, delay: delay)
+        scheduleSend(preparation)
     }
 
     private func scheduleSend(
-        _ preparation: SendPreparation,
-        delay: Duration? = nil
+        _ preparation: SendPreparation
     ) {
         let preparationID = UUID()
         sendPreparationID = preparationID
         isGenerating = true
         let task = Task { @MainActor in
-            if let delay {
-                try? await Task.sleep(for: delay)
-            }
             guard !Task.isCancelled, sendPreparationID == preparationID else { return }
             await sendMessage(preparationID: preparationID, preparation: preparation)
         }
