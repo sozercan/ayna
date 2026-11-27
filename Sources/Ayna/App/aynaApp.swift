@@ -86,7 +86,7 @@ struct aynaApp: App {
                     handleHandoff(activity)
                 }
         }
-        .handlesExternalEvents(matching: ["main"])
+        .handlesExternalEvents(matching: ["main", "chat", "add-model"])
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified)
         .commands {
