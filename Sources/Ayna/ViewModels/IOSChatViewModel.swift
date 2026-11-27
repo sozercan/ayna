@@ -316,12 +316,9 @@ typealias IOSBuiltInToolExecutor = @MainActor (
         let autoSendID = UUID()
         pendingAutoSendID = autoSendID
         let task = Task { @MainActor [weak self] in
-            do {
-                try await Task.sleep(for: .milliseconds(100))
-            } catch {
-                return
-            }
+            await Task.yield()
             guard let self,
+                  !Task.isCancelled,
                   self.pendingAutoSendID == autoSendID,
                   self.conversationId == convId,
                   self.messageText == prompt

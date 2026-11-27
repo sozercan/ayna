@@ -70,6 +70,7 @@ final class ConversationManager: ObservableObject {
     @Published private(set) var pendingDestructivePersistenceOperations = 0
     @Published private(set) var isConversationStateAuthoritative = false
     @Published private(set) var durableConversationRevision: UInt64 = 0
+    @Published private(set) var pendingSendConversationIds: [UUID] = []
 
     static let newConversationId = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 
@@ -829,6 +830,7 @@ final class ConversationManager: ObservableObject {
         if let index = getConversationIndex(for: conversationID) {
             attachmentDeleteOperation(ownedAttachmentPaths(of: conversations[index]))
             conversations.remove(at: index)
+            pendingSendConversationIds.removeAll { $0 == conversationID }
             updateCacheForRemoval(id: conversationID, at: index)
         }
         metadataAttachmentPathsById.removeValue(forKey: conversationID)
@@ -1047,6 +1049,7 @@ final class ConversationManager: ObservableObject {
                 conversationSummaryRemoveOperation(conversationId)
                 if let index = getConversationIndex(for: conversationId) {
                     conversations.remove(at: index)
+                    pendingSendConversationIds.removeAll { $0 == conversationId }
                     metadataOnlyConversationIds.remove(conversationId)
                     metadataSearchTextById.removeValue(forKey: conversationId)
                     updateCacheForRemoval(id: conversationId, at: index)
@@ -1848,6 +1851,7 @@ final class ConversationManager: ObservableObject {
             invalidateTitleRequest(for: conversationId)
         }
         conversations.removeAll()
+        pendingSendConversationIds.removeAll()
         metadataOnlyConversationIds.removeAll()
         metadataSearchTextById.removeAll()
         conversationIndexCache.removeAll()
@@ -2487,6 +2491,7 @@ final class ConversationManager: ObservableObject {
         beginDestructivePersistenceOperation(receipt.repairToken)
 
         conversations.remove(at: index)
+        pendingSendConversationIds.removeAll { $0 == id }
         metadataOnlyConversationIds.remove(id)
         metadataSearchTextById.removeValue(forKey: id)
         updateCacheForRemoval(id: id, at: index)
@@ -2887,6 +2892,24 @@ final class ConversationManager: ObservableObject {
         }
     }
 
+    func queuePendingSend(for conversationId: UUID) {
+        guard !pendingSendConversationIds.contains(conversationId) else { return }
+        pendingSendConversationIds.append(conversationId)
+    }
+
+    @discardableResult
+    func consumePendingSend(for conversationId: UUID) -> Bool {
+        guard let index = pendingSendConversationIds.firstIndex(of: conversationId) else {
+            return false
+        }
+        pendingSendConversationIds.remove(at: index)
+        return true
+    }
+
+    func hasPendingSend(for conversationId: UUID) -> Bool {
+        pendingSendConversationIds.contains(conversationId)
+    }
+
     #if os(macOS)
         @discardableResult
         func createConversationWithContext(
@@ -2921,6 +2944,7 @@ final class ConversationManager: ObservableObject {
             save(conversation)
 
             selectedConversationId = conversation.id
+            queuePendingSend(for: conversation.id)
 
             logManager(
                 "✅ Created conversation with app context",
@@ -2931,16 +2955,6 @@ final class ConversationManager: ObservableObject {
                     "contentLength": "\(content.count)"
                 ]
             )
-
-            let conversationId = conversation.id
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(100))
-                NotificationCenter.default.post(
-                    name: .sendPendingMessage,
-                    object: nil,
-                    userInfo: ["conversationId": conversationId]
-                )
-            }
 
             return conversation
         }

@@ -61,12 +61,18 @@ struct aynaApp: App {
         }
     }
 
+    @Environment(\.openWindow) private var openWindow
+
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: MainWindowCoordinator.windowID) {
             MacContentView()
                 .environmentObject(conversationManager)
                 .onAppear {
                     AynaAppDelegate.attachConversationManager(conversationManager)
+                    MainWindowCoordinator.shared.register(openWindow: {
+                        openWindow(id: MainWindowCoordinator.windowID)
+                    })
+                    MainWindowCoordinator.shared.markMainWindowReady()
 
                     if UITestEnvironment.isEnabled {
                         Task { @MainActor in
@@ -154,17 +160,125 @@ struct aynaApp: App {
 }
 
 @MainActor
+final class MainWindowCoordinator {
+    static let windowID = "main"
+    static let shared = MainWindowCoordinator()
+
+    private var openWindowAction: (@MainActor () -> Void)?
+    private var readinessContinuations: [CheckedContinuation<Void, Never>] = []
+    private(set) var isMainWindowReady = false
+
+    init() {}
+
+    func register(openWindow: @escaping @MainActor () -> Void) {
+        openWindowAction = openWindow
+    }
+
+    func markMainWindowReady() {
+        isMainWindowReady = true
+        let continuations = readinessContinuations
+        readinessContinuations.removeAll()
+        for continuation in continuations {
+            continuation.resume()
+        }
+    }
+
+    func markMainWindowClosed() {
+        isMainWindowReady = false
+    }
+
+    func existingMainWindow(in windows: [NSWindow]) -> NSWindow? {
+        windows.first { window in
+            !window.isKind(of: NSPanel.self) &&
+                window.canBecomeMain &&
+                window.contentViewController != nil &&
+                !(window.identifier?.rawValue.contains("settings") ?? false) &&
+                !(window.identifier?.rawValue.contains("Settings") ?? false) &&
+                !window.title.contains("Settings") &&
+                !window.title.contains("Preferences") &&
+                window.contentView != nil
+        }
+    }
+
+    @discardableResult
+    func openOrFocusMainWindow(
+        windows: @MainActor () -> [NSWindow] = { NSApp.windows },
+        activateApp: @MainActor () -> Void = { NSApp.activate(ignoringOtherApps: true) }
+    ) -> Bool {
+        activateApp()
+
+        if let window = existingMainWindow(in: windows()) {
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+            window.makeKeyAndOrderFront(nil)
+            markMainWindowReady()
+            DiagnosticsLogger.log(
+                .app,
+                level: .info,
+                message: "Opened existing main window"
+            )
+            return true
+        }
+
+        isMainWindowReady = false
+        if let openWindowAction {
+            openWindowAction()
+            DiagnosticsLogger.log(
+                .app,
+                level: .info,
+                message: "Requested SwiftUI main WindowGroup"
+            )
+            return true
+        }
+
+        DiagnosticsLogger.log(
+            .app,
+            level: .default,
+            message: "SwiftUI main WindowGroup open action not yet registered"
+        )
+        return false
+    }
+
+    func waitUntilMainWindowReady() async {
+        if isMainWindowReady {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            readinessContinuations.append(continuation)
+        }
+    }
+
+    func resetForTesting() {
+        openWindowAction = nil
+        isMainWindowReady = false
+        let continuations = readinessContinuations
+        readinessContinuations.removeAll()
+        for continuation in continuations {
+            continuation.resume()
+        }
+    }
+}
+
+@MainActor
 final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    static var manualWindow: NSWindow?
-
-    static var manualHostingController: NSHostingController<AnyView>?
-
     weak static var conversationManager: ConversationManager?
+    private static var managerContinuations: [CheckedContinuation<ConversationManager, Never>] = []
 
     private var deepLinkHandlingTask: Task<Void, Never>?
 
     static func attachConversationManager(_ manager: ConversationManager) {
         conversationManager = manager
+        let continuations = managerContinuations
+        managerContinuations.removeAll()
+        for continuation in continuations {
+            continuation.resume(returning: manager)
+        }
+    }
+
+    static func resetForTesting() {
+        conversationManager = nil
+        managerContinuations.removeAll()
     }
 
     static let shared = AynaAppDelegate()
@@ -206,88 +320,15 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             message: "applicationShouldHandleReopen called",
             metadata: ["hasVisibleWindows": "\(flag)"]
         )
+        if !flag {
+            MainWindowCoordinator.shared.openOrFocusMainWindow()
+        }
         return true
     }
 
     @MainActor
     static func openMainWindow() async {
-        NSApp.activate(ignoringOtherApps: true)
-
-        let existingWindow = NSApp.windows.first(where: { window in
-            !window.isKind(of: NSPanel.self) &&
-                window.contentViewController != nil &&
-                !(window.identifier?.rawValue.contains("settings") ?? false) &&
-                !(window.identifier?.rawValue.contains("Settings") ?? false) &&
-                !(window.title.contains("Settings")) &&
-                !(window.title.contains("Preferences")) &&
-                window.contentView != nil
-        })
-
-        if let window = existingWindow {
-            window.makeKeyAndOrderFront(nil)
-            DiagnosticsLogger.log(
-                .app,
-                level: .info,
-                message: "Opened existing main window"
-            )
-            return
-        }
-
-        if let window = manualWindow {
-            window.makeKeyAndOrderFront(nil)
-            DiagnosticsLogger.log(
-                .app,
-                level: .info,
-                message: "Opened existing manual window"
-            )
-            return
-        }
-
-        DiagnosticsLogger.log(
-            .app,
-            level: .info,
-            message: "No main window found, creating manually"
-        )
-
-        guard let manager = conversationManager else {
-            DiagnosticsLogger.log(
-                .app,
-                level: .error,
-                message: "Cannot create window - no conversation manager"
-            )
-            return
-        }
-
-        let contentView = AnyView(
-            MacContentView()
-                .environmentObject(manager)
-        )
-
-        let hostingController = NSHostingController(rootView: contentView)
-        manualHostingController = hostingController
-
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-
-        window.contentViewController = hostingController
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.isReleasedWhenClosed = false
-        window.center()
-        window.setFrameAutosaveName("MainWindow")
-        window.makeKeyAndOrderFront(nil)
-
-        manualWindow = window
-
-        DiagnosticsLogger.log(
-            .app,
-            level: .info,
-            message: "Created manual main window"
-        )
+        _ = MainWindowCoordinator.shared.openOrFocusMainWindow()
     }
 
     func application(_ app: NSApplication, open urls: [URL]) {
@@ -307,65 +348,55 @@ final class AynaAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func processDeepLinkURL(_ url: URL, app: NSApplication) async {
         app.activate(ignoringOtherApps: true)
-
-        let hasVisibleWindow = app.windows.contains { $0.canBecomeMain && !$0.isMiniaturized }
-
-        if !hasVisibleWindow {
-            if let mainURL = URL(string: "ayna://main") {
-                NSWorkspace.shared.open(mainURL)
-            }
-            try? await Task.sleep(for: .milliseconds(300))
-        }
+        MainWindowCoordinator.shared.openOrFocusMainWindow(
+            windows: { app.windows },
+            activateApp: { app.activate(ignoringOtherApps: true) }
+        )
         await handleDeepLinkURL(url, app: app)
     }
 
     @MainActor
     private func handleDeepLinkURL(_ url: URL, app: NSApplication) async {
-        if let manager = await waitForReadyConversationManager() {
-            await DeepLinkManager.shared.handle(url: url)
+        let manager = await waitForReadyConversationManager()
+        await DeepLinkManager.shared.handle(url: url)
 
+        DiagnosticsLogger.log(
+            .app,
+            level: .fault,
+            message: "🔗 DEBUG AppDelegate: after handle - pendingAddModel=\(String(describing: DeepLinkManager.shared.pendingAddModel)), pendingChat=\(String(describing: DeepLinkManager.shared.pendingChat))"
+        )
+
+        if let chatRequest = DeepLinkManager.shared.consumeNextReadyChat() {
+            Self.startDeepLinkConversation(chatRequest, using: manager)
+        }
+
+        if DeepLinkManager.shared.pendingAddModel != nil {
             DiagnosticsLogger.log(
                 .app,
                 level: .fault,
-                message: "🔗 DEBUG AppDelegate: after handle - pendingAddModel=\(String(describing: DeepLinkManager.shared.pendingAddModel)), pendingChat=\(String(describing: DeepLinkManager.shared.pendingChat))"
-            )
-
-            if let chatRequest = DeepLinkManager.shared.consumeNextReadyChat() {
-                Self.startDeepLinkConversation(chatRequest, using: manager)
-            }
-
-            if DeepLinkManager.shared.pendingAddModel != nil {
-                DiagnosticsLogger.log(
-                    .app,
-                    level: .fault,
-                    message: "🔗 DEBUG AppDelegate: NOT starting conversation - waiting for add model confirmation"
-                )
-            }
-        } else {
-            DiagnosticsLogger.log(
-                .app,
-                level: .error,
-                message: "Unable to handle deep link before conversation storage became ready"
+                message: "🔗 DEBUG AppDelegate: NOT starting conversation - waiting for add model confirmation"
             )
         }
 
-        if let window = app.windows.first(where: { $0.canBecomeMain }) {
-            if window.isMiniaturized {
-                window.deminiaturize(nil)
-            }
-            window.makeKeyAndOrderFront(nil)
+        MainWindowCoordinator.shared.openOrFocusMainWindow(
+            windows: { app.windows },
+            activateApp: { app.activate(ignoringOtherApps: true) }
+        )
+    }
+
+    static func waitForAttachedConversationManager() async -> ConversationManager {
+        if let manager = conversationManager {
+            return manager
+        }
+        return await withCheckedContinuation { continuation in
+            managerContinuations.append(continuation)
         }
     }
 
-    private func waitForReadyConversationManager() async -> ConversationManager? {
-        for _ in 0 ..< 100 {
-            if let manager = Self.conversationManager {
-                await manager.loadingTask?.value
-                return manager
-            }
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-        return nil
+    private func waitForReadyConversationManager() async -> ConversationManager {
+        let manager = await Self.waitForAttachedConversationManager()
+        await manager.loadingTask?.value
+        return manager
     }
 
     private static func startDeepLinkConversation(
@@ -478,6 +509,7 @@ private func handleWorkWithAppsSubmit(
             conversationId = conv.id
 
             conversationManager.selectedConversationId = conv.id
+            conversationManager.queuePendingSend(for: conv.id)
         }
 
         DiagnosticsLogger.log(
@@ -489,33 +521,7 @@ private func handleWorkWithAppsSubmit(
     }
 
     if openMainWindow {
-        Task {
-            await AynaAppDelegate.openMainWindow()
-
-            try? await Task.sleep(for: .milliseconds(500))
-
-            if let window = NSApp.windows.first(where: {
-                !$0.isKind(of: NSPanel.self) &&
-                    !($0.title.contains("Settings") || $0.title.contains("Preferences"))
-            }) {
-                window.makeKeyAndOrderFront(nil)
-            }
-
-            if let convId = conversationId {
-                try? await Task.sleep(for: .milliseconds(200))
-                NotificationCenter.default.post(
-                    name: .sendPendingMessage,
-                    object: nil,
-                    userInfo: ["conversationId": convId]
-                )
-                DiagnosticsLogger.log(
-                    .attachFromApp,
-                    level: .info,
-                    message: "Posted sendPendingMessage notification",
-                    metadata: ["conversationId": convId.uuidString]
-                )
-            }
-        }
+        MainWindowCoordinator.shared.openOrFocusMainWindow()
     }
 }
 
