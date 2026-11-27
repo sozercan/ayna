@@ -53,11 +53,9 @@ final class WatchSmokeUITests: WatchUITestCase {
         modelButton.tap()
 
         let seededModelRow = app.buttons["watch.modelRow.ui-test-model"].firstMatch
-        let modelList = app.descendants(matching: .any)["watch.modelList"].firstMatch
         XCTAssertTrue(
-            seededModelRow.waitForExistence(timeout: UITestTimeout.normal)
-                || modelList.waitForExistence(timeout: UITestTimeout.normal),
-            "Model selector should display seeded UI test models"
+            seededModelRow.waitForExistence(timeout: UITestTimeout.normal),
+            "Model selector should display the seeded UI test model row"
         )
     }
 
@@ -85,18 +83,41 @@ final class WatchSmokeUITests: WatchUITestCase {
             throw XCTSkip("watchOS simulator does not support interactive text entry in WatchNewChatView")
         }
 
-        sendNewChatMessage("Hello Watch UI Tests")
+        try sendNewChatMessage("Hello Watch UI Tests")
 
         let messagesList = app.descendants(matching: .any)["watch.chat.messagesList"].firstMatch
-        guard messagesList.waitForExistence(timeout: UITestTimeout.async) else {
-            throw XCTSkip("watchOS simulator keyboard submission did not transition to WatchChatView")
-        }
+        XCTAssertTrue(
+            messagesList.waitForExistence(timeout: UITestTimeout.async),
+            "Watch chat messages list should appear after submitting a new chat message"
+        )
 
         let responsePredicate = NSPredicate(format: "label CONTAINS %@", "UI Test Response")
-        let responseText = app.staticTexts.containing(responsePredicate).firstMatch
+        let responseText = messagesList.staticTexts.matching(responsePredicate).firstMatch
         XCTAssertTrue(
             responseText.waitForExistence(timeout: UITestTimeout.async),
             "Mock response should appear in watch chat view"
+        )
+
+        let backButton = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(
+            backButton.waitForExistence(timeout: UITestTimeout.normal),
+            "Back button should exist to return to the conversation list"
+        )
+        backButton.tap()
+
+        let conversationList = app.descendants(matching: .any)["watch.conversationList"].firstMatch
+        XCTAssertTrue(
+            conversationList.waitForExistence(timeout: UITestTimeout.async),
+            "Conversation list should appear after navigating back from chat"
+        )
+
+        let conversationRowPredicate = NSPredicate(format: "identifier BEGINSWITH %@", "watch.conversationRow.")
+        let createdConversationRow = conversationList.descendants(matching: .any)
+            .matching(conversationRowPredicate)
+            .firstMatch
+        XCTAssertTrue(
+            createdConversationRow.waitForExistence(timeout: UITestTimeout.normal),
+            "Conversation list should contain the newly created conversation row"
         )
     }
 }
