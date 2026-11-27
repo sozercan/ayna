@@ -684,7 +684,7 @@ class AIService: ObservableObject {
                 AgentSettings.load(),
                 builtinToolService: builtinService,
                 permissionService: permService,
-                webFetchService: nil
+                webFetchService: webFetchService
             )
         #endif
     }

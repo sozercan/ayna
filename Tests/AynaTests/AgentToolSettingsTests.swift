@@ -411,6 +411,36 @@ import Testing
             #expect(webFetchService.isEnabled == false)
             #expect(webFetchService.timeoutSeconds == 75)
         }
+
+        @Test
+        func `Standalone AIService initializer applies persisted settings to WebFetchService`() throws {
+            let suiteName = "AgentToolSettingsTests.standalone.\(UUID().uuidString)"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            let previousStorage = AppPreferences.storage
+            AppPreferences.use(defaults)
+            defer {
+                AppPreferences.use(previousStorage)
+                defaults.removePersistentDomain(forName: suiteName)
+            }
+
+            var persisted = AgentSettings.default
+            persisted.isEnabled = false
+            persisted.commandTimeoutSeconds = 55
+            persisted.setPermissionLevel(.denied, for: WebFetchService.toolName)
+            persisted.save()
+
+            let webFetchService = WebFetchService()
+            let aiService = AIService(webFetchService: webFetchService)
+
+            #expect(webFetchService.isEnabled == false)
+            #expect(webFetchService.timeoutSeconds == 55)
+            #expect(webFetchService.permissionLevel == .denied)
+            #expect(webFetchService.permissionService === aiService.permissionService)
+            let toolNames = (aiService.getAllAvailableTools() ?? []).compactMap { tool -> String? in
+                (tool["function"] as? [String: Any])?["name"] as? String
+            }
+            #expect(!toolNames.contains(WebFetchService.toolName))
+        }
     }
 #endif
 
