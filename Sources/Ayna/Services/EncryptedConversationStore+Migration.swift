@@ -115,16 +115,28 @@ extension EncryptedConversationStore {
 
             var conversations: [Conversation] = []
             conversations.reserveCapacity(snapshots.count)
+            var failedCount = 0
             for try await (id, url, version, generation, conversation) in group {
                 try Task.checkCancellation()
-                guard let conversation else { continue }
                 let isCurrent = mutationLock.withLock {
                     operationGenerations.matches(generation, for: id)
                         && fileVersion(at: url) == version
                 }
-                if isCurrent {
+                guard isCurrent else { continue }
+                if let conversation {
                     conversations.append(conversation)
+                } else {
+                    failedCount += 1
                 }
+            }
+            guard failedCount == 0 else {
+                DiagnosticsLogger.log(
+                    .encryptedStore,
+                    level: .error,
+                    message: "❌ Refusing partial migrated conversation load",
+                    metadata: ["failedCount": "\(failedCount)"]
+                )
+                throw EncryptedStoreError.unreadableConversationFiles(count: failedCount)
             }
             return conversations
         }

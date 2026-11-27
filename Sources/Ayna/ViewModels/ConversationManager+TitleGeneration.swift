@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 extension ConversationManager {
     func generateTitle(for conversation: Conversation) {
@@ -39,10 +40,11 @@ extension ConversationManager {
             stream: false,
             requestLane: .background,
             onChunk: { chunk in
-                Task { await accumulator.append(chunk) }
+                accumulator.append(chunk)
             },
             onComplete: { [weak self] in
                 let selfRef = self
+                let accumulatedTitle = accumulator.getTitle()
                 Task { @MainActor in
                     guard let self = selfRef,
                           self.titleRequestIsCurrent(
@@ -52,7 +54,6 @@ extension ConversationManager {
                           ),
                           let currentConversation = self.conversationSnapshot(byId: conversation.id)
                     else { return }
-                    let accumulatedTitle = await accumulator.getTitle()
                     let cleanTitle = accumulatedTitle
                         .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
                         .replacingOccurrences(of: "\"", with: "")
@@ -111,14 +112,14 @@ extension ConversationManager {
     }
 }
 
-private actor TitleAccumulator {
-    var title = ""
+private final class TitleAccumulator: Sendable {
+    private let title = OSAllocatedUnfairLock(initialState: "")
 
     func append(_ chunk: String) {
-        title += chunk
+        title.withLock { $0 += chunk }
     }
 
     func getTitle() -> String {
-        title
+        title.withLock { $0 }
     }
 }
