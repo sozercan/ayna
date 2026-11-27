@@ -72,8 +72,19 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             return
         }
 
+        let hasTools = !(tools?.isEmpty ?? true)
+        let resolvedLimits = AnthropicOutputLimits.resolvedLimits(
+            model: config.model,
+            stream: stream,
+            requestedMaxTokens: config.maxTokens,
+            requestedBudgetTokens: config.thinkingBudget,
+            hasTools: hasTools
+        )
+
         var betaHeaders: [String] = []
-        if let thinkingBudget = config.thinkingBudget, thinkingBudget >= 1024 {
+        if let thinkingBudget = resolvedLimits.budgetTokens,
+           thinkingBudget >= AnthropicThinkingBudget.minimumBudgetTokens
+        {
             let model = config.model.lowercased()
             if model.contains("claude-4") || model.contains("claude-opus-4") || model.contains("claude-sonnet-4") {
                 betaHeaders.append("interleaved-thinking-2025-05-14")
@@ -84,9 +95,8 @@ final class AnthropicProvider: AIProviderProtocol, @unchecked Sendable {
             model: config.model,
             apiKey: config.apiKey,
             customEndpoint: config.customEndpoint,
-            maxTokens: config.maxTokens
-                ?? AnthropicOutputLimits.defaultMaxTokens(model: config.model, stream: stream),
-            budgetTokens: config.thinkingBudget,
+            maxTokens: resolvedLimits.maxTokens,
+            budgetTokens: resolvedLimits.budgetTokens,
             betaHeaders: betaHeaders
         )
 

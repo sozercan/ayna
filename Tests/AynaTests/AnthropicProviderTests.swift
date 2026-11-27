@@ -138,6 +138,155 @@ struct AnthropicProviderTests {
         #expect(receivedReasoning.joined() == "Let me consider this carefully...")
     }
 
+    private nonisolated static func readRequestBody(_ request: URLRequest) -> Data? {
+        if let body = request.httpBody {
+            return body
+        }
+        guard let stream = request.httpBodyStream else {
+            return nil
+        }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: buffer.count)
+            if read > 0 {
+                data.append(buffer, count: read)
+            } else {
+                break
+            }
+        }
+        return data
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `non-streaming Claude 3.7 Sonnet with High and Max thinking budgets sends valid max_tokens`() async throws {
+        let provider = makeProvider()
+        let model = "claude-3-7-sonnet-20250219"
+        let messages = [Message(role: .user, content: "Think deeply")]
+        let responseBody = """
+        {
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "Done"}
+            ],
+            "stop_reason": "end_turn"
+        }
+        """
+
+        for preset in [AnthropicThinkingBudget.high, AnthropicThinkingBudget.max] {
+            nonisolated(unsafe) var capturedBody: [String: Any]?
+            AnthropicMockURLProtocol.requestHandler = { request in
+                if let bodyData = Self.readRequestBody(request) {
+                    capturedBody = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any]
+                }
+                let response = HTTPURLResponse(
+                    url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+                return (response, Data(responseBody.utf8))
+            }
+
+            let config = makeConfig(model: model, maxTokens: nil, thinkingBudget: preset.budgetTokens)
+            let callbackWaiter = TestCallbackWaiter()
+
+            await confirmation("Response completes") { completed in
+                provider.sendMessage(
+                    messages: messages,
+                    config: config,
+                    stream: false,
+                    tools: nil,
+                    callbacks: AIProviderStreamCallbacks(
+                        onChunk: { _ in },
+                        onComplete: { completed(); callbackWaiter.signal() },
+                        onError: { error in Issue.record("Unexpected error: \(error)"); callbackWaiter.signal() }
+                    )
+                )
+                await callbackWaiter.wait()
+            }
+
+            let body = try #require(capturedBody)
+            let maxTokens = try #require(body["max_tokens"] as? Int)
+            let thinking = try #require(body["thinking"] as? [String: Any])
+            let budgetTokens = try #require(thinking["budget_tokens"] as? Int)
+            #expect(budgetTokens == preset.budgetTokens)
+            #expect(budgetTokens < maxTokens)
+            #expect(maxTokens <= 64000)
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func `provider omits thinking and beta header when tools are present`() async throws {
+        let provider = makeProvider()
+        let config = makeConfig(
+            model: "claude-sonnet-4-20250514",
+            thinkingBudget: AnthropicThinkingBudget.medium.budgetTokens
+        )
+        let messages = [Message(role: .user, content: "Use a tool")]
+        let tools: [[String: Any]] = [
+            [
+                "type": "function",
+                "function": [
+                    "name": "web_fetch",
+                    "description": "Fetch a URL",
+                    "parameters": ["type": "object", "properties": [:]]
+                ]
+            ]
+        ]
+        let responseBody = """
+        {
+            "id": "msg_123",
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "Done"}
+            ],
+            "stop_reason": "end_turn"
+        }
+        """
+
+        nonisolated(unsafe) var capturedRequest: URLRequest?
+        nonisolated(unsafe) var capturedBody: [String: Any]?
+        AnthropicMockURLProtocol.requestHandler = { request in
+            capturedRequest = request
+            if let bodyData = Self.readRequestBody(request) {
+                capturedBody = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any]
+            }
+            let response = HTTPURLResponse(
+                url: URL(string: "https://api.anthropic.com/v1/messages")!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data(responseBody.utf8))
+        }
+
+        let callbackWaiter = TestCallbackWaiter()
+        await confirmation("Response completes") { completed in
+            provider.sendMessage(
+                messages: messages,
+                config: config,
+                stream: false,
+                tools: tools,
+                callbacks: AIProviderStreamCallbacks(
+                    onChunk: { _ in },
+                    onComplete: { completed(); callbackWaiter.signal() },
+                    onError: { error in Issue.record("Unexpected error: \(error)"); callbackWaiter.signal() }
+                )
+            )
+            await callbackWaiter.wait()
+        }
+
+        let body = try #require(capturedBody)
+        #expect(body["thinking"] == nil)
+        #expect(capturedRequest?.value(forHTTPHeaderField: "anthropic-beta") == nil)
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func `non-streaming response handles tool use`() async {
         let provider = makeProvider()

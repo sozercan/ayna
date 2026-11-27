@@ -48,12 +48,46 @@ enum AnthropicThinkingBudget: Int, CaseIterable, Identifiable, Sendable {
 enum AnthropicOutputLimits {
     static let streamingDefault = 64000
     static let nonStreamingDefault = 16000
+    static let minimumResponseTokensWithThinking = 4096
 
     static let cutoffNotice = "\n\n*[Response cut off: the model reached its output limit.]*"
 
     static func defaultMaxTokens(model: String, stream: Bool) -> Int {
         let requested = stream ? streamingDefault : nonStreamingDefault
         return min(requested, outputCap(for: model) ?? requested)
+    }
+
+    static func resolvedLimits(
+        model: String,
+        stream: Bool,
+        requestedMaxTokens: Int?,
+        requestedBudgetTokens: Int?,
+        hasTools: Bool = false
+    ) -> (maxTokens: Int, budgetTokens: Int?) {
+        let cap = outputCap(for: model)
+        var maxTokens = requestedMaxTokens ?? defaultMaxTokens(model: model, stream: stream)
+        if let cap {
+            maxTokens = min(maxTokens, cap)
+        }
+
+        guard !hasTools,
+              let requestedBudgetTokens,
+              requestedBudgetTokens >= AnthropicThinkingBudget.minimumBudgetTokens
+        else {
+            return (maxTokens: maxTokens, budgetTokens: nil)
+        }
+
+        if requestedMaxTokens == nil, requestedBudgetTokens >= maxTokens {
+            let expanded = requestedBudgetTokens + minimumResponseTokensWithThinking
+            maxTokens = cap.map { min(expanded, $0) } ?? expanded
+        }
+
+        let maxAllowedBudget = maxTokens - 1
+        guard maxAllowedBudget >= AnthropicThinkingBudget.minimumBudgetTokens else {
+            return (maxTokens: maxTokens, budgetTokens: nil)
+        }
+
+        return (maxTokens: maxTokens, budgetTokens: min(requestedBudgetTokens, maxAllowedBudget))
     }
 
     private static func outputCap(for model: String) -> Int? {
@@ -189,9 +223,18 @@ enum AnthropicRequestBuilder {
         try Task.checkCancellation()
         let (systemPrompt, anthropicMessages) = try extractSystemAndConvertMessages(messages)
 
+        let hasTools = !(tools?.isEmpty ?? true)
+        let resolvedLimits = AnthropicOutputLimits.resolvedLimits(
+            model: config.model,
+            stream: stream,
+            requestedMaxTokens: config.maxTokens,
+            requestedBudgetTokens: config.budgetTokens,
+            hasTools: hasTools
+        )
+
         var body: [String: Any] = [
             "model": config.model,
-            "max_tokens": config.maxTokens,
+            "max_tokens": resolvedLimits.maxTokens,
             "messages": anthropicMessages,
             "stream": stream
         ]
@@ -200,7 +243,7 @@ enum AnthropicRequestBuilder {
             body["system"] = system
         }
 
-        if let budgetTokens = config.budgetTokens, budgetTokens >= 1024 {
+        if let budgetTokens = resolvedLimits.budgetTokens {
             body["thinking"] = [
                 "type": "enabled",
                 "budget_tokens": budgetTokens

@@ -411,4 +411,83 @@ struct AnthropicRequestBuilderTests {
         #expect(msgs?.count == 1)
         #expect(msgs?[0]["role"] as? String == "user")
     }
+
+    @Test("Claude 3.7 Sonnet non-streaming High and Max thinking budgets keep budget_tokens < max_tokens")
+    func claude37NonStreamingHighAndMaxThinkingBudgetsResolveWithinCap() throws {
+        let model = "claude-3-7-sonnet-20250219"
+        let messages = [Message(role: .user, content: "Solve this step by step")]
+
+        for preset in [AnthropicThinkingBudget.high, AnthropicThinkingBudget.max] {
+            let resolved = AnthropicOutputLimits.resolvedLimits(
+                model: model,
+                stream: false,
+                requestedMaxTokens: nil,
+                requestedBudgetTokens: preset.budgetTokens
+            )
+            let config = AnthropicRequestConfig(
+                model: model,
+                apiKey: "test-key",
+                maxTokens: resolved.maxTokens,
+                budgetTokens: resolved.budgetTokens
+            )
+
+            let body = try AnthropicRequestBuilder.buildMessagesBody(
+                messages: messages,
+                config: config,
+                stream: false,
+                tools: nil
+            )
+
+            let maxTokens = try #require(body["max_tokens"] as? Int)
+            let thinking = try #require(body["thinking"] as? [String: Any])
+            let budgetTokens = try #require(thinking["budget_tokens"] as? Int)
+
+            #expect(budgetTokens == preset.budgetTokens)
+            #expect(budgetTokens < maxTokens)
+            #expect(maxTokens <= 64000)
+        }
+    }
+
+    @Test("Thinking budget is clamped below model output cap when max_tokens cannot expand")
+    func thinkingBudgetClampedToModelCap() {
+        let resolved = AnthropicOutputLimits.resolvedLimits(
+            model: "claude-opus-4-20250514",
+            stream: false,
+            requestedMaxTokens: nil,
+            requestedBudgetTokens: AnthropicThinkingBudget.max.budgetTokens
+        )
+
+        #expect(resolved.maxTokens == 32000)
+        #expect(resolved.budgetTokens == 31999)
+    }
+
+    @Test("Thinking is omitted when tools are provided to prevent rejected tool continuations")
+    func thinkingOmittedWhenToolsAreProvided() throws {
+        let config = AnthropicRequestConfig(
+            model: "claude-sonnet-4-20250514",
+            apiKey: "test-key",
+            maxTokens: 16000,
+            budgetTokens: AnthropicThinkingBudget.medium.budgetTokens
+        )
+        let tools: [[String: Any]] = [
+            [
+                "type": "function",
+                "function": [
+                    "name": "web_fetch",
+                    "description": "Fetch a URL",
+                    "parameters": ["type": "object", "properties": [:]]
+                ]
+            ]
+        ]
+
+        let body = try AnthropicRequestBuilder.buildMessagesBody(
+            messages: [Message(role: .user, content: "Fetch example.com")],
+            config: config,
+            stream: true,
+            tools: tools
+        )
+
+        #expect(body["thinking"] == nil)
+        #expect((body["tools"] as? [[String: Any]])?.count == 1)
+    }
 }
