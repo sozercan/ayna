@@ -79,7 +79,12 @@ struct PathValidator {
         operation: FileOperation,
         requireApprovalOutsideProject: Bool = true
     ) -> ValidationResult {
-        validate(
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return .denied(reason: "Path cannot be empty")
+        }
+
+        return validate(
             url: URL(fileURLWithPath: expandPath(path)),
             operation: operation,
             requireApprovalOutsideProject: requireApprovalOutsideProject
