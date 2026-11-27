@@ -1111,17 +1111,6 @@ final class ConversationManager: ObservableObject {
                 }
             case .superseded:
                 retainDestructiveBarrierUntilRepairSettles(receipt.repairToken)
-                conversationSummaryRemoveOperation(conversationId)
-                if let index = getConversationIndex(for: conversationId) {
-                    conversations.remove(at: index)
-                    pendingSendConversationIds.removeAll { $0 == conversationId }
-                    metadataOnlyConversationIds.remove(conversationId)
-                    metadataSearchTextById.removeValue(forKey: conversationId)
-                    updateCacheForRemoval(id: conversationId, at: index)
-                }
-                if selectedConversationId == conversationId {
-                    selectedConversationId = nil
-                }
             case let .failed(restored, error):
                 retainDestructiveBarrierUntilRepairSettles(receipt.repairToken)
                 if restored != nil {
