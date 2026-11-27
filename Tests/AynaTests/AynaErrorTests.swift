@@ -272,16 +272,64 @@ struct ErrorPresenterTests {
         #expect(suggestion?.contains("Settings") == true)
     }
 
-    @Test("Error category is correct", arguments: zip(
+    @Test("Error category is correct for AynaError cases", arguments: zip(
         [
             AynaError.networkError(underlying: URLError(.timedOut)),
+            AynaError.timeout,
+            AynaError.missingAPIKey(provider: "OpenAI"),
             AynaError.invalidAPIKey(provider: "Test"),
-            AynaError.toolNotFound(toolName: "test")
+            AynaError.authenticationFailed(reason: "expired token"),
+            AynaError.missingConfiguration(detail: "endpoint"),
+            AynaError.invalidEndpoint("ftp://example.com"),
+            AynaError.noModelSelected,
+            AynaError.modelNotFound(modelName: "gpt-5"),
+            AynaError.unsupportedProvider(provider: "Test", operation: "images"),
+            AynaError.capabilityMismatch(expected: "vision", actual: "text"),
+            AynaError.httpError(statusCode: 500, message: "Internal failure"),
+            AynaError.rateLimited(retryAfter: 30),
+            AynaError.invalidResponse(detail: "empty body"),
+            AynaError.contentFiltered(reason: "policy"),
+            AynaError.apiError(message: "Custom backend failure"),
+            AynaError.toolNotFound(toolName: "test"),
+            AynaError.toolExecutionFailed(toolName: "bash", reason: "exit 1"),
+            AynaError.toolChainDepthExceeded(maxDepth: 5),
+            AynaError.encodingFailed(detail: "bad utf8"),
+            AynaError.decodingFailed(detail: "missing field"),
+            AynaError.fileOperationFailed(operation: "read", path: "/tmp/x"),
+            AynaError.keychainError(operation: "load", status: -25300),
+            AynaError.conversationNotFound(id: UUID()),
+            AynaError.messageNotFound(id: UUID()),
+            AynaError.cancelled,
+            AynaError.unknown(message: "Unexpected failure", underlying: nil)
         ] as [AynaError],
         [
             ErrorPresenter.ErrorCategory.network,
+            ErrorPresenter.ErrorCategory.network,
             ErrorPresenter.ErrorCategory.authentication,
-            ErrorPresenter.ErrorCategory.tool
+            ErrorPresenter.ErrorCategory.authentication,
+            ErrorPresenter.ErrorCategory.authentication,
+            ErrorPresenter.ErrorCategory.configuration,
+            ErrorPresenter.ErrorCategory.configuration,
+            ErrorPresenter.ErrorCategory.configuration,
+            ErrorPresenter.ErrorCategory.configuration,
+            ErrorPresenter.ErrorCategory.configuration,
+            ErrorPresenter.ErrorCategory.configuration,
+            ErrorPresenter.ErrorCategory.api,
+            ErrorPresenter.ErrorCategory.api,
+            ErrorPresenter.ErrorCategory.api,
+            ErrorPresenter.ErrorCategory.api,
+            ErrorPresenter.ErrorCategory.api,
+            ErrorPresenter.ErrorCategory.tool,
+            ErrorPresenter.ErrorCategory.tool,
+            ErrorPresenter.ErrorCategory.tool,
+            ErrorPresenter.ErrorCategory.data,
+            ErrorPresenter.ErrorCategory.data,
+            ErrorPresenter.ErrorCategory.data,
+            ErrorPresenter.ErrorCategory.data,
+            ErrorPresenter.ErrorCategory.conversation,
+            ErrorPresenter.ErrorCategory.conversation,
+            ErrorPresenter.ErrorCategory.cancelled,
+            ErrorPresenter.ErrorCategory.unknown
         ]
     ))
     func errorCategory(error: AynaError, expectedCategory: ErrorPresenter.ErrorCategory) {
@@ -289,17 +337,70 @@ struct ErrorPresenterTests {
         #expect(category == expectedCategory)
     }
 
+    @Test("Error category uses AynaError case rather than message text heuristics")
+    func errorCategoryIgnoresMisleadingMessageText() {
+        let apiError = AynaError.apiError(message: "Invalid api key for tool 'search' timed out")
+        let unknownError = AynaError.unknown(message: "No model selected: keychain failed", underlying: nil)
+
+        #expect(ErrorPresenter.category(for: apiError) == .api)
+        #expect(ErrorPresenter.category(for: unknownError) == .unknown)
+        #expect(!ErrorPresenter.isRetryable(apiError))
+        #expect(!ErrorPresenter.requiresUserAction(unknownError))
+    }
+
+    @Test("Error category handles non-AynaError fallbacks")
+    func errorCategoryFallbacks() {
+        struct GenericError: LocalizedError {
+            var errorDescription: String? {
+                "API key timed out"
+            }
+        }
+
+        #expect(ErrorPresenter.category(for: CancellationError()) == .cancelled)
+        #expect(ErrorPresenter.category(for: URLError(.cancelled)) == .cancelled)
+        #expect(ErrorPresenter.category(for: URLError(.notConnectedToInternet)) == .network)
+        #expect(ErrorPresenter.category(for: GenericError()) == .unknown)
+    }
+
     @Test("Retryable errors are identified correctly", arguments: zip(
-        [AynaError.timeout, AynaError.missingAPIKey(provider: "Test")],
-        [true, false]
+        [
+            AynaError.timeout,
+            AynaError.networkError(underlying: URLError(.notConnectedToInternet)),
+            AynaError.rateLimited(retryAfter: 10),
+            AynaError.httpError(statusCode: 503, message: nil),
+            AynaError.httpError(statusCode: 400, message: "Bad request"),
+            AynaError.missingAPIKey(provider: "Test"),
+            AynaError.cancelled
+        ] as [AynaError],
+        [true, true, true, true, false, false, false]
     ))
     func isRetryable(error: AynaError, expected: Bool) {
         #expect(ErrorPresenter.isRetryable(error) == expected)
     }
 
+    @Test("Retryable fallback for URLError")
+    func isRetryableURLError() {
+        #expect(ErrorPresenter.isRetryable(URLError(.timedOut)))
+        #expect(ErrorPresenter.isRetryable(URLError(.networkConnectionLost)))
+        #expect(!ErrorPresenter.isRetryable(URLError(.badURL)))
+    }
+
     @Test("User action requirement is correct", arguments: zip(
-        [AynaError.missingAPIKey(provider: "Test"), AynaError.timeout],
-        [true, false]
+        [
+            AynaError.missingAPIKey(provider: "Test"),
+            AynaError.invalidAPIKey(provider: "Test"),
+            AynaError.authenticationFailed(reason: "expired"),
+            AynaError.missingConfiguration(detail: "url"),
+            AynaError.invalidEndpoint("bad"),
+            AynaError.noModelSelected,
+            AynaError.modelNotFound(modelName: "gpt-5"),
+            AynaError.unsupportedProvider(provider: "Test", operation: "images"),
+            AynaError.capabilityMismatch(expected: "vision", actual: "text"),
+            AynaError.timeout,
+            AynaError.rateLimited(retryAfter: 5),
+            AynaError.cancelled
+        ] as [AynaError],
+        [true, true, true, true, true, true, true, true, true, false, false, false]
     ))
     func requiresUserAction(error: AynaError, expected: Bool) {
         #expect(ErrorPresenter.requiresUserAction(error) == expected)
@@ -307,8 +408,12 @@ struct ErrorPresenterTests {
 
     @Test("Suggested action is correct", arguments: [
         SuggestedActionCase(error: .timeout, expectedAction: .retry),
+        SuggestedActionCase(error: .rateLimited(retryAfter: 10), expectedAction: .retry),
+        SuggestedActionCase(error: .httpError(statusCode: 502, message: nil), expectedAction: .retry),
         SuggestedActionCase(error: .missingAPIKey(provider: "Test"), expectedAction: .openSettings),
-        SuggestedActionCase(error: .cancelled, expectedAction: .dismiss)
+        SuggestedActionCase(error: .invalidEndpoint("bad"), expectedAction: .openSettings),
+        SuggestedActionCase(error: .cancelled, expectedAction: .dismiss),
+        SuggestedActionCase(error: .apiError(message: "Unexpected"), expectedAction: .dismiss)
     ])
     func suggestedAction(testCase: SuggestedActionCase) {
         let action = ErrorPresenter.suggestedAction(for: testCase.error)
