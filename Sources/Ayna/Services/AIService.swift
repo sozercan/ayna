@@ -689,7 +689,7 @@ class AIService: ObservableObject {
                 AgentSettings.load(),
                 builtinToolService: builtinService,
                 permissionService: permService,
-                webFetchService: webFetchService
+                webFetchService: self.webFetchService
             )
         #endif
     }
