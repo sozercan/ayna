@@ -9,6 +9,8 @@ struct AynaWatchApp: App {
     @StateObject private var conversationStore = WatchConversationStore.shared
 
     init() {
+        AppPreferences.registerDefaults()
+        UITestEnvironment.configureWatchIfNeeded()
         WatchConnectivityService.shared.configure(with: WatchConversationStore.shared)
     }
 
@@ -18,6 +20,7 @@ struct AynaWatchApp: App {
                 .environmentObject(connectivityService)
                 .environmentObject(conversationStore)
                 .onAppear {
+                    guard !UITestEnvironment.isEnabled else { return }
                     connectivityService.requestSync()
                 }
         }

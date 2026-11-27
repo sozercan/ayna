@@ -99,6 +99,7 @@ final class PermissionService {
     private nonisolated let cancelledApprovals = CancelledApprovalRegistry()
 
     private var timeoutTasks: [UUID: Task<Void, Never>] = [:]
+    private let timeoutSleep: @Sendable (Int) async throws -> Void
 
     #if os(macOS)
         private let notificationDelegate = ApprovalNotificationDelegate()
@@ -106,7 +107,12 @@ final class PermissionService {
         private var systemNotificationsEnabled: Bool = false
     #endif
 
-    init() {
+    init(
+        timeoutSleep: @escaping @Sendable (Int) async throws -> Void = { seconds in
+            try await Task.sleep(for: .seconds(seconds))
+        }
+    ) {
+        self.timeoutSleep = timeoutSleep
         setupNotifications()
     }
 
@@ -406,9 +412,10 @@ final class PermissionService {
     private func startTimeoutTask(for approvalId: UUID) {
         let timeout = approvalTimeoutSeconds
         guard timeout > 0 else { return }
+        let sleep = timeoutSleep
         timeoutTasks[approvalId] = Task { [weak self] in
             do {
-                try await Task.sleep(for: .seconds(timeout))
+                try await sleep(timeout)
                 self?.deny(approvalId)
             } catch {}
         }

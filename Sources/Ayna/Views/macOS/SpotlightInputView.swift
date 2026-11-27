@@ -35,7 +35,19 @@ struct SpotlightInputView: View {
 
     @State private var errorMessage: String?
 
+    @ObservedObject var panelController: FloatingPanelController
+
     @State private var hasAccessibilityPermission: Bool = false
+
+    init(
+        panelController: FloatingPanelController = .shared,
+        onSubmit: @escaping (String, AppContentResult?) -> Void,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.panelController = panelController
+        self.onSubmit = onSubmit
+        self.onDismiss = onDismiss
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -72,11 +84,11 @@ struct SpotlightInputView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
         .onAppear {
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(100))
-                isTextFieldFocused = true
-            }
+            isTextFieldFocused = true
             checkAccessibilityAndLoadWindows()
+        }
+        .onChange(of: panelController.focusRequestID) { _, _ in
+            isTextFieldFocused = true
         }
         .onDisappear {
             extractionTask?.cancel()

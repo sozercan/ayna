@@ -877,7 +877,7 @@ final class WebFetchService {
 
     static let toolName = "web_fetch"
 
-    private init() {
+    init() {
         fetcher = { url, timeoutSeconds, maxResponseSize in
             try await WebFetchRequestExecutor.fetchText(
                 from: url,
