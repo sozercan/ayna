@@ -61,7 +61,12 @@ enum TestIdentifiers {
         static let emptyState = "watch.emptyState"
         static let newChatButton = "watch.newChatButton"
         static let modelSelectorButton = "watch.modelSelectorButton"
+        static let modelList = "watch.modelList"
         static let newChatView = "watch.newChat.view"
+
+        static func modelRow(for modelName: String) -> String {
+            "watch.modelRow.\(modelName)"
+        }
 
         static let chatMessagesList = "watch.chat.messagesList"
         static let chatComposerTextField = "watch.chat.composerTextField"

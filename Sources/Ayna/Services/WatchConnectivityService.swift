@@ -1395,10 +1395,23 @@
                 .flatMap(UUID.init(uuidString:))
             private var pageCycleHandshakeTracker = WatchPageCycleHandshakeTracker()
             private var syncRequestPending = false
+            private var isUITestingSeeded = false
 
             override private init() {
                 super.init()
+                guard !UITestEnvironment.isEnabled else { return }
                 setupSession()
+            }
+
+            func configureForUITesting(
+                availableModels: [String],
+                selectedModel: String
+            ) {
+                isUITestingSeeded = true
+                isReachable = true
+                self.availableModels = availableModels
+                self.selectedModel = selectedModel
+                lastSyncDate = Date()
             }
 
             private func setupSession() {
@@ -1548,6 +1561,7 @@
             }
 
             func requestSync() {
+                guard !isUITestingSeeded else { return }
                 let request = pageCycleCoordinator.pendingRequest.map {
                     WatchSyncRequestIdentity.pageCycle($0)
                 } ?? .freshCycle
