@@ -37,7 +37,6 @@ final class FloatingPanelController: NSObject, ObservableObject {
             createPanel()
         }
 
-        focusRequestID = UUID()
         updateContentView(conversationManager: conversationManager)
 
         positionPanelCentered()
@@ -65,6 +64,7 @@ final class FloatingPanelController: NSObject, ObservableObject {
         }
 
         isVisible = true
+        focusRequestID = UUID()
 
         DiagnosticsLogger.log(
             .attachFromApp,

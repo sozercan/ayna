@@ -116,6 +116,44 @@ struct DeterministicReadinessTests {
 
         @Test
         @MainActor
+        func `main window coordinator deduplicates in-flight open requests until readiness`() {
+            let coordinator = MainWindowCoordinator()
+            var openWindowCallCount = 0
+
+            coordinator.register(openWindow: {
+                openWindowCallCount += 1
+            })
+
+            let firstOpen = coordinator.openOrFocusMainWindow(
+                windows: { [] },
+                activateApp: {}
+            )
+            let secondOpen = coordinator.openOrFocusMainWindow(
+                windows: { [] },
+                activateApp: {}
+            )
+
+            #expect(firstOpen)
+            #expect(secondOpen)
+            #expect(openWindowCallCount == 1)
+            #expect(coordinator.isOpenRequestInFlight)
+
+            coordinator.markMainWindowReady()
+            #expect(!coordinator.isOpenRequestInFlight)
+            #expect(coordinator.isMainWindowReady)
+
+            coordinator.markMainWindowClosed()
+            let reopened = coordinator.openOrFocusMainWindow(
+                windows: { [] },
+                activateApp: {}
+            )
+
+            #expect(reopened)
+            #expect(openWindowCallCount == 2)
+        }
+
+        @Test
+        @MainActor
         func `app delegate resolves attached conversation manager deterministically`() async throws {
             let previousManager = AynaAppDelegate.conversationManager
             defer {

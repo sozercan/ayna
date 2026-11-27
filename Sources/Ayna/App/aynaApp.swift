@@ -167,6 +167,7 @@ final class MainWindowCoordinator {
     private var openWindowAction: (@MainActor () -> Void)?
     private var readinessContinuations: [CheckedContinuation<Void, Never>] = []
     private(set) var isMainWindowReady = false
+    private(set) var isOpenRequestInFlight = false
 
     init() {}
 
@@ -176,6 +177,7 @@ final class MainWindowCoordinator {
 
     func markMainWindowReady() {
         isMainWindowReady = true
+        isOpenRequestInFlight = false
         let continuations = readinessContinuations
         readinessContinuations.removeAll()
         for continuation in continuations {
@@ -185,6 +187,7 @@ final class MainWindowCoordinator {
 
     func markMainWindowClosed() {
         isMainWindowReady = false
+        isOpenRequestInFlight = false
     }
 
     func existingMainWindow(in windows: [NSWindow]) -> NSWindow? {
@@ -222,7 +225,17 @@ final class MainWindowCoordinator {
         }
 
         isMainWindowReady = false
+        if isOpenRequestInFlight {
+            DiagnosticsLogger.log(
+                .app,
+                level: .info,
+                message: "SwiftUI main WindowGroup open request already in flight"
+            )
+            return true
+        }
+
         if let openWindowAction {
+            isOpenRequestInFlight = true
             openWindowAction()
             DiagnosticsLogger.log(
                 .app,
@@ -232,6 +245,7 @@ final class MainWindowCoordinator {
             return true
         }
 
+        isOpenRequestInFlight = false
         DiagnosticsLogger.log(
             .app,
             level: .default,
@@ -252,6 +266,7 @@ final class MainWindowCoordinator {
     func resetForTesting() {
         openWindowAction = nil
         isMainWindowReady = false
+        isOpenRequestInFlight = false
         let continuations = readinessContinuations
         readinessContinuations.removeAll()
         for continuation in continuations {
