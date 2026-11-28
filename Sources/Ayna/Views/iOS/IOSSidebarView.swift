@@ -8,6 +8,7 @@
         @ObservedObject var aiService = AIService.shared
         @Environment(\.horizontalSizeClass) private var horizontalSizeClass
         @Binding var selectedRoute: IOSSidebarRoute?
+        @Binding var compactNavigationPath: [IOSSidebarRoute]
         @Binding var preferredCompactColumn: NavigationSplitViewColumn
         @Binding var columnVisibility: NavigationSplitViewVisibility
         @State private var searchText = ""
@@ -103,6 +104,7 @@
                         .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)
                 }
+                .accessibilityIdentifier("sidebar.emptyState")
 
                 Button {
                     startNewConversation()
@@ -122,7 +124,6 @@
                 Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityIdentifier("sidebar.emptyState")
         }
 
         @ViewBuilder
@@ -293,9 +294,11 @@
                             .font(.system(size: 17, weight: .medium))
                             .foregroundStyle(.primary)
                             .frame(width: IMessageBottomBar.composeSize, height: IMessageBottomBar.composeSize)
+                            .contentShape(Circle())
                             .modifier(IMessageCircleStyle())
                     }
                     .buttonStyle(.plain)
+                    .contentShape(Circle())
                     .accessibilityLabel("New conversation")
                     .accessibilityIdentifier(TestIdentifiers.Sidebar.newConversationButton)
                 }
@@ -355,9 +358,13 @@
             HapticEngine.newConversation()
 
             selectedRoute = .newChat
-            preferredCompactColumn = .detail
-            withAnimation {
-                columnVisibility = .detailOnly
+            if horizontalSizeClass == .compact {
+                compactNavigationPath = [.newChat]
+            } else {
+                preferredCompactColumn = .detail
+                withAnimation {
+                    columnVisibility = .detailOnly
+                }
             }
 
             DiagnosticsLogger.log(
@@ -485,7 +492,7 @@
             #if compiler(>=6.2)
                 if #available(iOS 26.0, *) {
                     content
-                        .glassEffect(.regular.interactive(), in: .capsule)
+                        .glassEffect(.regular, in: .capsule)
                 } else {
                     content
                         .background {
@@ -508,7 +515,7 @@
             #if compiler(>=6.2)
                 if #available(iOS 26.0, *) {
                     content
-                        .glassEffect(.regular.interactive(), in: .circle)
+                        .glassEffect(.regular, in: .circle)
                 } else {
                     content
                         .background {

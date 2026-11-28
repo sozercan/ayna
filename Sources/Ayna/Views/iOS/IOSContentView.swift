@@ -72,6 +72,7 @@ struct IOSContentView: View {
                 NavigationStack(path: $compactNavigationPath) {
                     IOSSidebarView(
                         selectedRoute: $selectedRoute,
+                        compactNavigationPath: $compactNavigationPath,
                         preferredCompactColumn: $preferredCompactColumn,
                         columnVisibility: $columnVisibility
                     )
@@ -86,6 +87,7 @@ struct IOSContentView: View {
                 ) {
                     IOSSidebarView(
                         selectedRoute: $selectedRoute,
+                        compactNavigationPath: $compactNavigationPath,
                         preferredCompactColumn: $preferredCompactColumn,
                         columnVisibility: $columnVisibility
                     )
