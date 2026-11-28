@@ -16,7 +16,7 @@ struct IOSChatView: View {
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var showingSystemPromptSheet = false
     @State private var showModelSelector = false
-    @StateObject private var viewModel: IOSChatViewModel
+    @ObservedObject private var viewModel: IOSChatViewModel
 
     @State private var showScrollToBottom = false
     @State private var followsLatest = true
@@ -24,15 +24,14 @@ struct IOSChatView: View {
 
     @State private var cachedDisplayableItems: [ChatTranscriptItem] = []
 
-    init(conversationId: UUID, conversationManager: ConversationManager) {
+    init(
+        conversationId: UUID,
+        conversationManager: ConversationManager,
+        viewModel: IOSChatViewModel
+    ) {
         self.conversationId = conversationId
         self.conversationManager = conversationManager
-        _viewModel = StateObject(
-            wrappedValue: IOSChatViewModel(
-                conversationId: conversationId,
-                conversationManager: conversationManager
-            )
-        )
+        self.viewModel = viewModel
     }
 
     private var conversation: Conversation? {
@@ -305,9 +304,6 @@ struct IOSChatView: View {
         .onAppear {
             viewModel.configure(with: conversationManager, conversationId: conversationId)
             initializeSelectedModelsIfNeeded()
-        }
-        .onDisappear {
-            viewModel.cancelOwnedOperations()
         }
         .onChange(of: conversation?.model) { _, newModel in
             if viewModel.selectedModels.isEmpty, let model = newModel, !model.isEmpty {

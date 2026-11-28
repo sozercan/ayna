@@ -11,10 +11,54 @@ enum IOSSidebarRoute: Hashable {
     case conversation(UUID)
 }
 
+@MainActor
+private final class IOSRouteViewModelStore: ObservableObject {
+    private var activeRoute: IOSSidebarRoute?
+    private var activeViewModel: IOSChatViewModel?
+
+    func viewModel(for route: IOSSidebarRoute?, conversationManager: ConversationManager) -> IOSChatViewModel {
+        let normalizedRoute = route ?? .newChat
+        if activeRoute == normalizedRoute, let activeViewModel {
+            return activeViewModel
+        }
+        activeViewModel?.cancelOwnedOperations()
+        let created = switch normalizedRoute {
+        case let .conversation(conversationId):
+            IOSChatViewModel(conversationId: conversationId, conversationManager: conversationManager)
+        case .newChat:
+            IOSChatViewModel(conversationManager: conversationManager)
+        }
+        activeRoute = normalizedRoute
+        activeViewModel = created
+        return created
+    }
+
+    func updateActiveRoute(_ route: IOSSidebarRoute?) {
+        guard let route else {
+            activeViewModel?.cancelOwnedOperations()
+            activeRoute = nil
+            activeViewModel = nil
+            return
+        }
+        if activeRoute != route {
+            activeViewModel?.cancelOwnedOperations()
+            activeRoute = nil
+            activeViewModel = nil
+        }
+    }
+
+    func cancelAll() {
+        activeViewModel?.cancelOwnedOperations()
+        activeRoute = nil
+        activeViewModel = nil
+    }
+}
+
 struct IOSContentView: View {
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject private var deepLinkManager = DeepLinkManager.shared
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @StateObject private var routeViewModelStore = IOSRouteViewModelStore()
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
     @State private var selectedRoute: IOSSidebarRoute?
@@ -99,6 +143,7 @@ struct IOSContentView: View {
             }
         }
         .onChange(of: selectedRoute) { _, newRoute in
+            routeViewModelStore.updateActiveRoute(newRoute)
             syncConversationManagerFromRoute(newRoute)
             syncCompactPathFromRoute(newRoute)
             if newRoute != nil {
@@ -110,7 +155,11 @@ struct IOSContentView: View {
             if selectedRoute != activeRoute {
                 selectedRoute = activeRoute
             }
+            routeViewModelStore.updateActiveRoute(activeRoute)
             syncConversationManagerFromRoute(activeRoute)
+        }
+        .onDisappear {
+            routeViewModelStore.cancelAll()
         }
         .onChange(of: conversationManager.selectedConversationId) { _, newId in
             syncRouteFromConversationManager(newId)
@@ -131,16 +180,24 @@ struct IOSContentView: View {
 
     @ViewBuilder
     private func detailView(for route: IOSSidebarRoute?) -> some View {
+        let viewModel = routeViewModelStore.viewModel(
+            for: route,
+            conversationManager: conversationManager
+        )
         switch route {
         case let .conversation(selectedId):
             IOSChatView(
                 conversationId: selectedId,
-                conversationManager: conversationManager
+                conversationManager: conversationManager,
+                viewModel: viewModel
             )
             .id(selectedId)
         case .newChat, .none:
-            IOSNewChatView(conversationManager: conversationManager)
-                .id(route)
+            IOSNewChatView(
+                conversationManager: conversationManager,
+                viewModel: viewModel
+            )
+            .id(route)
         }
     }
 
@@ -238,7 +295,7 @@ struct IOSContentView: View {
 struct IOSNewChatView: View {
     @ObservedObject var conversationManager: ConversationManager
     @ObservedObject private var aiService = AIService.shared
-    @StateObject private var viewModel: IOSChatViewModel
+    @ObservedObject private var viewModel: IOSChatViewModel
 
     @State private var isFileImporterPresented = false
     @State private var followsLatest = true
@@ -251,11 +308,9 @@ struct IOSNewChatView: View {
 
     @State private var cachedDisplayableItems: [ChatTranscriptItem] = []
 
-    init(conversationManager: ConversationManager) {
+    init(conversationManager: ConversationManager, viewModel: IOSChatViewModel) {
         self.conversationManager = conversationManager
-        _viewModel = StateObject(
-            wrappedValue: IOSChatViewModel(conversationManager: conversationManager)
-        )
+        self.viewModel = viewModel
     }
 
     private var pendingConversation: Conversation? {
@@ -480,16 +535,21 @@ struct IOSNewChatView: View {
                 conversationManager.selectedConversationId = conversationId
             }
 
-            viewModel.resetForNewChat()
+            if !viewModel.isGenerating,
+               viewModel.conversationId == nil,
+               viewModel.messageText.isEmpty,
+               viewModel.attachedFiles.isEmpty,
+               viewModel.attachedImages.isEmpty,
+               viewModel.pastedImages.isEmpty
+            {
+                viewModel.resetForNewChat()
+            }
 
             DiagnosticsLogger.log(
                 .chatView,
                 level: .info,
                 message: "📱 IOSNewChatView appeared"
             )
-        }
-        .onDisappear {
-            viewModel.cancelOwnedOperations()
         }
     }
 
