@@ -22,7 +22,7 @@ extension AIServiceTests {
             }
         )
 
-        #expect(errors.value == [":Please add or select a model in Settings"])
+        #expect(errors.value == [":No model selected"])
         #expect(allComplete.value)
     }
 

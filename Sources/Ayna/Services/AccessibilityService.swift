@@ -8,21 +8,50 @@
 
         private(set) var isEnabled: Bool = false
 
+        var isMonitoring: Bool {
+            pollingTask != nil
+        }
+
         private var pollingTask: Task<Void, Never>?
 
-        private let pollingInterval: Duration = .seconds(2)
+        private let pollingInterval: Duration
+        private let isProcessTrusted: (Bool) -> Bool
+        private let openPreferencesURL: (URL) -> Bool
+        private let applicationElementFactory: (pid_t) -> AXUIElement
+        private let copyAttributeValue: (AXUIElement, CFString) -> (AXError, CFTypeRef?)
+        private let notificationCenter: NotificationCenter
 
-        private init() {
+        init(
+            pollingInterval: Duration = .seconds(2),
+            notificationCenter: NotificationCenter = .default,
+            isProcessTrusted: @escaping (Bool) -> Bool = { prompt in
+                let options: CFDictionary = [
+                    "AXTrustedCheckOptionPrompt" as CFString: prompt
+                ] as CFDictionary
+                return AXIsProcessTrustedWithOptions(options)
+            },
+            openPreferencesURL: @escaping (URL) -> Bool = { url in
+                NSWorkspace.shared.open(url)
+            },
+            applicationElementFactory: @escaping (pid_t) -> AXUIElement = AXUIElementCreateApplication,
+            copyAttributeValue: @escaping (AXUIElement, CFString) -> (AXError, CFTypeRef?) = { element, attribute in
+                var value: CFTypeRef?
+                let result = AXUIElementCopyAttributeValue(element, attribute, &value)
+                return (result, value)
+            }
+        ) {
+            self.pollingInterval = pollingInterval
+            self.notificationCenter = notificationCenter
+            self.isProcessTrusted = isProcessTrusted
+            self.openPreferencesURL = openPreferencesURL
+            self.applicationElementFactory = applicationElementFactory
+            self.copyAttributeValue = copyAttributeValue
             isEnabled = checkPermission(prompt: false)
         }
 
         @discardableResult
         func checkPermission(prompt: Bool) -> Bool {
-            let options: CFDictionary = [
-                "AXTrustedCheckOptionPrompt" as CFString: prompt
-            ] as CFDictionary
-
-            let trusted = AXIsProcessTrustedWithOptions(options)
+            let trusted = isProcessTrusted(prompt)
             isEnabled = trusted
 
             DiagnosticsLogger.log(
@@ -48,7 +77,7 @@
                 return
             }
 
-            NSWorkspace.shared.open(url)
+            _ = openPreferencesURL(url)
 
             DiagnosticsLogger.log(
                 .attachFromApp,
@@ -81,7 +110,7 @@
                             metadata: ["enabled": "\(nowEnabled)"]
                         )
 
-                        NotificationCenter.default.post(
+                        notificationCenter.post(
                             name: .accessibilityPermissionChanged,
                             object: nil,
                             userInfo: ["enabled": nowEnabled]
@@ -105,15 +134,13 @@
         }
 
         func createApplicationElement(for app: NSRunningApplication) -> AXUIElement {
-            AXUIElementCreateApplication(app.processIdentifier)
+            applicationElementFactory(app.processIdentifier)
         }
 
         func getFocusedElement(in appElement: AXUIElement) -> AXUIElement? {
-            var focusedElement: CFTypeRef?
-            let result = AXUIElementCopyAttributeValue(
+            let (result, focusedElement) = copyAttributeValue(
                 appElement,
-                kAXFocusedUIElementAttribute as CFString,
-                &focusedElement
+                kAXFocusedUIElementAttribute as CFString
             )
 
             guard result == .success,
@@ -127,8 +154,7 @@
         }
 
         func getAttributeValue(_ element: AXUIElement, attribute: String) -> CFTypeRef? {
-            var value: CFTypeRef?
-            let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+            let (result, value) = copyAttributeValue(element, attribute as CFString)
 
             guard result == .success else {
                 return nil
@@ -161,12 +187,48 @@
             getStringAttribute(element, attribute: kAXTitleAttribute as String)
         }
 
+        func getDescription(_ element: AXUIElement) -> String? {
+            getStringAttribute(element, attribute: kAXDescriptionAttribute as String)
+        }
+
+        func getIdentifier(_ element: AXUIElement) -> String? {
+            getStringAttribute(element, attribute: kAXIdentifierAttribute as String)
+        }
+
+        func getSubrole(_ element: AXUIElement) -> String? {
+            getStringAttribute(element, attribute: kAXSubroleAttribute as String)
+        }
+
+        func getDocument(_ element: AXUIElement) -> String? {
+            getStringAttribute(element, attribute: kAXDocumentAttribute as String)
+        }
+
+        func getURL(_ element: AXUIElement) -> String? {
+            guard let value = getAttributeValue(element, attribute: kAXURLAttribute as String) else {
+                return nil
+            }
+
+            if let url = value as? URL {
+                return url.absoluteString
+            }
+
+            return value as? String
+        }
+
+        func getChildren(_ element: AXUIElement) -> [AXUIElement] {
+            guard let value = getAttributeValue(element, attribute: kAXChildrenAttribute as String),
+                  let children = value as? [AXUIElement]
+            else {
+                return []
+            }
+
+            return children
+        }
+
         func getFocusedWindow(in appElement: AXUIElement) -> AXUIElement? {
-            var focusedWindow: CFTypeRef?
-            let result = AXUIElementCopyAttributeValue(
+            let (result, focusedWindow) = copyAttributeValue(
                 appElement,
-                kAXFocusedWindowAttribute as CFString,
-                &focusedWindow
+                kAXFocusedWindowAttribute as CFString
             )
 
             guard result == .success,

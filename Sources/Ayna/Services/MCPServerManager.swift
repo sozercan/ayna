@@ -35,17 +35,20 @@
 
     private struct ManagedMCPTask: Sendable {
         let operationID: UUID
+        let configID: UUID?
         let generation: UInt64
         let task: Task<Void, Never>
         let completion: ManagedMCPTaskCompletion
 
         init(
             operationID: UUID = UUID(),
+            configID: UUID? = nil,
             generation: UInt64,
             operation: @escaping @MainActor @Sendable () async -> Void
         ) {
             let completion = ManagedMCPTaskCompletion()
             self.operationID = operationID
+            self.configID = configID
             self.generation = generation
             self.completion = completion
             task = Task { @MainActor in
@@ -135,7 +138,7 @@
         @Published var availableTools: [MCPTool] = []
         @Published var availableResources: [MCPResource] = []
         @Published var isDiscovering = false
-        @Published private(set) var serverStatuses: [String: MCPServerStatus] = [:]
+        @Published private(set) var serverStatuses: [UUID: MCPServerStatus] = [:]
 
         private var services: [String: ManagedMCPService] = [:]
         private var serverGenerations: [String: UInt64] = [:]
@@ -194,16 +197,7 @@
             serverConfigs[index] = config
             saveServerConfigs()
 
-            if previousConfig.name != config.name {
-                let existingStatus = serverStatuses.removeValue(forKey: previousConfig.name)
-                if let existingStatus {
-                    setStatus(for: config, state: existingStatus.state, error: existingStatus.lastError)
-                } else {
-                    setStatus(for: config, state: config.enabled ? .idle : .disabled)
-                }
-            } else {
-                setStatus(for: config, state: nil)
-            }
+            setStatus(for: config, state: nil)
 
             invalidateToolCache()
 
@@ -225,10 +219,18 @@
 
         @MainActor
         func removeServerConfig(_ config: MCPServerConfig) {
-            disconnectServer(config.name)
+            let hasOtherConfigWithSameName = serverConfigs.contains {
+                $0.id != config.id && $0.name == config.name
+            }
+            let ownsActiveOrPendingState = services[config.name]?.configID == config.id
+                || connectionTasks[config.name]?.configID == config.id
+                || reconnectTasks[config.name]?.configID == config.id
+            if !hasOtherConfigWithSameName || ownsActiveOrPendingState {
+                disconnectServer(config.name)
+            }
             serverConfigs.removeAll { $0.id == config.id }
             saveServerConfigs()
-            serverStatuses.removeValue(forKey: config.name)
+            serverStatuses.removeValue(forKey: config.id)
         }
 
         private func saveServerConfigs() {
@@ -302,7 +304,10 @@
                 return
             }
 
-            if let managed = services[config.name], managed.service.isConnected {
+            if let managed = services[config.name],
+               managed.configID == config.id,
+               managed.service.isConnected
+            {
                 if !availableTools.contains(where: { $0.serverName == config.name }),
                    let operation = startDiscoveryOperation(
                        serverName: config.name,
@@ -330,7 +335,10 @@
         private func launchConnection(to requestedConfig: MCPServerConfig, autoDisableOnFailure: Bool = true) {
             guard let config = currentConfig(matching: requestedConfig), config.enabled else { return }
 
-            if let managed = services[config.name], managed.service.isConnected {
+            if let managed = services[config.name],
+               managed.configID == config.id,
+               managed.service.isConnected
+            {
                 if !availableTools.contains(where: { $0.serverName == config.name }) {
                     _ = startDiscoveryOperation(
                         serverName: config.name,
@@ -348,17 +356,40 @@
             autoDisableOnFailure: Bool
         ) -> ManagedMCPTask? {
             if let existing = connectionTasks[config.name],
-               existing.generation == serverGenerations[config.name]
+               existing.generation == serverGenerations[config.name],
+               existing.configID == config.id
             {
                 return existing
             }
 
             let generation = advanceGeneration(for: config.name)
+            var displacedConfigIDs = Set<UUID>()
+            if let existingConnection = connectionTasks[config.name]?.configID, existingConnection != config.id {
+                displacedConfigIDs.insert(existingConnection)
+            }
+            if let existingReconnect = reconnectTasks[config.name]?.configID, existingReconnect != config.id {
+                displacedConfigIDs.insert(existingReconnect)
+            }
+            if let existingDiscovery = discoveryTasks[config.name]?.configID, existingDiscovery != config.id {
+                displacedConfigIDs.insert(existingDiscovery)
+            }
             cancelServerTasks(for: config.name)
 
             if let previous = services.removeValue(forKey: config.name) {
                 previous.service.delegate = nil
                 previous.service.disconnect()
+                if previous.configID != config.id {
+                    displacedConfigIDs.insert(previous.configID)
+                }
+            }
+            for displacedID in displacedConfigIDs {
+                if let displacedConfig = serverConfigs.first(where: { $0.id == displacedID }) {
+                    setStatus(
+                        for: displacedConfig,
+                        state: displacedConfig.enabled ? .idle : .disabled,
+                        clearExistingError: true
+                    )
+                }
             }
             removeArtifacts(for: config.name)
 
@@ -377,7 +408,7 @@
             )
             setStatus(for: config, state: .connecting, clearExistingError: true)
 
-            let operation = ManagedMCPTask(generation: generation) { [weak self, service] in
+            let operation = ManagedMCPTask(configID: config.id, generation: generation) { [weak self, service] in
                 guard let self else { return }
                 await self.runConnection(
                     config: config,
@@ -597,7 +628,7 @@
 
             setStatus(for: config, state: .reconnecting)
             let delaySeconds = max(TimeInterval.zero, reconnectDelayProvider())
-            reconnectTasks[config.name] = ManagedMCPTask(generation: generation) { [weak self] in
+            reconnectTasks[config.name] = ManagedMCPTask(configID: config.id, generation: generation) { [weak self] in
                 guard let self else { return }
                 do {
                     if delaySeconds > 0 {
@@ -608,16 +639,20 @@
                     self.clearReconnectTask(serverName: config.name, generation: generation)
                     return
                 }
-                self.performScheduledReconnect(serverName: config.name, generation: generation)
+                self.performScheduledReconnect(
+                    configID: config.id,
+                    serverName: config.name,
+                    generation: generation
+                )
             }
         }
 
-        private func performScheduledReconnect(serverName: String, generation: UInt64) {
+        private func performScheduledReconnect(configID: UUID, serverName: String, generation: UInt64) {
             guard reconnectTasks[serverName]?.generation == generation else { return }
             reconnectTasks.removeValue(forKey: serverName)
 
             guard serverGenerations[serverName] == generation,
-                  let config = serverConfigs.first(where: { $0.name == serverName }),
+                  let config = serverConfigs.first(where: { $0.id == configID && $0.name == serverName }),
                   config.enabled
             else {
                 return
@@ -635,7 +670,7 @@
             }
             removeArtifacts(for: serverName)
 
-            if let config = serverConfigs.first(where: { $0.name == serverName }) {
+            for config in serverConfigs where config.name == serverName {
                 setStatus(for: config, state: config.enabled ? .idle : .disabled)
             }
         }
@@ -648,6 +683,39 @@
 
             let operations = enabledConfigs.compactMap { connectionTasks[$0.name] }
             await awaitOperations(operations)
+        }
+
+        func waitForPendingDiscovery(timeout: Duration = .seconds(2)) async {
+            guard timeout > .zero else { return }
+
+            let enabledNames = Set(serverConfigs.lazy.filter(\.enabled).map(\.name))
+            guard !enabledNames.isEmpty else { return }
+
+            let pendingOperations = enabledNames.flatMap { name -> [ManagedMCPTask] in
+                var operations: [ManagedMCPTask] = []
+                if let connection = connectionTasks[name] {
+                    operations.append(connection)
+                }
+                if let discovery = discoveryTasks[name] {
+                    operations.append(discovery)
+                }
+                return operations
+            }
+            guard !pendingOperations.isEmpty else { return }
+
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    for operation in pendingOperations {
+                        guard !Task.isCancelled else { return }
+                        await operation.completion.wait()
+                    }
+                }
+                group.addTask {
+                    try? await Task.sleep(for: timeout)
+                }
+                _ = await group.next()
+                group.cancelAll()
+            }
         }
 
         func disconnectAllServers() {
@@ -1031,8 +1099,26 @@
             }
         }
 
+        func isServerConnected(_ configID: UUID) -> Bool {
+            if case .connected? = serverStatuses[configID]?.state {
+                return true
+            }
+            if let config = serverConfigs.first(where: { $0.id == configID }),
+               let managed = services[config.name],
+               managed.configID == configID
+            {
+                return managed.service.isConnected
+            }
+            return false
+        }
+
         func isServerConnected(_ serverName: String) -> Bool {
-            if case .connected? = serverStatuses[serverName]?.state {
+            if serverStatuses.values.contains(where: {
+                if $0.name == serverName, case .connected = $0.state {
+                    return true
+                }
+                return false
+            }) {
                 return true
             }
             return services[serverName]?.service.isConnected ?? false
@@ -1047,8 +1133,17 @@
             })
         }
 
+        func getServerStatus(_ configID: UUID) -> MCPServerStatus? {
+            serverStatuses[configID]
+        }
+
         func getServerStatus(_ serverName: String) -> MCPServerStatus? {
-            serverStatuses[serverName]
+            if let config = serverConfigs.first(where: { $0.name == serverName }),
+               let status = serverStatuses[config.id]
+            {
+                return status
+            }
+            return serverStatuses.values.first { $0.name == serverName }
         }
 
         func getEnabledTools() -> [MCPTool] {
@@ -1107,7 +1202,7 @@
             serverStatuses = Dictionary(
                 serverConfigs.map { config in
                     (
-                        config.name,
+                        config.id,
                         MCPServerStatus(
                             configID: config.id,
                             name: config.name,
@@ -1128,7 +1223,7 @@
             error: String? = nil,
             clearExistingError: Bool = false
         ) {
-            let existingStatus = serverStatuses[config.name]
+            let existingStatus = serverStatuses[config.id]
             let resolvedState = state ?? existingStatus?.state ?? (config.enabled ? .idle : .disabled)
 
             var resolvedError = error ?? existingStatus?.lastError
@@ -1139,8 +1234,11 @@
                 resolvedError = message
             }
 
-            let toolCount = availableTools.count(where: { $0.serverName == config.name })
-            serverStatuses[config.name] = MCPServerStatus(
+            let ownsService = services[config.name]?.configID == config.id
+            let toolCount = ownsService
+                ? availableTools.count(where: { $0.serverName == config.name })
+                : 0
+            serverStatuses[config.id] = MCPServerStatus(
                 configID: config.id,
                 name: config.name,
                 state: resolvedState,
@@ -1151,8 +1249,9 @@
         }
 
         func refreshStatusToolCount(for serverName: String) {
-            guard let config = serverConfigs.first(where: { $0.name == serverName }) else { return }
-            setStatus(for: config, state: nil)
+            for config in serverConfigs where config.name == serverName {
+                setStatus(for: config, state: nil)
+            }
         }
 
         func refreshAllStatusToolCounts() {

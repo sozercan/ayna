@@ -411,4 +411,158 @@ struct AnthropicRequestBuilderTests {
         #expect(msgs?.count == 1)
         #expect(msgs?[0]["role"] as? String == "user")
     }
+
+    @Test("Claude 3.7 Sonnet non-streaming High and Max thinking budgets keep budget_tokens < max_tokens")
+    func claude37NonStreamingHighAndMaxThinkingBudgetsResolveWithinCap() throws {
+        let model = "claude-3-7-sonnet-20250219"
+        let messages = [Message(role: .user, content: "Solve this step by step")]
+
+        for preset in [AnthropicThinkingBudget.high, AnthropicThinkingBudget.max] {
+            let resolved = AnthropicOutputLimits.resolvedLimits(
+                model: model,
+                stream: false,
+                requestedMaxTokens: nil,
+                requestedBudgetTokens: preset.budgetTokens
+            )
+            let config = AnthropicRequestConfig(
+                model: model,
+                apiKey: "test-key",
+                maxTokens: resolved.maxTokens,
+                budgetTokens: resolved.budgetTokens
+            )
+
+            let body = try AnthropicRequestBuilder.buildMessagesBody(
+                messages: messages,
+                config: config,
+                stream: false,
+                tools: nil
+            )
+
+            let maxTokens = try #require(body["max_tokens"] as? Int)
+            let thinking = try #require(body["thinking"] as? [String: Any])
+            let budgetTokens = try #require(thinking["budget_tokens"] as? Int)
+
+            #expect(budgetTokens == preset.budgetTokens)
+            #expect(budgetTokens < maxTokens)
+            #expect(maxTokens <= 64000)
+        }
+    }
+
+    @Test("Thinking budget is clamped below model output cap when max_tokens cannot expand")
+    func thinkingBudgetClampedToModelCap() {
+        let resolved = AnthropicOutputLimits.resolvedLimits(
+            model: "claude-opus-4-20250514",
+            stream: false,
+            requestedMaxTokens: nil,
+            requestedBudgetTokens: AnthropicThinkingBudget.max.budgetTokens
+        )
+
+        #expect(resolved.maxTokens == 32000)
+        #expect(resolved.budgetTokens == 31999)
+    }
+
+    @Test("Thinking stays enabled when tools are available on a normal turn")
+    func thinkingStaysEnabledWhenToolsAreAvailableWithoutToolHistory() throws {
+        let config = AnthropicRequestConfig(
+            model: "claude-sonnet-4-20250514",
+            apiKey: "test-key",
+            maxTokens: 16000,
+            budgetTokens: AnthropicThinkingBudget.medium.budgetTokens
+        )
+        let tools: [[String: Any]] = [
+            [
+                "type": "function",
+                "function": [
+                    "name": "web_fetch",
+                    "description": "Fetch a URL",
+                    "parameters": ["type": "object", "properties": [:]]
+                ]
+            ]
+        ]
+
+        let body = try AnthropicRequestBuilder.buildMessagesBody(
+            messages: [Message(role: .user, content: "Fetch example.com")],
+            config: config,
+            stream: true,
+            tools: tools
+        )
+
+        let thinking = try #require(body["thinking"] as? [String: Any])
+        #expect(thinking["type"] as? String == "enabled")
+        #expect(thinking["budget_tokens"] as? Int == AnthropicThinkingBudget.medium.budgetTokens)
+        #expect((body["tools"] as? [[String: Any]])?.count == 1)
+    }
+
+    @Test("Thinking is omitted on tool continuation turns without stored thinking blocks")
+    func thinkingOmittedOnToolContinuationTurns() throws {
+        let config = AnthropicRequestConfig(
+            model: "claude-sonnet-4-20250514",
+            apiKey: "test-key",
+            maxTokens: 16000,
+            budgetTokens: AnthropicThinkingBudget.medium.budgetTokens
+        )
+        let toolCall = MCPToolCall(
+            id: "toolu_123",
+            toolName: "web_fetch",
+            arguments: ["url": AnyCodable("https://example.com")]
+        )
+        let messages = [
+            Message(role: .user, content: "Fetch example.com"),
+            Message(role: .assistant, content: "", toolCalls: [toolCall]),
+            Message(role: .tool, content: "Example Domain", toolCalls: [toolCall])
+        ]
+        let tools: [[String: Any]] = [
+            [
+                "type": "function",
+                "function": [
+                    "name": "web_fetch",
+                    "description": "Fetch a URL",
+                    "parameters": ["type": "object", "properties": [:]]
+                ]
+            ]
+        ]
+
+        let body = try AnthropicRequestBuilder.buildMessagesBody(
+            messages: messages,
+            config: config,
+            stream: true,
+            tools: tools
+        )
+
+        #expect(body["thinking"] == nil)
+        #expect((body["tools"] as? [[String: Any]])?.count == 1)
+    }
+
+    @Test("Thinking resumes on a new user turn after a completed tool exchange")
+    func thinkingResumesAfterCompletedToolExchange() throws {
+        let config = AnthropicRequestConfig(
+            model: "claude-sonnet-4-20250514",
+            apiKey: "test-key",
+            maxTokens: 16000,
+            budgetTokens: AnthropicThinkingBudget.medium.budgetTokens
+        )
+        let toolCall = MCPToolCall(
+            id: "toolu_123",
+            toolName: "web_fetch",
+            arguments: ["url": AnyCodable("https://example.com")]
+        )
+        let messages = [
+            Message(role: .user, content: "Fetch example.com"),
+            Message(role: .assistant, content: "", toolCalls: [toolCall]),
+            Message(role: .tool, content: "Example Domain", toolCalls: [toolCall]),
+            Message(role: .assistant, content: "It says Example Domain."),
+            Message(role: .user, content: "Summarize that in one sentence.")
+        ]
+
+        let body = try AnthropicRequestBuilder.buildMessagesBody(
+            messages: messages,
+            config: config,
+            stream: true,
+            tools: nil
+        )
+
+        let thinking = try #require(body["thinking"] as? [String: Any])
+        #expect(thinking["type"] as? String == "enabled")
+        #expect(thinking["budget_tokens"] as? Int == AnthropicThinkingBudget.medium.budgetTokens)
+    }
 }

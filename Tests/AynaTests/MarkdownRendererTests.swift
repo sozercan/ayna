@@ -117,6 +117,45 @@ struct MarkdownRendererTests {
         #expect(String(table.headers[0].characters) == "Name")
     }
 
+    @Test("Parses table alignments and inline markdown cells")
+    func parsesTableAlignmentsAndInlineMarkdownCells() {
+        let input = """
+        | **Feature** | *Status* | `Count` |
+        | :--- | :---: | ---: |
+        | Tables | **Ready** | `42` |
+        | Links | [Ayna](https://example.com) | 100 |
+        """
+        let blocks = MarkdownRenderer.parse(input)
+        #expect(blocks.count == 1)
+        guard case let .table(table) = blocks[0].type else {
+            Issue.record("Expected table block")
+            return
+        }
+
+        #expect(table.headers.map { String($0.characters) } == ["Feature", "Status", "Count"])
+        #expect(table.alignments == [.leading, .center, .trailing])
+        #expect(table.rows.count == 2)
+        #expect(table.rows[0].map { String($0.characters) } == ["Tables", "Ready", "42"])
+        #expect(table.rows[1].map { String($0.characters) } == ["Links", "Ayna", "100"])
+
+        #expect(table.alignment(forColumn: 0) == .leading)
+        #expect(table.alignment(forColumn: 1) == .center)
+        #expect(table.alignment(forColumn: 2) == .trailing)
+        #expect(table.alignment(forColumn: 99) == .leading)
+        #expect(table.alignment(forColumn: -1) == .leading)
+
+        #expect(MarkdownTable.ColumnAlignment.leading.frameAlignment == .leading)
+        #expect(MarkdownTable.ColumnAlignment.center.frameAlignment == .center)
+        #expect(MarkdownTable.ColumnAlignment.trailing.frameAlignment == .trailing)
+        #expect(MarkdownTable.ColumnAlignment.leading.textAlignment == .leading)
+        #expect(MarkdownTable.ColumnAlignment.center.textAlignment == .center)
+        #expect(MarkdownTable.ColumnAlignment.trailing.textAlignment == .trailing)
+
+        let linkCell = table.rows[1][1]
+        let hasLink = linkCell.runs.contains { $0.link == URL(string: "https://example.com") }
+        #expect(hasLink)
+    }
+
     @Test("Parses nested code blocks")
     func parsesNestedCodeBlocks() {
         let input = """

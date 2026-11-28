@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 
 struct IOSChatView: View {
     let conversationId: UUID
-    @EnvironmentObject var conversationManager: ConversationManager
+    @ObservedObject var conversationManager: ConversationManager
     @ObservedObject private var aiService = AIService.shared
 
     @State private var isFileImporterPresented = false
@@ -16,13 +16,23 @@ struct IOSChatView: View {
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var showingSystemPromptSheet = false
     @State private var showModelSelector = false
-    @StateObject private var viewModel = IOSChatViewModel.placeholder()
+    @ObservedObject private var viewModel: IOSChatViewModel
 
     @State private var showScrollToBottom = false
     @State private var followsLatest = true
     @State private var restoredPosition = ScrollPosition()
 
     @State private var cachedDisplayableItems: [ChatTranscriptItem] = []
+
+    init(
+        conversationId: UUID,
+        conversationManager: ConversationManager,
+        viewModel: IOSChatViewModel
+    ) {
+        self.conversationId = conversationId
+        self.conversationManager = conversationManager
+        self.viewModel = viewModel
+    }
 
     private var conversation: Conversation? {
         conversationManager.conversations.first { $0.id == conversationId }
@@ -294,9 +304,6 @@ struct IOSChatView: View {
         .onAppear {
             viewModel.configure(with: conversationManager, conversationId: conversationId)
             initializeSelectedModelsIfNeeded()
-        }
-        .onDisappear {
-            viewModel.cancelOwnedOperations()
         }
         .onChange(of: conversation?.model) { _, newModel in
             if viewModel.selectedModels.isEmpty, let model = newModel, !model.isEmpty {

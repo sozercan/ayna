@@ -34,16 +34,27 @@ class WatchUITestCase: XCTestCase {
         newChatButton.tap()
     }
 
-    func sendNewChatMessage(_ text: String) {
+    func sendNewChatMessage(_ text: String) throws {
         let textField = app.textFields["watch.newChat.composerTextField"]
         XCTAssertTrue(textField.waitForExistence(timeout: UITestTimeout.normal), "New chat text field not found")
         textField.tap()
-        textField.typeText(text)
+
+        let focusedPredicate = NSPredicate(
+            format: "identifier == %@ AND hasKeyboardFocus == 1",
+            "watch.newChat.composerTextField"
+        )
+        let focusedTextField = app.textFields.matching(focusedPredicate).firstMatch
+        guard focusedTextField.waitForExistence(timeout: UITestTimeout.immediate) else {
+            throw XCTSkip("watchOS simulator Quickboard did not grant keyboard focus to composerTextField")
+        }
+
+        focusedTextField.typeText(text)
 
         let returnKey = app.keyboards.buttons["return"]
-        if returnKey.waitForExistence(timeout: UITestTimeout.immediate) {
-            returnKey.tap()
+        guard returnKey.waitForExistence(timeout: UITestTimeout.immediate), returnKey.isHittable else {
+            throw XCTSkip("watchOS simulator keyboard submission is unavailable")
         }
+        returnKey.tap()
     }
 
     func sendChatMessage(_ text: String) {

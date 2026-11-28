@@ -128,7 +128,7 @@ struct MCPToolSummaryView: View {
 
     private var toolStatusChipModels: [ToolStatusChipModel] {
         mcpManager.serverConfigs.map { config in
-            let status = mcpManager.getServerStatus(config.name)
+            let status = mcpManager.getServerStatus(config.id)
             return ToolStatusChipModel(
                 id: config.id,
                 name: config.name,

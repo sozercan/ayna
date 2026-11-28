@@ -69,12 +69,24 @@ final class SessionMetadataService {
         #if os(macOS)
             NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         #elseif os(iOS)
-            UITraitCollection.current.userInterfaceStyle == .dark
+            Self.isDarkMode(
+                in: UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.map {
+                    (isForegroundActive: $0.activationState == .foregroundActive, isDark: $0.traitCollection.userInterfaceStyle == .dark)
+                }
+            )
         #elseif os(watchOS)
             true
         #else
             false
         #endif
+    }
+
+    static func isDarkMode(in scenes: [(isForegroundActive: Bool, isDark: Bool)]) -> Bool {
+        if let activeScene = scenes.first(where: \.isForegroundActive) {
+            return activeScene.isDark
+        }
+
+        return scenes.first?.isDark ?? false
     }
 
     func computeConversationPatterns(from conversations: [Conversation]) -> SessionMetadata.ConversationPatterns? {

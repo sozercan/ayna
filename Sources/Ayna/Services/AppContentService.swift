@@ -320,23 +320,50 @@
     final class AppContentService {
         static let shared = AppContentService()
 
-        private let extractors: [AppExtractor] = [
-            TerminalExtractor(),
-            CodeEditorExtractor(),
-            BrowserExtractor(),
-            GenericExtractor()
-        ]
+        private let extractors: [AppExtractor]
+        private let checkPermission: () -> Bool
+        private let createApplicationElement: (NSRunningApplication) -> AXUIElement
+        private let frontmostApplicationProvider: () -> NSRunningApplication?
+        private let appBundleIdentifierProvider: (NSRunningApplication) -> String?
+        private let ownBundleIdentifierProvider: () -> String?
 
-        private init() {}
+        init(
+            extractors: [AppExtractor] = [
+                TerminalExtractor(),
+                CodeEditorExtractor(),
+                BrowserExtractor(),
+                GenericExtractor()
+            ],
+            checkPermission: @escaping () -> Bool = {
+                AccessibilityService.shared.checkPermission(prompt: false)
+            },
+            createApplicationElement: @escaping (NSRunningApplication) -> AXUIElement = { app in
+                AccessibilityService.shared.createApplicationElement(for: app)
+            },
+            frontmostApplicationProvider: @escaping () -> NSRunningApplication? = {
+                NSWorkspace.shared.frontmostApplication
+            },
+            appBundleIdentifierProvider: @escaping (NSRunningApplication) -> String? = \.bundleIdentifier,
+            ownBundleIdentifierProvider: @escaping () -> String? = {
+                Bundle.main.bundleIdentifier
+            }
+        ) {
+            self.extractors = extractors
+            self.checkPermission = checkPermission
+            self.createApplicationElement = createApplicationElement
+            self.frontmostApplicationProvider = frontmostApplicationProvider
+            self.appBundleIdentifierProvider = appBundleIdentifierProvider
+            self.ownBundleIdentifierProvider = ownBundleIdentifierProvider
+        }
 
         func extractContent(from app: NSRunningApplication) async -> AppContentResult {
-            guard AccessibilityService.shared.checkPermission(prompt: false) else {
+            guard checkPermission() else {
                 return .permissionDenied
             }
 
-            let bundleId = app.bundleIdentifier ?? ""
+            let bundleId = appBundleIdentifierProvider(app) ?? ""
 
-            let appElement = AccessibilityService.shared.createApplicationElement(for: app)
+            let appElement = createApplicationElement(app)
 
             guard let extractor = extractors.first(where: { $0.canHandle(bundleIdentifier: bundleId) })
                 ?? extractors.last
@@ -390,11 +417,13 @@
         }
 
         func extractFromFrontmostApp() async -> AppContentResult {
-            guard let frontApp = NSWorkspace.shared.frontmostApplication else {
+            guard let frontApp = frontmostApplicationProvider() else {
                 return .noFocusedApp
             }
 
-            if frontApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+            if let ownBundleId = ownBundleIdentifierProvider(),
+               appBundleIdentifierProvider(frontApp) == ownBundleId
+            {
                 return .noContentAvailable
             }
 
@@ -629,17 +658,289 @@
         }
 
         private func findURLFromBrowser(element: AXUIElement) async -> String? {
-            var result: String?
+            let accessibility = AccessibilityService.shared
 
-            if let focused = AccessibilityService.shared.getFocusedElement(in: element) {
-                if let value = AccessibilityService.shared.getValue(focused) {
-                    if value.hasPrefix("http://") || value.hasPrefix("https://") || value.contains(".") {
-                        result = value
-                    }
+            if let window = accessibility.getFocusedWindow(in: element) {
+                if let documentURL = Self.normalizedBrowserURL(from: accessibility.getDocument(window)) {
+                    return documentURL
+                }
+
+                if let hierarchyURL = findURLInHierarchy(root: window, accessibility: accessibility) {
+                    return hierarchyURL
                 }
             }
 
-            return result
+            if let focused = accessibility.getFocusedElement(in: element) {
+                if let documentURL = Self.normalizedBrowserURL(from: accessibility.getDocument(focused)) {
+                    return documentURL
+                }
+
+                let focusedRole = accessibility.getRole(focused)
+                if focusedRole == "AXWebArea",
+                   let webAreaURL = Self.normalizedBrowserURL(from: accessibility.getURL(focused))
+                {
+                    return webAreaURL
+                }
+
+                if isAddressBarCandidate(focused, accessibility: accessibility),
+                   let valueURL = Self.normalizedBrowserURL(from: accessibility.getValue(focused))
+                   ?? Self.normalizedBrowserURL(from: accessibility.getURL(focused))
+                {
+                    return valueURL
+                }
+            }
+
+            return nil
+        }
+
+        private func findURLInHierarchy(root: AXUIElement, accessibility: AccessibilityService) -> String? {
+            let maxDepth = 8
+            let maxEnqueuedElements = 300
+            var queue: [(element: AXUIElement, depth: Int)] = [(root, 0)]
+            var queueIndex = 0
+            var addressBarFallback: String?
+
+            while queueIndex < queue.count {
+                let current = queue[queueIndex]
+                queueIndex += 1
+
+                if current.depth > 0 {
+                    let role = accessibility.getRole(current.element)
+
+                    if role == "AXWebArea" {
+                        if let webAreaURL = Self.normalizedBrowserURL(from: accessibility.getURL(current.element))
+                            ?? Self.normalizedBrowserURL(from: accessibility.getDocument(current.element))
+                        {
+                            return webAreaURL
+                        }
+                    }
+
+                    if addressBarFallback == nil,
+                       Self.isAddressBarRole(role),
+                       Self.isAddressBarDescriptor(
+                           identifier: accessibility.getIdentifier(current.element),
+                           description: accessibility.getDescription(current.element),
+                           title: accessibility.getTitle(current.element),
+                           subrole: accessibility.getSubrole(current.element)
+                       ),
+                       let candidate = Self.normalizedBrowserURL(from: accessibility.getValue(current.element))
+                       ?? Self.normalizedBrowserURL(from: accessibility.getURL(current.element))
+                    {
+                        addressBarFallback = candidate
+                    }
+                }
+
+                guard current.depth < maxDepth, queue.count < maxEnqueuedElements else { continue }
+
+                let remainingCapacity = maxEnqueuedElements - queue.count
+                for child in accessibility.getChildren(current.element).prefix(remainingCapacity) {
+                    queue.append((child, current.depth + 1))
+                }
+            }
+
+            return addressBarFallback
+        }
+
+        private func isAddressBarCandidate(_ element: AXUIElement, accessibility: AccessibilityService) -> Bool {
+            guard Self.isAddressBarRole(accessibility.getRole(element)) else {
+                return false
+            }
+
+            return Self.isAddressBarDescriptor(
+                identifier: accessibility.getIdentifier(element),
+                description: accessibility.getDescription(element),
+                title: accessibility.getTitle(element),
+                subrole: accessibility.getSubrole(element)
+            )
+        }
+
+        static func isAddressBarRole(_ role: String?) -> Bool {
+            guard let role else { return false }
+            return role == (kAXTextFieldRole as String) || role == (kAXComboBoxRole as String)
+        }
+
+        static func isAddressBarDescriptor(
+            identifier: String?,
+            description: String?,
+            title: String?,
+            subrole: String?
+        ) -> Bool {
+            let fields = [identifier, description, title, subrole]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                .filter { !$0.isEmpty }
+
+            let keywords = [
+                "address",
+                "url",
+                "location",
+                "omnibox",
+                "webbrowseraddressandsearchfield",
+                "urlbar"
+            ]
+
+            return fields.contains { field in
+                keywords.contains { field.contains($0) }
+            }
+        }
+
+        static func normalizedBrowserURL(from rawValue: String?) -> String? {
+            guard let rawValue else { return nil }
+
+            let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty,
+                  trimmed.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+            else {
+                return nil
+            }
+
+            if hasLeadingSchemeSeparator(trimmed) || trimmed.lowercased().hasPrefix("file:") {
+                guard let url = URL(string: trimmed),
+                      let scheme = url.scheme?.lowercased()
+                else {
+                    return nil
+                }
+
+                if scheme == "http" || scheme == "https" {
+                    guard let host = url.host, !host.isEmpty else {
+                        return nil
+                    }
+                    return url.absoluteString
+                }
+
+                if scheme == "file" {
+                    return url.absoluteString
+                }
+
+                return nil
+            }
+
+            if hasUnsupportedSchemePrefix(trimmed) {
+                return nil
+            }
+
+            guard let prefixedURL = URL(string: "https://\(trimmed)"),
+                  prefixedURL.user == nil,
+                  prefixedURL.password == nil,
+                  let host = prefixedURL.host,
+                  isValidWebHost(host)
+            else {
+                return nil
+            }
+
+            return prefixedURL.absoluteString
+        }
+
+        private static func hasLeadingSchemeSeparator(_ value: String) -> Bool {
+            guard let schemeEnd = value.range(of: "://")?.lowerBound else {
+                return false
+            }
+            let prefix = value[..<schemeEnd]
+            guard let first = prefix.first, first.isASCII, first.isLetter else {
+                return false
+            }
+            return prefix.allSatisfy { char in
+                char.isASCII && (char.isLetter || char.isNumber || char == "+" || char == "-" || char == ".")
+            }
+        }
+
+        private static func hasUnsupportedSchemePrefix(_ value: String) -> Bool {
+            let authorityEnd = value.firstIndex { $0 == "/" || $0 == "?" || $0 == "#" } ?? value.endIndex
+            let authority = value[..<authorityEnd]
+
+            if authority.hasPrefix("[") {
+                guard let closingBracket = authority.firstIndex(of: "]") else {
+                    return true
+                }
+                let afterBracket = authority[authority.index(after: closingBracket)...]
+                if afterBracket.isEmpty {
+                    return false
+                }
+                guard afterBracket.hasPrefix(":") else {
+                    return true
+                }
+                let portString = afterBracket.dropFirst()
+                guard !portString.isEmpty,
+                      portString.allSatisfy(\.isNumber),
+                      let port = Int(portString),
+                      (1 ... 65535).contains(port)
+                else {
+                    return true
+                }
+                return false
+            }
+
+            guard let colonIndex = authority.firstIndex(of: ":") else {
+                return false
+            }
+
+            let afterColon = authority[authority.index(after: colonIndex)...]
+            guard !afterColon.isEmpty,
+                  afterColon.allSatisfy(\.isNumber),
+                  let port = Int(afterColon),
+                  (1 ... 65535).contains(port)
+            else {
+                return true
+            }
+
+            return false
+        }
+
+        private static func isValidWebHost(_ host: String) -> Bool {
+            let lowercased = host.lowercased()
+            let normalizedHost = if lowercased.hasSuffix("."), !lowercased.hasSuffix("..") {
+                String(lowercased.dropLast())
+            } else {
+                lowercased
+            }
+
+            if normalizedHost == "localhost" {
+                return true
+            }
+
+            if normalizedHost.contains(":") {
+                return true
+            }
+
+            guard normalizedHost.contains("."),
+                  !normalizedHost.hasPrefix("."),
+                  !normalizedHost.hasSuffix("."),
+                  !normalizedHost.contains("..")
+            else {
+                return false
+            }
+
+            let labels = normalizedHost.split(separator: ".")
+            if labels.count == 4, labels.allSatisfy({ Int($0).map { (0 ... 255).contains($0) } ?? false }) {
+                return true
+            }
+
+            guard labels.count >= 2,
+                  let tld = labels.last,
+                  isValidTLD(tld)
+            else {
+                return false
+            }
+
+            return labels.allSatisfy { label in
+                !label.isEmpty &&
+                    !label.hasPrefix("-") &&
+                    !label.hasSuffix("-") &&
+                    label.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" }
+            }
+        }
+
+        private static func isValidTLD(_ tld: Substring) -> Bool {
+            if tld.count >= 2, tld.allSatisfy(\.isLetter) {
+                return true
+            }
+            if tld.hasPrefix("xn--"),
+               tld.count > 4,
+               !tld.hasSuffix("-"),
+               tld.dropFirst(4).allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") })
+            {
+                return true
+            }
+            return false
         }
 
         private func createContent(

@@ -6,29 +6,96 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum IOSSidebarRoute: Hashable {
+    case newChat
+    case conversation(UUID)
+}
+
+@MainActor
+private final class IOSRouteViewModelStore: ObservableObject {
+    private var activeRoute: IOSSidebarRoute?
+    private var activeViewModel: IOSChatViewModel?
+
+    func viewModel(for route: IOSSidebarRoute?, conversationManager: ConversationManager) -> IOSChatViewModel {
+        let normalizedRoute = route ?? .newChat
+        if activeRoute == normalizedRoute, let activeViewModel {
+            return activeViewModel
+        }
+        activeViewModel?.cancelOwnedOperations()
+        let created = switch normalizedRoute {
+        case let .conversation(conversationId):
+            IOSChatViewModel(conversationId: conversationId, conversationManager: conversationManager)
+        case .newChat:
+            IOSChatViewModel(conversationManager: conversationManager)
+        }
+        activeRoute = normalizedRoute
+        activeViewModel = created
+        return created
+    }
+
+    func updateActiveRoute(_ route: IOSSidebarRoute?) {
+        guard let route else {
+            activeViewModel?.cancelOwnedOperations()
+            activeRoute = nil
+            activeViewModel = nil
+            return
+        }
+        if activeRoute != route {
+            activeViewModel?.cancelOwnedOperations()
+            activeRoute = nil
+            activeViewModel = nil
+        }
+    }
+
+    func cancelAll() {
+        activeViewModel?.cancelOwnedOperations()
+        activeRoute = nil
+        activeViewModel = nil
+    }
+}
+
 struct IOSContentView: View {
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject private var deepLinkManager = DeepLinkManager.shared
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @StateObject private var routeViewModelStore = IOSRouteViewModelStore()
     @State private var columnVisibility = NavigationSplitViewVisibility.all
+    @State private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
+    @State private var selectedRoute: IOSSidebarRoute?
+    @State private var compactNavigationPath: [IOSSidebarRoute] = []
     @State private var presentedAddModelRequest: AddModelRequest?
     @State private var dismissingAddModelRequestID: UUID?
 
     var body: some View {
         ZStack {
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                IOSSidebarView(columnVisibility: $columnVisibility)
-            } detail: {
-                if let selectedId = conversationManager.selectedConversationId,
-                   selectedId != ConversationManager.newConversationId
-                {
-                    IOSChatView(conversationId: selectedId)
-                        .id(selectedId)
-                } else {
-                    IOSNewChatView()
-                        .id(conversationManager.selectedConversationId)
+            if horizontalSizeClass == .compact {
+                NavigationStack(path: $compactNavigationPath) {
+                    IOSSidebarView(
+                        selectedRoute: $selectedRoute,
+                        compactNavigationPath: $compactNavigationPath,
+                        preferredCompactColumn: $preferredCompactColumn,
+                        columnVisibility: $columnVisibility
+                    )
+                    .navigationDestination(for: IOSSidebarRoute.self) { route in
+                        detailView(for: route)
+                    }
                 }
+            } else {
+                NavigationSplitView(
+                    columnVisibility: $columnVisibility,
+                    preferredCompactColumn: $preferredCompactColumn
+                ) {
+                    IOSSidebarView(
+                        selectedRoute: $selectedRoute,
+                        compactNavigationPath: $compactNavigationPath,
+                        preferredCompactColumn: $preferredCompactColumn,
+                        columnVisibility: $columnVisibility
+                    )
+                } detail: {
+                    detailView(for: selectedRoute)
+                }
+                .navigationSplitViewStyle(.balanced)
             }
-            .navigationSplitViewStyle(.balanced)
 
             if let errorMessage = deepLinkManager.errorMessage {
                 VStack {
@@ -72,9 +139,32 @@ struct IOSContentView: View {
             Text("Add model '\(request.name)' (\(request.displayProvider))?\n\nOnly add models from sources you trust.")
         }
         .onAppear {
+            syncRouteFromConversationManager(conversationManager.selectedConversationId)
             if presentedAddModelRequest == nil {
                 presentedAddModelRequest = deepLinkManager.pendingAddModel
             }
+        }
+        .onChange(of: selectedRoute) { _, newRoute in
+            routeViewModelStore.updateActiveRoute(newRoute)
+            syncConversationManagerFromRoute(newRoute)
+            syncCompactPathFromRoute(newRoute)
+            if newRoute != nil {
+                preferredCompactColumn = .detail
+            }
+        }
+        .onChange(of: compactNavigationPath) { _, newPath in
+            let activeRoute = newPath.last
+            if selectedRoute != activeRoute {
+                selectedRoute = activeRoute
+            }
+            routeViewModelStore.updateActiveRoute(activeRoute)
+            syncConversationManagerFromRoute(activeRoute)
+        }
+        .onDisappear {
+            routeViewModelStore.cancelAll()
+        }
+        .onChange(of: conversationManager.selectedConversationId) { _, newId in
+            syncRouteFromConversationManager(newId)
         }
         .onChange(of: deepLinkManager.pendingAddModel) { oldValue, newValue in
             updatePresentedAddModel(from: oldValue, to: newValue)
@@ -87,6 +177,74 @@ struct IOSContentView: View {
                     systemPrompt: chatRequest.systemPrompt
                 )
             }
+        }
+    }
+
+    @ViewBuilder
+    private func detailView(for route: IOSSidebarRoute?) -> some View {
+        let viewModel = routeViewModelStore.viewModel(
+            for: route,
+            conversationManager: conversationManager
+        )
+        switch route {
+        case let .conversation(selectedId):
+            IOSChatView(
+                conversationId: selectedId,
+                conversationManager: conversationManager,
+                viewModel: viewModel
+            )
+            .id(selectedId)
+        case .newChat, .none:
+            IOSNewChatView(
+                conversationManager: conversationManager,
+                viewModel: viewModel
+            )
+            .id(route)
+        }
+    }
+
+    private func syncConversationManagerFromRoute(_ route: IOSSidebarRoute?) {
+        switch route {
+        case let .conversation(conversationId):
+            if conversationManager.selectedConversationId != conversationId {
+                conversationManager.selectedConversationId = conversationId
+            }
+        case .newChat:
+            if conversationManager.selectedConversationId != ConversationManager.newConversationId {
+                conversationManager.selectedConversationId = ConversationManager.newConversationId
+            }
+        case .none:
+            if conversationManager.selectedConversationId != nil {
+                conversationManager.selectedConversationId = nil
+            }
+        }
+    }
+
+    private func syncRouteFromConversationManager(_ selectedId: UUID?) {
+        let mappedRoute: IOSSidebarRoute? = switch selectedId {
+        case .none:
+            nil
+        case ConversationManager.newConversationId:
+            .newChat
+        case let .some(conversationId):
+            .conversation(conversationId)
+        }
+
+        if selectedRoute != mappedRoute {
+            selectedRoute = mappedRoute
+        }
+        syncCompactPathFromRoute(mappedRoute)
+        if mappedRoute != nil {
+            preferredCompactColumn = .detail
+        } else {
+            preferredCompactColumn = .sidebar
+        }
+    }
+
+    private func syncCompactPathFromRoute(_ route: IOSSidebarRoute?) {
+        let targetPath = route.map { [$0] } ?? []
+        if compactNavigationPath != targetPath {
+            compactNavigationPath = targetPath
         }
     }
 
@@ -137,9 +295,9 @@ struct IOSContentView: View {
 }
 
 struct IOSNewChatView: View {
-    @EnvironmentObject var conversationManager: ConversationManager
+    @ObservedObject var conversationManager: ConversationManager
     @ObservedObject private var aiService = AIService.shared
-    @StateObject private var viewModel = IOSChatViewModel.placeholder()
+    @ObservedObject private var viewModel: IOSChatViewModel
 
     @State private var isFileImporterPresented = false
     @State private var followsLatest = true
@@ -151,6 +309,11 @@ struct IOSNewChatView: View {
     @State private var showModelSelector = false
 
     @State private var cachedDisplayableItems: [ChatTranscriptItem] = []
+
+    init(conversationManager: ConversationManager, viewModel: IOSChatViewModel) {
+        self.conversationManager = conversationManager
+        self.viewModel = viewModel
+    }
 
     private var pendingConversation: Conversation? {
         guard let id = viewModel.conversationId else { return nil }
@@ -374,16 +537,21 @@ struct IOSNewChatView: View {
                 conversationManager.selectedConversationId = conversationId
             }
 
-            viewModel.resetForNewChat()
+            if !viewModel.isGenerating,
+               viewModel.conversationId == nil,
+               viewModel.messageText.isEmpty,
+               viewModel.attachedFiles.isEmpty,
+               viewModel.attachedImages.isEmpty,
+               viewModel.pastedImages.isEmpty
+            {
+                viewModel.resetForNewChat()
+            }
 
             DiagnosticsLogger.log(
                 .chatView,
                 level: .info,
                 message: "📱 IOSNewChatView appeared"
             )
-        }
-        .onDisappear {
-            viewModel.cancelOwnedOperations()
         }
     }
 

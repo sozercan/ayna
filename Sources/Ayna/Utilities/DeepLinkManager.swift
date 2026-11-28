@@ -96,10 +96,6 @@ final class DeepLinkManager: ObservableObject {
 
     @Published private(set) var pendingAddModel: AddModelRequest?
 
-    var pendingChat: ChatRequest? {
-        pendingConfirmation?.deferredChat ?? readyChatQueue.first
-    }
-
     @Published private(set) var errorMessage: String?
 
     @Published private(set) var errorRecoverySuggestion: String?
