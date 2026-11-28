@@ -6,6 +6,7 @@
     struct IOSSidebarView: View {
         @EnvironmentObject var conversationManager: ConversationManager
         @ObservedObject var aiService = AIService.shared
+        @Environment(\.horizontalSizeClass) private var horizontalSizeClass
         @Binding var selectedRoute: IOSSidebarRoute?
         @Binding var preferredCompactColumn: NavigationSplitViewColumn
         @Binding var columnVisibility: NavigationSplitViewVisibility
@@ -124,55 +125,71 @@
             .accessibilityIdentifier("sidebar.emptyState")
         }
 
+        @ViewBuilder
         private var conversationListView: some View {
-            List(selection: $selectedRoute) {
-                ForEach(conversationSections) { section in
-                    Section {
-                        ForEach(section.conversations) { conversation in
-                            conversationRowContent(for: conversation)
-                                .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationRow(for: conversation.id))
-                                .swipeActions {
-                                    Button(role: .destructive) {
-                                        HapticEngine.deleteAction()
-                                        DiagnosticsLogger.log(
-                                            .conversationManager,
-                                            level: .info,
-                                            message: "🗑️ Deleting conversation via swipe",
-                                            metadata: [
-                                                "conversationId": conversation.id.uuidString,
-                                                "title": conversation.title,
-                                            ]
-                                        )
-                                        conversationManager.deleteConversation(conversation)
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                }
-                        }
-                    } header: {
-                        Text(section.title)
-                            .font(Typography.bodySecondary)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(Theme.textSecondary)
-                            .textCase(nil)
+            if horizontalSizeClass == .compact {
+                List {
+                    conversationListContent
+                }
+                .listStyle(.plain)
+                .refreshable {
+                    HapticEngine.pullToRefresh()
+                    await conversationManager.reloadConversations()
+                }
+                .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationList)
+                .overlay {
+                    if conversationManager.conversations.isEmpty {
+                        emptyStateView
                     }
                 }
-                Color.clear
-                    .frame(height: 0)
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .tag(IOSSidebarRoute.newChat)
-                    .accessibilityHidden(true)
+            } else {
+                List(selection: $selectedRoute) {
+                    conversationListContent
+                }
+                .listStyle(.plain)
+                .refreshable {
+                    HapticEngine.pullToRefresh()
+                    await conversationManager.reloadConversations()
+                }
+                .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationList)
+                .overlay {
+                    if conversationManager.conversations.isEmpty {
+                        emptyStateView
+                    }
+                }
             }
-            .listStyle(.plain)
-            .refreshable {
-                HapticEngine.pullToRefresh()
-                await conversationManager.reloadConversations()
-            }
-            .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationList)
-            .overlay {
-                if conversationManager.conversations.isEmpty {
-                    emptyStateView
+        }
+
+        private var conversationListContent: some View {
+            ForEach(conversationSections) { section in
+                Section {
+                    ForEach(section.conversations) { conversation in
+                        conversationRowContent(for: conversation)
+                            .accessibilityIdentifier(TestIdentifiers.Sidebar.conversationRow(for: conversation.id))
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    HapticEngine.deleteAction()
+                                    DiagnosticsLogger.log(
+                                        .conversationManager,
+                                        level: .info,
+                                        message: "🗑️ Deleting conversation via swipe",
+                                        metadata: [
+                                            "conversationId": conversation.id.uuidString,
+                                            "title": conversation.title,
+                                        ]
+                                    )
+                                    conversationManager.deleteConversation(conversation)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                    }
+                } header: {
+                    Text(section.title)
+                        .font(Typography.bodySecondary)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Theme.textSecondary)
+                        .textCase(nil)
                 }
             }
         }

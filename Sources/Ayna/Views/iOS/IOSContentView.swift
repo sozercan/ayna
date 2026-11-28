@@ -14,27 +14,42 @@ enum IOSSidebarRoute: Hashable {
 struct IOSContentView: View {
     @EnvironmentObject var conversationManager: ConversationManager
     @ObservedObject private var deepLinkManager = DeepLinkManager.shared
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
     @State private var selectedRoute: IOSSidebarRoute?
+    @State private var compactNavigationPath: [IOSSidebarRoute] = []
     @State private var presentedAddModelRequest: AddModelRequest?
     @State private var dismissingAddModelRequestID: UUID?
 
     var body: some View {
         ZStack {
-            NavigationSplitView(
-                columnVisibility: $columnVisibility,
-                preferredCompactColumn: $preferredCompactColumn
-            ) {
-                IOSSidebarView(
-                    selectedRoute: $selectedRoute,
-                    preferredCompactColumn: $preferredCompactColumn,
-                    columnVisibility: $columnVisibility
-                )
-            } detail: {
-                detailView(for: selectedRoute)
+            if horizontalSizeClass == .compact {
+                NavigationStack(path: $compactNavigationPath) {
+                    IOSSidebarView(
+                        selectedRoute: $selectedRoute,
+                        preferredCompactColumn: $preferredCompactColumn,
+                        columnVisibility: $columnVisibility
+                    )
+                    .navigationDestination(for: IOSSidebarRoute.self) { route in
+                        detailView(for: route)
+                    }
+                }
+            } else {
+                NavigationSplitView(
+                    columnVisibility: $columnVisibility,
+                    preferredCompactColumn: $preferredCompactColumn
+                ) {
+                    IOSSidebarView(
+                        selectedRoute: $selectedRoute,
+                        preferredCompactColumn: $preferredCompactColumn,
+                        columnVisibility: $columnVisibility
+                    )
+                } detail: {
+                    detailView(for: selectedRoute)
+                }
+                .navigationSplitViewStyle(.balanced)
             }
-            .navigationSplitViewStyle(.balanced)
 
             if let errorMessage = deepLinkManager.errorMessage {
                 VStack {
@@ -85,9 +100,17 @@ struct IOSContentView: View {
         }
         .onChange(of: selectedRoute) { _, newRoute in
             syncConversationManagerFromRoute(newRoute)
+            syncCompactPathFromRoute(newRoute)
             if newRoute != nil {
                 preferredCompactColumn = .detail
             }
+        }
+        .onChange(of: compactNavigationPath) { _, newPath in
+            let activeRoute = newPath.last
+            if selectedRoute != activeRoute {
+                selectedRoute = activeRoute
+            }
+            syncConversationManagerFromRoute(activeRoute)
         }
         .onChange(of: conversationManager.selectedConversationId) { _, newId in
             syncRouteFromConversationManager(newId)
@@ -151,10 +174,18 @@ struct IOSContentView: View {
         if selectedRoute != mappedRoute {
             selectedRoute = mappedRoute
         }
+        syncCompactPathFromRoute(mappedRoute)
         if mappedRoute != nil {
             preferredCompactColumn = .detail
         } else {
             preferredCompactColumn = .sidebar
+        }
+    }
+
+    private func syncCompactPathFromRoute(_ route: IOSSidebarRoute?) {
+        let targetPath = route.map { [$0] } ?? []
+        if compactNavigationPath != targetPath {
+            compactNavigationPath = targetPath
         }
     }
 
