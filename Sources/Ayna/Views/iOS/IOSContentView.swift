@@ -32,17 +32,7 @@ struct IOSContentView: View {
                     columnVisibility: $columnVisibility
                 )
             } detail: {
-                switch selectedRoute {
-                case let .conversation(selectedId):
-                    IOSChatView(
-                        conversationId: selectedId,
-                        conversationManager: conversationManager
-                    )
-                    .id(selectedId)
-                case .newChat, .none:
-                    IOSNewChatView(conversationManager: conversationManager)
-                        .id(selectedRoute)
-                }
+                detailView(for: selectedRoute)
             }
             .navigationSplitViewStyle(.balanced)
 
@@ -113,6 +103,21 @@ struct IOSContentView: View {
                     systemPrompt: chatRequest.systemPrompt
                 )
             }
+        }
+    }
+
+    @ViewBuilder
+    private func detailView(for route: IOSSidebarRoute?) -> some View {
+        switch route {
+        case let .conversation(selectedId):
+            IOSChatView(
+                conversationId: selectedId,
+                conversationManager: conversationManager
+            )
+            .id(selectedId)
+        case .newChat, .none:
+            IOSNewChatView(conversationManager: conversationManager)
+                .id(route)
         }
     }
 

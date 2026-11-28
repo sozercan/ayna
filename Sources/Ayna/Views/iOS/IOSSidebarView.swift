@@ -157,6 +157,12 @@
                             .textCase(nil)
                     }
                 }
+                Color.clear
+                    .frame(height: 0)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .tag(IOSSidebarRoute.newChat)
+                    .accessibilityHidden(true)
             }
             .listStyle(.plain)
             .refreshable {
